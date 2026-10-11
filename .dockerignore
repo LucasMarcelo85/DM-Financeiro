@@ -1,0 +1,14 @@
+node_modules
+client/dist
+.git
+.gitignore
+.env
+.env.*
+!.env.example
+data/*
+!data/.gitkeep
+scripts
+*.log
+.DS_Store
+Dockerfile
+.dockerignore
