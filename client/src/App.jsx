@@ -5,7 +5,9 @@ import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import WhatsApp from './pages/WhatsApp.jsx';
-import { Charge, Reminder } from './pages/Messaging.jsx';
+import Contacts from './pages/Contacts.jsx';
+import Schedules from './pages/Schedules.jsx';
+import ScheduleForm from './pages/ScheduleForm.jsx';
 import Billing from './pages/Billing.jsx';
 import PaymentReturn from './pages/PaymentReturn.jsx';
 import Contracts from './pages/Contracts.jsx';
@@ -52,8 +54,15 @@ export default function App() {
       <Route element={<Protected />}>
         <Route index element={<Dashboard />} />
         <Route path="whatsapp" element={<WhatsApp />} />
-        <Route path="cobranca" element={<Charge />} />
-        <Route path="lembrete" element={<Reminder />} />
+        <Route path="clientes" element={<Contacts />} />
+        <Route path="cobrancas" element={<Schedules key="c" kind="cobranca" />} />
+        <Route path="cobrancas/nova" element={<ScheduleForm key="c-new" kind="cobranca" />} />
+        <Route path="cobrancas/:id" element={<ScheduleForm key="c-edit" kind="cobranca" />} />
+        <Route path="lembretes" element={<Schedules key="l" kind="lembrete" />} />
+        <Route path="lembretes/novo" element={<ScheduleForm key="l-new" kind="lembrete" />} />
+        <Route path="lembretes/:id" element={<ScheduleForm key="l-edit" kind="lembrete" />} />
+        <Route path="cobranca" element={<Navigate to="/cobrancas" replace />} />
+        <Route path="lembrete" element={<Navigate to="/lembretes" replace />} />
         <Route path="contratos" element={<Contracts />} />
         <Route path="plano" element={<Billing />} />
         <Route path="pagamento/retorno" element={<PaymentReturn />} />

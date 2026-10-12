@@ -6,37 +6,61 @@ import bcrypt from 'bcryptjs';
 import fs from 'node:fs';
 import path from 'node:path';
 import { config, ROOT, evolutionConfigured, infinitepayConfigured } from './config.js';
-import { db } from './db.js';
-import { DAY } from './utils/helpers.js';
-import { AppError } from './utils/helpers.js';
+import { prisma, connectWithRetry } from './prisma.js';
+import { AppError, DAY } from './utils/helpers.js';
 import { auth, requireAccess, requireAdmin } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
 import instanceRoutes from './routes/instances.js';
+import contactRoutes from './routes/contacts.js';
+import scheduleRoutes from './routes/schedules.js';
+import statsRoutes from './routes/stats.js';
 import messageRoutes from './routes/messages.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
+import { startScheduler, stopScheduler } from './services/scheduler.js';
+
+try {
+  new Intl.DateTimeFormat('en-US', { timeZone: config.timezone });
+} catch {
+  console.error(`APP_TIMEZONE inválido: "${config.timezone}". Exemplo: America/Sao_Paulo`);
+  process.exit(1);
+}
+
+try {
+  await connectWithRetry();
+  console.log('[banco] conectado ao PostgreSQL');
+} catch (e) {
+  console.error('[banco] não foi possível conectar. Confira a DATABASE_URL e se as tabelas foram criadas (npm run db:deploy).\n', e.message);
+  process.exit(1);
+}
 
 // Cria a conta admin na primeira execução (se ainda não existir).
-function seedAdmin() {
+async function seedAdmin() {
   const { email, password, name, document } = config.admin;
   if (!email || !password) {
-    console.warn('[admin] ADMIN_EMAIL/ADMIN_PASSWORD não definidos no .env: nenhuma conta admin foi criada.');
+    console.warn('[admin] ADMIN_EMAIL/ADMIN_PASSWORD não definidos: nenhuma conta admin foi criada.');
     return;
   }
-  if (db.prepare('SELECT 1 FROM users WHERE email = ?').get(email)) return;
+  if (await prisma.user.findUnique({ where: { email } })) return;
   const doc = document || 'admin';
-  if (db.prepare('SELECT 1 FROM users WHERE document = ?').get(doc)) {
+  if (await prisma.user.findUnique({ where: { document: doc } })) {
     console.warn('[admin] ADMIN_DOCUMENT já pertence a outra conta. Admin não criado.');
     return;
   }
-  const now = Date.now();
-  db.prepare(
-    `INSERT INTO users (kind, name, document, email, phone, password_hash, role, plan, trial_ends_at, access_until, created_at)
-     VALUES (?, ?, ?, ?, '', ?, 'admin', 'ouro', ?, 0, ?)`
-  ).run(document.length === 14 ? 'PJ' : 'PF', name, doc, email, bcrypt.hashSync(password, 10), now + DAY, now);
+  await prisma.user.create({
+    data: {
+      kind: document.length === 14 ? 'PJ' : 'PF', name, document: doc, email,
+      passwordHash: bcrypt.hashSync(password, 10), role: 'admin', plan: 'ouro', trialEndsAt: new Date(Date.now() + DAY),
+    },
+  });
   console.log(`[admin] Conta admin criada: ${email}`);
 }
-seedAdmin();
+try {
+  await seedAdmin();
+} catch (e) {
+  console.error('[banco] falha ao preparar o banco. As tabelas existem? Rode: npm run db:deploy\n', e.message);
+  process.exit(1);
+}
 
 const app = express();
 app.disable('x-powered-by');
@@ -65,11 +89,21 @@ app.use('/api', limiter(600, 60 * 1000));
 app.use('/api/auth/login', limiter(20, 15 * 60 * 1000));
 app.use('/api/auth/register', limiter(10, 60 * 60 * 1000));
 
-app.get('/api/health', (_req, res) => res.json({ ok: true }));
+app.get('/api/health', async (_req, res) => {
+  try {
+    await prisma.$queryRaw`SELECT 1`;
+    res.json({ ok: true });
+  } catch {
+    res.status(503).json({ ok: false, error: 'banco indisponível' });
+  }
+});
 app.use('/api', authRoutes); // /plans e /auth/*
 app.use('/api/webhooks', webhookRouter);
 app.use('/api/billing', auth, billingRouter);
 app.use('/api/instances', auth, requireAccess, instanceRoutes);
+app.use('/api/contacts', auth, requireAccess, contactRoutes);
+app.use('/api/schedules', auth, requireAccess, scheduleRoutes);
+app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
@@ -89,8 +123,18 @@ app.use((err, _req, res, _next) => {
   res.status(500).json({ error: 'Erro interno. Tente novamente em instantes.' });
 });
 
-app.listen(config.port, () => {
+const server = app.listen(config.port, () => {
   console.log(`API rodando em http://localhost:${config.port}`);
   if (!evolutionConfigured()) console.warn('[aviso] Evolution API não configurada (EVOLUTION_API_URL / EVOLUTION_API_KEY).');
   if (!infinitepayConfigured()) console.warn('[aviso] InfinitePay não configurada (INFINITEPAY_HANDLE).');
+  startScheduler();
 });
+
+async function shutdown() {
+  stopScheduler();
+  server.close();
+  await prisma.$disconnect().catch(() => {});
+  process.exit(0);
+}
+process.on('SIGTERM', shutdown);
+process.on('SIGINT', shutdown);

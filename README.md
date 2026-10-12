@@ -2,50 +2,59 @@
 
 SaaS para enviar **cobranças** e **lembretes** pelo WhatsApp (via Evolution API), com teste grátis de 3 dias e cobrança do plano por link da InfinitePay.
 
-**Stack:** Node.js + Express + SQLite (backend) · React + Vite (frontend).
+**Stack:** Node.js + Express + **PostgreSQL com Prisma** (backend) · React + Vite (frontend).
 
 ## Como rodar
 
 ```bash
 npm install
-cp .env.example .env     # preencha o .env (veja abaixo)
+cp .env.example .env     # preencha o .env (principalmente DATABASE_URL)
+npm run db:deploy        # cria as tabelas no PostgreSQL
 npm run dev              # API em :3001 e front em http://localhost:5173
 ```
 
-Produção: `npm run build` e depois `npm start` (o próprio servidor entrega o front na porta definida em `PORT`).
+Produção sem Docker: `npm run build`, `npm run db:deploy` e `npm start`.
 
-Teste automático do backend (usa Evolution e InfinitePay simuladas, não precisa de nada configurado): `npm run smoke`.
+Comandos do banco: `npm run db:deploy` (aplica as migrações), `npm run db:migrate` (cria uma nova migração depois de editar `prisma/schema.prisma`, só em desenvolvimento), `npm run db:studio` (visualizar os dados).
 
-## O que preencher no `.env`
+Teste automático do backend (cria um banco temporário, usa Evolution e InfinitePay simuladas):
 
-| Variável | Para quê |
-|---|---|
-| `APP_URL` | Endereço público do sistema. Dev: `http://localhost:5173`. Produção: seu domínio com `https`. |
-| `JWT_SECRET` | Frase longa e aleatória que assina o login. |
-| `ADMIN_EMAIL` / `ADMIN_PASSWORD` / `ADMIN_NAME` | Conta admin, criada sozinha na primeira execução. |
-| `EVOLUTION_API_URL` / `EVOLUTION_API_KEY` | Sua Evolution API (v2). |
-| `INFINITEPAY_HANDLE` | Sua InfiniteTag, sem o `$`. |
-| `PLAN_BRONZE_PRICE`, `PLAN_PRATA_PRICE`, `PLAN_OURO_PRICE` | Preço mensal de cada plano, em reais. |
-| `TRIAL_DAYS` / `ACCESS_DAYS` | Dias de teste grátis (3) e dias liberados por pagamento (30). |
+```bash
+SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run smoke
+```
 
-## Como funciona
+## Banco de dados
+
+`DATABASE_URL` no formato `postgres://USUARIO:SENHA@HOST:5432/BANCO?sslmode=disable`.
+
+- Use um banco **só para este sistema**. O Prisma recusa criar tabelas em um banco que já tem outras (erro `P3005`).
+- Senha com caracteres especiais (`@ : / ? # %`) precisa ser codificada (`@` vira `%40`).
+- Tabelas: `users`, `instances`, `payments`, `contacts` (clientes), `schedules` (cobranças e lembretes agendados) e `messages` (histórico).
+
+## O que o sistema faz
 
 - **Cadastro:** pessoa física (CPF) ou jurídica (CNPJ), validados. Toda conta entra com role `usuario` e 3 dias grátis.
-- **Planos e limites:**
+- **Planos:** Bronze (1 WhatsApp, 1 modelo de contrato), Prata (1 WhatsApp, 3 contratos), Ouro (3 WhatsApps, 4 contratos). O admin lista e exclui usuários, troca o plano e dá acesso mensal (+30 dias).
+- **Depois do teste:** o acesso é bloqueado até o pagamento pelo link da InfinitePay (confirmado direto com a InfinitePay). O envio automático também pausa enquanto não houver acesso.
+- **WhatsApp:** a instância se chama como o CPF/CNPJ. Luz verde = conectado, vermelha = desconectado.
+- **Clientes:** salvos uma vez (nome e WhatsApp) e escolhidos por busca ao criar cobranças e lembretes. Um cliente novo digitado no formulário já é salvo automaticamente.
+- **Cobranças e lembretes:** *avulsos* (uma vez) ou *mensais* (todo mês, no mesmo dia; dia 31 vira o último dia em meses curtos). O usuário escolhe o vencimento, quantos dias **antes** enviar (no dia, 1, 2, 3, 5, 7 ou até 30) e o **horário**. Também dá para **enviar agora**. A mensagem aceita `{nome}`, `{valor}` e `{vencimento}`, trocados na hora do envio.
+- **Link ou Pix:** sai em uma **segunda mensagem**, para copiar e colar com um toque.
+- **Envio automático:** o sistema verifica a cada 30 s (`SCHEDULER_INTERVAL_SECONDS`). Se o WhatsApp estiver desconectado, tenta de novo a cada 15 min, até 4 vezes. Se o horário passar mais de 6 horas (sistema parado, por exemplo), **não** envia a cobrança atrasada e registra a falha. O envio não duplica, mesmo com mais de uma cópia do sistema rodando.
+- **Visualização:** cobranças e lembretes em **lista** (com filtros) ou **calendário** mensal. Cada item pode ser enviado agora, pausado, editado ou excluído.
+- **Início:** clientes cadastrados, valor total das cobranças mensais, previsto no mês, mensagens enviadas, próximos envios e histórico.
 
-  | Plano | WhatsApps | Modelos de contrato |
-  |---|---|---|
-  | Bronze | 1 | 1 |
-  | Prata | 1 | 3 |
-  | Ouro | 3 | 4 |
+## Deploy no EasyPanel
 
-  O admin vê a lista de usuários, exclui contas, troca o plano e dá acesso mensal (+30 dias).
-- **Depois do teste:** o acesso é bloqueado e o usuário vai para a tela de plano. Ele paga pelo link da InfinitePay, volta ao sistema e o acesso é liberado por 30 dias. A confirmação é sempre checada direto com a InfinitePay (`payment_check`), nunca confiando só no que chega pelo navegador ou pelo webhook.
-- **WhatsApp:** a instância se chama como o CPF/CNPJ do usuário (a 2ª e 3ª do plano Ouro ganham `-2` e `-3`). Luz verde = conectado, vermelha = desconectado, atualizada a cada poucos segundos.
-- **Mensagens:** com link ou Pix, a mensagem sai em **2 blocos** (texto e, logo depois, só o link/chave), o que facilita copiar e colar. Sem link, sai em 1.
+1. Crie o serviço **App** a partir do repositório, com build **Dockerfile** (na raiz).
+2. Em **Domínios**, aponte para a porta `3001`.
+3. Em **Ambiente**, preencha as variáveis do `.env.example` (sem aspas). As obrigatórias: `DATABASE_URL`, `APP_URL` (https), `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `INFINITEPAY_HANDLE`.
+4. Faça o deploy. Ao iniciar, o container roda `prisma migrate deploy` (cria as tabelas) e depois liga o sistema. Não precisa de volume: tudo fica no PostgreSQL.
+
+Se o PostgreSQL estiver no mesmo EasyPanel, use o nome interno do serviço no host da `DATABASE_URL`.
 
 ## Observações
 
 - O webhook da InfinitePay (`/api/webhooks/infinitepay`) só é informado quando `APP_URL` começa com `https`. Em ambiente local o pagamento é confirmado pela página de retorno.
-- A tela de **Contratos** está como "Em breve": os limites por plano já existem no backend, falta a criação dos modelos.
-- Este projeto usa o formato da Evolution API v2. Se a sua for a v1, ajuste os corpos das requisições em `server/services/evolution.js`.
+- A tela de **Contratos** está como "Em breve": os limites por plano já existem no backend.
+- Usa o formato da Evolution API v2. Se a sua for a v1, ajuste os corpos das requisições em `server/services/evolution.js`.

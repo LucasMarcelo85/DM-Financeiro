@@ -3,24 +3,34 @@
   "version": "0.1.0",
   "private": true,
   "type": "module",
-  "engines": { "node": ">=20" },
+  "engines": {
+    "node": ">=20"
+  },
   "scripts": {
     "dev": "concurrently -n api,web -c yellow,cyan \"node --watch server/index.js\" \"vite --config client/vite.config.js\"",
     "dev:api": "node --watch server/index.js",
     "dev:web": "vite --config client/vite.config.js",
     "build": "vite build --config client/vite.config.js",
     "start": "node server/index.js",
-    "smoke": "node scripts/smoke-test.mjs"
+    "smoke": "node scripts/smoke-test.mjs",
+    "postinstall": "prisma generate",
+    "db:generate": "prisma generate",
+    "db:deploy": "prisma migrate deploy",
+    "db:migrate": "prisma migrate dev",
+    "db:studio": "prisma studio"
   },
   "dependencies": {
+    "@prisma/adapter-pg": "^6.19.3",
+    "@prisma/client": "^6.19.3",
     "bcryptjs": "^2.4.3",
-    "better-sqlite3": "^11.7.0",
     "cookie-parser": "^1.4.7",
     "dotenv": "^16.4.7",
     "express": "^5.1.0",
     "express-rate-limit": "^7.5.0",
     "helmet": "^8.0.0",
     "jsonwebtoken": "^9.0.2",
+    "pg": "^8.13.1",
+    "prisma": "^6.19.3",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-router-dom": "^6.28.0"

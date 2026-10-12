@@ -1,6 +1,6 @@
 import jwt from 'jsonwebtoken';
 import { config } from '../config.js';
-import { db } from '../db.js';
+import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { computeAccess } from '../services/access.js';
 
@@ -20,7 +20,7 @@ export function setSession(res, userId) {
 
 export const clearSession = (res) => res.clearCookie(COOKIE, { path: '/' });
 
-export function auth(req, _res, next) {
+export async function auth(req, _res, next) {
   const token = req.cookies?.[COOKIE];
   if (!token) throw new AppError(401, 'Faça login para continuar.', 'UNAUTHENTICATED');
   let id;
@@ -29,7 +29,7 @@ export function auth(req, _res, next) {
   } catch {
     throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
   }
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(id);
+  const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
   req.user = user;
   next();

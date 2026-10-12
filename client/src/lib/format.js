@@ -49,3 +49,41 @@ export const dateTimeBR = (ms) =>
 export const firstName = (name) => String(name || '').trim().split(/\s+/)[0] || '';
 export const planLabel = (p) => (p === 'admin' ? 'Admin' : p ? p.charAt(0).toUpperCase() + p.slice(1) : '');
 export const plural = (n, one, many) => `${n} ${n === 1 ? one : many}`;
+
+// ---------- Dinheiro ----------
+// Máscara "1.234,56" a partir dos dígitos digitados (preenche pelos centavos).
+export function maskMoney(v) {
+  const d = digits(v).slice(0, 10);
+  if (!d) return '';
+  return (Number(d) / 100).toFixed(2).replace('.', ',').replace(/\B(?=(\d{3})+(?!\d))/g, '.');
+}
+export const moneyToCents = (masked) => Number(digits(masked)) || 0;
+export const centsToMasked = (cents) => maskMoney(String(cents ?? 0));
+
+// ---------- Datas e horários ----------
+let TZ; // fuso do sistema (vem do servidor); sem valor, usa o do navegador
+export const setTimezone = (tz) => { TZ = tz; };
+const pad = (n) => String(n).padStart(2, '0');
+
+export const todayISO = () => {
+  const d = new Date();
+  return `${d.getFullYear()}-${pad(d.getMonth() + 1)}-${pad(d.getDate())}`;
+};
+export const isoToBR = (iso) => (iso ? iso.split('-').reverse().join('/') : '');
+export const isoDay = (iso) => Number(iso.split('-')[2]);
+
+export function addDaysISO(iso, n) {
+  const [y, m, d] = iso.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d + n));
+  return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
+}
+
+// 08/11 às 09:00 (no fuso do sistema)
+export function fmtRun(ms) {
+  const p = Object.fromEntries(
+    new Intl.DateTimeFormat('pt-BR', { timeZone: TZ, day: '2-digit', month: '2-digit', hour: '2-digit', minute: '2-digit', hourCycle: 'h23' })
+      .formatToParts(new Date(ms)).map((x) => [x.type, x.value])
+  );
+  return `${p.day}/${p.month} às ${p.hour}:${p.minute}`;
+}
+export const initials = (name) => String(name || '?').trim().split(/\s+/).slice(0, 2).map((w) => w[0]?.toUpperCase()).join('');

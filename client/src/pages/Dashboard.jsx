@@ -6,7 +6,7 @@ import Icon from '../components/Icon.jsx';
 import Lamp from '../components/Lamp.jsx';
 import PlanBadge from '../components/PlanBadge.jsx';
 import { useInstances } from '../lib/useInstances.js';
-import { dateBR, dateTimeBR, firstName, formatStoredPhone, plural } from '../lib/format.js';
+import { brl, dateBR, dateTimeBR, firstName, fmtRun, formatStoredPhone, plural } from '../lib/format.js';
 
 export const STATUS_TEXT = { sent: 'Enviada', partial: 'Só o texto foi', failed: 'Falhou' };
 
@@ -14,9 +14,11 @@ export default function Dashboard() {
   const { user } = useAuth();
   const { data, error } = useInstances();
   const [recent, setRecent] = useState(null);
+  const [stats, setStats] = useState(null);
 
   useEffect(() => {
     api.get('/messages?limit=5').then((r) => setRecent(r.messages)).catch(() => setRecent([]));
+    api.get('/stats').then(setStats).catch(() => {});
   }, []);
 
   const instances = data?.instances || [];
@@ -80,40 +82,80 @@ export default function Dashboard() {
         )}
       </section>
 
-      <section className="grid-auto">
-        <Link to="/cobranca" className="action-card">
-          <span className="action-icon"><Icon name="money" size={24} /></span>
-          <strong>Enviar cobrança</strong>
-          <span>Texto, número do cliente e link ou chave Pix.</span>
+      <section className="stats-grid" aria-label="Resumo">
+        <Link to="/clientes" className="stat-card">
+          <span className="stat-icon"><Icon name="user" size={22} /></span>
+          <span className="stat-label">Clientes cadastrados</span>
+          <strong className="stat-value">{stats ? stats.contacts : '–'}</strong>
+          <span className="stat-sub">Ver clientes</span>
         </Link>
-        <Link to="/lembrete" className="action-card">
+        <Link to="/cobrancas" className="stat-card">
+          <span className="stat-icon"><Icon name="trend" size={22} /></span>
+          <span className="stat-label">Cobranças mensais</span>
+          <strong className="stat-value">{stats ? brl(stats.monthlyTotalCents) : '–'}</strong>
+          <span className="stat-sub">{stats ? `${plural(stats.monthlyCount, 'cobrança ativa', 'cobranças ativas')} por mês` : ' '}</span>
+        </Link>
+        <Link to="/cobrancas" className="stat-card">
+          <span className="stat-icon"><Icon name="calendar" size={22} /></span>
+          <span className="stat-label">Previsto neste mês</span>
+          <strong className="stat-value">{stats ? brl(stats.expectedMonthCents) : '–'}</strong>
+          <span className="stat-sub">Mensais + avulsas que vencem</span>
+        </Link>
+        <div className="stat-card">
+          <span className="stat-icon"><Icon name="send" size={22} /></span>
+          <span className="stat-label">Mensagens no mês</span>
+          <strong className="stat-value">{stats ? stats.sentThisMonth : '–'}</strong>
+          <span className="stat-sub">Enviadas com sucesso</span>
+        </div>
+      </section>
+
+      <section className="grid-auto">
+        <Link to="/cobrancas/nova" className="action-card">
+          <span className="action-icon"><Icon name="money" size={24} /></span>
+          <strong>Nova cobrança</strong>
+          <span>Avulsa ou mensal, enviada no horário que você escolher.</span>
+        </Link>
+        <Link to="/lembretes/novo" className="action-card">
           <span className="action-icon"><Icon name="bell" size={24} /></span>
-          <strong>Enviar lembrete</strong>
+          <strong>Novo lembrete</strong>
           <span>Avise o cliente antes do vencimento.</span>
         </Link>
-        <Link to="/plano" className="action-card">
-          <span className="action-icon"><Icon name="card" size={24} /></span>
-          <strong>
-            Plano {user.role === 'admin' ? 'Admin' : <PlanBadge plan={user.plan} />}
-          </strong>
-          <span>
-            {access.status === 'admin' ? 'Sem cobrança.' : access.status === 'paid' ? `Ativo até ${dateBR(access.endsAt)}.` : 'Veja valores e pague pelo link.'}
-          </span>
+        <Link to="/clientes?novo=1" className="action-card">
+          <span className="action-icon"><Icon name="user" size={24} /></span>
+          <strong>Novo cliente</strong>
+          <span>Salve para escolher rápido depois.</span>
         </Link>
       </section>
 
-      <section className="card">
+      <div className="two-col">
+        <section className="card">
+          <h2 className="card-title">Próximos envios</h2>
+          {stats === null ? <p className="muted">Carregando...</p> : stats.upcoming.length === 0 ? (
+            <p className="empty">Nada agendado. Crie uma <Link to="/cobrancas/nova">cobrança</Link> ou um <Link to="/lembretes/novo">lembrete</Link>.</p>
+          ) : (
+            <ul className="history">
+              {stats.upcoming.map((u) => (
+                <li key={u.id}>
+                  <span className="history-main"><strong>{u.contactName}</strong>{u.amountCents != null ? ` · ${brl(u.amountCents)}` : ''}</span>
+                  <span className={`tag ${u.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{u.recurrence === 'mensal' ? 'Mensal' : 'Avulsa'}</span>
+                  <time>{fmtRun(u.nextRunAt)}</time>
+                </li>
+              ))}
+            </ul>
+          )}
+        </section>
+        <section className="card">
         <h2 className="card-title">Últimos envios</h2>
         {recent === null ? (
           <p className="muted">Carregando...</p>
         ) : recent.length === 0 ? (
-          <p className="empty">Você ainda não enviou nada. Comece por uma <Link to="/cobranca">cobrança</Link> ou um <Link to="/lembrete">lembrete</Link>.</p>
+          <p className="empty">Você ainda não enviou nada.</p>
         ) : (
           <ul className="history">
             {recent.map((m) => (
               <li key={m.id}>
                 <span className="history-main">
-                  <strong>{m.kind === 'cobranca' ? 'Cobrança' : 'Lembrete'}</strong> para {formatStoredPhone(m.number)}
+                  <strong>{m.kind === 'cobranca' ? 'Cobrança' : 'Lembrete'}</strong> para {m.contactName || formatStoredPhone(m.number)}{m.automatic ? ' · automático' : ''}
                 </span>
                 <span className={`pill pill-${m.status}`}>{STATUS_TEXT[m.status]}</span>
                 <time>{dateTimeBR(m.createdAt)}</time>
@@ -121,7 +163,8 @@ export default function Dashboard() {
             ))}
           </ul>
         )}
-      </section>
+        </section>
+      </div>
     </>
   );
 }

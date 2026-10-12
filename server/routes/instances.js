@@ -1,5 +1,5 @@
 import { Router } from 'express';
-import { db } from '../db.js';
+import { prisma } from '../prisma.js';
 import { evolutionConfigured } from '../config.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
@@ -7,23 +7,24 @@ import * as evo from '../services/evolution.js';
 
 const router = Router();
 
-function ownInstance(req) {
-  const inst = db.prepare('SELECT * FROM instances WHERE id = ? AND user_id = ?').get(Number(req.params.id), req.user.id);
+async function ownInstance(req) {
+  const id = Number(req.params.id);
+  const inst = Number.isInteger(id) ? await prisma.instance.findFirst({ where: { id, userId: req.user.id } }) : null;
   if (!inst) throw new AppError(404, 'WhatsApp não encontrado.');
   return inst;
 }
 
 // O nome da instância é o CPF/CNPJ do usuário (a 2ª e 3ª ganham sufixo -2, -3).
-function nextInstanceName(user) {
+async function nextInstanceName(user) {
   const base = (user.document || 'admin').replace(/[^a-zA-Z0-9]/g, '') || 'admin';
-  const taken = new Set(db.prepare('SELECT name FROM instances WHERE user_id = ?').all(user.id).map((r) => r.name));
+  const taken = new Set((await prisma.instance.findMany({ where: { userId: user.id }, select: { name: true } })).map((r) => r.name));
   let name = base;
   for (let n = 2; taken.has(name); n++) name = `${base}-${n}`;
   return name;
 }
 
 router.get('/', async (req, res) => {
-  const rows = db.prepare('SELECT id, name FROM instances WHERE user_id = ? ORDER BY id').all(req.user.id);
+  const rows = await prisma.instance.findMany({ where: { userId: req.user.id }, orderBy: { id: 'asc' }, select: { id: true, name: true } });
   const configured = evolutionConfigured();
   let failed = false;
 
@@ -40,22 +41,17 @@ router.get('/', async (req, res) => {
     })
   );
 
-  res.json({
-    instances,
-    limit: limitsFor(req.user).instances,
-    evolutionConfigured: configured,
-    unreachable: failed,
-  });
+  res.json({ instances, limit: limitsFor(req.user).instances, evolutionConfigured: configured, unreachable: failed });
 });
 
 router.post('/', async (req, res) => {
   const limit = limitsFor(req.user).instances;
-  const { c } = db.prepare('SELECT COUNT(*) AS c FROM instances WHERE user_id = ?').get(req.user.id);
-  if (c >= limit) {
+  const count = await prisma.instance.count({ where: { userId: req.user.id } });
+  if (count >= limit) {
     throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? 'WhatsApp conectado' : 'WhatsApps conectados'}. Mude de plano para adicionar mais.`, 'LIMIT_REACHED');
   }
 
-  const name = nextInstanceName(req.user);
+  const name = await nextInstanceName(req.user);
   let data;
   try {
     data = await evo.createInstance(name);
@@ -65,12 +61,12 @@ router.post('/', async (req, res) => {
     else throw e;
   }
 
-  const info = db.prepare('INSERT INTO instances (user_id, name, created_at) VALUES (?, ?, ?)').run(req.user.id, name, Date.now());
-  res.status(201).json({ instance: { id: Number(info.lastInsertRowid), name }, connected: false, ...evo.normalizeQr(data) });
+  const instance = await prisma.instance.create({ data: { userId: req.user.id, name }, select: { id: true, name: true } });
+  res.status(201).json({ instance, connected: false, ...evo.normalizeQr(data) });
 });
 
 router.post('/:id/connect', async (req, res) => {
-  const inst = ownInstance(req);
+  const inst = await ownInstance(req);
   const state = await evo.getState(inst.name);
   if (state === 'open') return res.json({ connected: true, qr: null, pairingCode: null });
 
@@ -79,7 +75,7 @@ router.post('/:id/connect', async (req, res) => {
 });
 
 router.post('/:id/logout', async (req, res) => {
-  const inst = ownInstance(req);
+  const inst = await ownInstance(req);
   try {
     await evo.logoutInstance(inst.name);
   } catch (e) {
@@ -89,9 +85,9 @@ router.post('/:id/logout', async (req, res) => {
 });
 
 router.delete('/:id', async (req, res) => {
-  const inst = ownInstance(req);
+  const inst = await ownInstance(req);
   await evo.deleteInstance(inst.name);
-  db.prepare('DELETE FROM instances WHERE id = ?').run(inst.id);
+  await prisma.instance.delete({ where: { id: inst.id } });
   res.json({ ok: true });
 });
 

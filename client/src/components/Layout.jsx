@@ -7,8 +7,9 @@ import PlanBadge from './PlanBadge.jsx';
 const NAV = [
   { to: '/', label: 'Início', icon: 'home', end: true },
   { to: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
-  { to: '/cobranca', label: 'Cobrança', icon: 'money' },
-  { to: '/lembrete', label: 'Lembrete', icon: 'bell' },
+  { to: '/clientes', label: 'Clientes', icon: 'user' },
+  { to: '/cobrancas', label: 'Cobranças', icon: 'money' },
+  { to: '/lembretes', label: 'Lembretes', icon: 'bell' },
   { to: '/contratos', label: 'Contratos', icon: 'file' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
 ];

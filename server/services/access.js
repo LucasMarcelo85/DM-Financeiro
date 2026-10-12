@@ -1,16 +1,24 @@
-import { db } from '../db.js';
+import { config } from '../config.js';
+import { prisma } from '../prisma.js';
 import { DAY } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
+
+const ms = (d) => (d ? d.getTime() : 0);
 
 // status: 'admin' | 'paid' | 'trial' | 'expired'
 export function computeAccess(user) {
   if (user.role === 'admin') return { status: 'admin', hasAccess: true, endsAt: null, daysLeft: null };
   const now = Date.now();
-  const endsAt = Math.max(user.access_until, user.trial_ends_at);
+  const endsAt = Math.max(ms(user.accessUntil), ms(user.trialEndsAt));
   const hasAccess = endsAt > now;
-  const status = user.access_until > now ? 'paid' : user.trial_ends_at > now ? 'trial' : 'expired';
+  const status = ms(user.accessUntil) > now ? 'paid' : ms(user.trialEndsAt) > now ? 'trial' : 'expired';
   return { status, hasAccess, endsAt, daysLeft: hasAccess ? Math.ceil((endsAt - now) / DAY) : 0 };
 }
+
+// Filtro Prisma: usuários que ainda podem usar o sistema (usado pelo agendador).
+export const accessibleUserFilter = (now = new Date()) => ({
+  OR: [{ role: 'admin' }, { trialEndsAt: { gt: now } }, { accessUntil: { gt: now } }],
+});
 
 export function publicUser(user) {
   return {
@@ -22,18 +30,20 @@ export function publicUser(user) {
     phone: user.phone,
     role: user.role,
     plan: user.plan,
-    createdAt: user.created_at,
+    createdAt: ms(user.createdAt),
     access: computeAccess(user),
     limits: limitsFor(user),
+    timezone: config.timezone,
   };
 }
 
 // Soma dias a partir do que o usuário ainda tem (teste ou pagamento), sem perder tempo restante.
-export function extendAccess(userId, days, plan) {
-  const user = db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+export async function extendAccess(userId, days, plan, db = prisma) {
+  const user = await db.user.findUnique({ where: { id: userId } });
   if (!user) return null;
-  const base = Math.max(Date.now(), user.access_until, user.trial_ends_at);
-  const until = base + days * DAY;
-  db.prepare('UPDATE users SET access_until = ?, plan = ? WHERE id = ?').run(until, plan || user.plan, userId);
-  return db.prepare('SELECT * FROM users WHERE id = ?').get(userId);
+  const base = Math.max(Date.now(), ms(user.accessUntil), ms(user.trialEndsAt));
+  return db.user.update({
+    where: { id: userId },
+    data: { accessUntil: new Date(base + days * DAY), ...(plan ? { plan } : {}) },
+  });
 }

@@ -1,5 +1,6 @@
 import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
 import { api } from './api.js';
+import { setTimezone } from './lib/format.js';
 
 const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
@@ -7,6 +8,11 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+
+  // Mantém o fuso do sistema disponível para formatar datas e horários.
+  useEffect(() => {
+    if (user?.timezone) setTimezone(user.timezone);
+  }, [user]);
 
   const refresh = useCallback(async () => {
     try {

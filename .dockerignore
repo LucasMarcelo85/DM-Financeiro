@@ -5,8 +5,6 @@ client/dist
 .env
 .env.*
 !.env.example
-data/*
-!data/.gitkeep
 scripts
 *.log
 .DS_Store

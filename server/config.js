@@ -8,6 +8,8 @@ export const ROOT = path.resolve(here, '..');
 dotenv.config({ path: path.join(ROOT, '.env') });
 
 const env = process.env;
+// Algumas plataformas entregam o valor com aspas literais; remove-as.
+const stripQuotes = (s) => String(s || '').trim().replace(/^(['"])(.*)\1$/, '$2');
 const trimSlash = (s) => String(s || '').trim().replace(/\/+$/, '');
 const positive = (v, fallback) => {
   const n = Number(String(v ?? '').trim().replace(',', '.'));
@@ -25,7 +27,12 @@ export const config = {
   appUrl: trimSlash(env.APP_URL) || 'http://localhost:5173',
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true' ? 1 : 0,
   jwtSecret,
-  dbPath: path.resolve(ROOT, env.DB_PATH || './data/dm-financeiro.db'),
+  databaseUrl: stripQuotes(env.DATABASE_URL),
+  timezone: (env.APP_TIMEZONE || 'America/Sao_Paulo').trim(),
+  scheduler: {
+    enabled: env.SCHEDULER_ENABLED !== 'false',
+    intervalMs: Math.max(1, positive(env.SCHEDULER_INTERVAL_SECONDS, 30)) * 1000,
+  },
   trialDays: positive(env.TRIAL_DAYS, 3),
   accessDays: positive(env.ACCESS_DAYS, 30),
   admin: {

@@ -1,0 +1,192 @@
+// Banco de dados do DM Financeiro (PostgreSQL).
+// Para criar/atualizar as tabelas: npm run db:deploy
+// Para alterar este arquivo e gerar nova migração em desenvolvimento: npm run db:migrate
+
+generator client {
+  provider   = "prisma-client-js"
+  engineType = "client"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum UserKind {
+  PF
+  PJ
+}
+
+enum Role {
+  usuario
+  admin
+}
+
+enum Plan {
+  bronze
+  prata
+  ouro
+}
+
+enum PaymentStatus {
+  pending
+  paid
+}
+
+enum MessageKind {
+  cobranca
+  lembrete
+}
+
+enum MessageStatus {
+  sent
+  partial
+  failed
+}
+
+enum Recurrence {
+  avulsa
+  mensal
+}
+
+enum ScheduleStatus {
+  ativa
+  pausada
+  concluida
+}
+
+model User {
+  id           Int       @id @default(autoincrement())
+  kind         UserKind
+  name         String
+  document     String    @unique
+  email        String    @unique
+  phone        String    @default("")
+  passwordHash String    @map("password_hash")
+  role         Role      @default(usuario)
+  plan         Plan      @default(bronze)
+  trialEndsAt  DateTime  @map("trial_ends_at")
+  accessUntil  DateTime? @map("access_until")
+  createdAt    DateTime  @default(now()) @map("created_at")
+
+  instances Instance[]
+  payments  Payment[]
+  contacts  Contact[]
+  schedules Schedule[]
+  messages  Message[]
+
+  @@map("users")
+}
+
+model Instance {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String   @unique
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+
+  @@index([userId])
+  @@map("instances")
+}
+
+model Payment {
+  id             Int           @id @default(autoincrement())
+  userId         Int           @map("user_id")
+  orderNsu       String        @unique @map("order_nsu")
+  plan           Plan
+  amountCents    Int           @map("amount_cents")
+  status         PaymentStatus @default(pending)
+  slug           String?
+  transactionNsu String?       @map("transaction_nsu")
+  receiptUrl     String?       @map("receipt_url")
+  createdAt      DateTime      @default(now()) @map("created_at")
+  paidAt         DateTime?     @map("paid_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("payments")
+}
+
+// Clientes salvos pelo usuário (para escolher rápido ao criar cobranças e lembretes).
+model Contact {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String
+  phone     String
+  email     String?
+  notes     String?
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+  messages  Message[]
+
+  @@unique([userId, phone])
+  @@index([userId, name])
+  @@map("contacts")
+}
+
+// Cobrança ou lembrete: avulso (uma vez) ou mensal (todo mês), enviado automaticamente.
+model Schedule {
+  id          Int            @id @default(autoincrement())
+  userId      Int            @map("user_id")
+  contactId   Int            @map("contact_id")
+  instanceId  Int?           @map("instance_id")
+  kind        MessageKind
+  recurrence  Recurrence
+  status      ScheduleStatus @default(ativa)
+  amountCents Int?           @map("amount_cents")
+  text        String
+  extra       String?
+  // Vencimento: data exata (avulsa) ou o primeiro vencimento, de onde sai o dia do mês (mensal).
+  dueDate     DateTime       @map("due_date") @db.Date
+  // Vencimento da próxima ocorrência ainda não enviada.
+  nextDueDate DateTime?      @map("next_due_date") @db.Date
+  daysBefore  Int            @default(0) @map("days_before")
+  sendTime    String         @map("send_time")
+  nextRunAt   DateTime?      @map("next_run_at")
+  attempts    Int            @default(0)
+  lastRunAt   DateTime?      @map("last_run_at")
+  lastStatus  MessageStatus? @map("last_status")
+  lastError   String?        @map("last_error")
+  sentCount   Int            @default(0) @map("sent_count")
+  createdAt   DateTime       @default(now()) @map("created_at")
+  updatedAt   DateTime       @updatedAt @map("updated_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  instance Instance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  messages Message[]
+
+  @@index([userId, kind])
+  @@index([status, nextRunAt])
+  @@map("schedules")
+}
+
+// Histórico de tudo que foi enviado.
+model Message {
+  id           Int           @id @default(autoincrement())
+  userId       Int           @map("user_id")
+  contactId    Int?          @map("contact_id")
+  scheduleId   Int?          @map("schedule_id")
+  contactName  String?       @map("contact_name")
+  instanceName String        @map("instance_name")
+  kind         MessageKind
+  number       String
+  hasExtra     Boolean       @default(false) @map("has_extra")
+  status       MessageStatus
+  error        String?
+  automatic    Boolean       @default(false)
+  createdAt    DateTime      @default(now()) @map("created_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+  schedule Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+
+  @@index([userId, createdAt])
+  @@map("messages")
+}
