@@ -29,7 +29,7 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 
 - Use um banco **só para este sistema**. O Prisma recusa criar tabelas em um banco que já tem outras (erro `P3005`).
 - Senha com caracteres especiais (`@ : / ? # %`) precisa ser codificada (`@` vira `%40`).
-- Tabelas: `users`, `instances`, `payments`, `contacts` (clientes), `schedules` (cobranças e lembretes agendados) e `messages` (histórico).
+- Tabelas: `users`, `instances`, `payments`, `contacts` (clientes), `schedules` (cobranças e lembretes agendados), `messages` (histórico) e `billing_payments` (cobranças marcadas como pagas).
 
 ## O que o sistema faz
 
@@ -42,6 +42,9 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 - **Link ou Pix:** sai em uma **segunda mensagem**, para copiar e colar com um toque.
 - **Envio automático:** o sistema verifica a cada 30 s (`SCHEDULER_INTERVAL_SECONDS`). Se o WhatsApp estiver desconectado, tenta de novo a cada 15 min, até 4 vezes. Se o horário passar mais de 6 horas (sistema parado, por exemplo), **não** envia a cobrança atrasada e registra a falha. O envio não duplica, mesmo com mais de uma cópia do sistema rodando.
 - **Visualização:** cobranças e lembretes em **lista** (com filtros) ou **calendário** mensal. Cada item pode ser enviado agora, pausado, editado ou excluído.
+- **Cobrança paga:** em *Cobranças*, o botão ✓ marca como paga. O usuário escolhe qual vencimento foi pago (nas mensais, qualquer um dos últimos meses) e o **dia em que o cliente pagou**. Dá para desfazer. Uma cobrança já paga **não é enviada de novo** no horário agendado. Excluir a cobrança ou o cliente mantém o pagamento no faturamento.
+- **Faturamento:** aba *Faturamento* em Cobranças, com o total recebido nos últimos **30, 60 e 90 dias** e **por intervalo de datas** (conta pelo dia do pagamento), gráfico de barras e lista dos pagamentos recebidos.
+- **Como cada cliente paga:** nota de **1 a 5 estrelas** pela média de atraso nos últimos 12 pagamentos: 5 = paga em dia (ou antes), 4 = atrasa 1 dia, 3 = 2 dias, 2 = 3 dias, 1 = 4 dias ou mais. Mostra também o dia do mês em que o cliente costuma pagar e o atraso médio, na aba Faturamento e em cada cobrança da lista.
 - **Início:** clientes cadastrados, valor total das cobranças mensais, previsto no mês, mensagens enviadas, próximos envios e histórico.
 
 ## Deploy no EasyPanel

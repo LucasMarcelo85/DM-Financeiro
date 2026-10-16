@@ -1,8 +1,10 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
-import { Link } from 'react-router-dom';
+import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
+import BillingDashboard from '../components/BillingDashboard.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
+import PayModal from '../components/PayModal.jsx';
 import ScheduleItem from '../components/ScheduleItem.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, firstName, isoToBR, todayISO } from '../lib/format.js';
@@ -109,6 +111,22 @@ export default function Schedules({ kind }) {
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmSend, setConfirmSend] = useState(null);
 
+  // Só nas cobranças: aba de faturamento, marcar como paga e nota de pontualidade dos clientes.
+  const [params, setParams] = useSearchParams();
+  const tab = kind === 'cobranca' && params.get('aba') === 'faturamento' ? 'faturamento' : 'lista';
+  const changeTab = (t) => setParams(t === 'faturamento' ? { aba: 'faturamento' } : {}, { replace: true });
+  const [clients, setClients] = useState(null);
+  const [version, setVersion] = useState(0);
+  const [payTarget, setPayTarget] = useState(null);
+  const [confirmUndo, setConfirmUndo] = useState(null);
+
+  const loadClients = useCallback(
+    () => (kind === 'cobranca' ? api.get('/receipts/clients').then((r) => setClients(r.clients)).catch(() => setClients([])) : Promise.resolve()),
+    [kind]
+  );
+  useEffect(() => { loadClients(); }, [loadClients]);
+  const ratings = useMemo(() => new Map((clients || []).map((c) => [c.contactId, c])), [clients]);
+
   const load = useCallback(() => api.get(`/schedules?kind=${kind}`).then((r) => setItems(r.schedules)).catch((e) => toast(e.message, 'error')), [kind, toast]);
   useEffect(() => {
     setItems(null);
@@ -131,6 +149,29 @@ export default function Schedules({ kind }) {
 
   const sendNow = (s) => { setConfirmSend(null); return act(s, () => api.post(`/schedules/${s.id}/send-now`), `Enviado para ${s.contact.name}.`); };
   const toggle = (s) => act(s, () => api.post(`/schedules/${s.id}/${s.status === 'ativa' ? 'pause' : 'resume'}`), s.status === 'ativa' ? 'Envio pausado.' : 'Envio retomado.');
+  async function confirmPaid(s, body) {
+    setBusyId(s.id);
+    try {
+      const r = await api.post(`/schedules/${s.id}/paid`, body);
+      replace(r.schedule);
+      setPayTarget(null);
+      toast(`Pagamento de ${s.contact.name} registrado.`);
+      setVersion((v) => v + 1);
+      loadClients();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusyId(null); }
+  }
+
+  async function undoPaid(p) {
+    setConfirmUndo(null);
+    try {
+      await api.del(`/receipts/${p.id}`);
+      toast('Pagamento desfeito.');
+      setVersion((v) => v + 1);
+      load();
+      loadClients();
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
   async function remove(s) {
     setConfirmDel(null);
     try { await api.del(`/schedules/${s.id}`); setItems((l) => l.filter((x) => x.id !== s.id)); toast('Excluído.'); } catch (e) { toast(e.message, 'error'); }
@@ -147,7 +188,13 @@ export default function Schedules({ kind }) {
     return (items || []).filter((s) => (filter === 'todas' || s.status === filter) && (!term || s.contact?.name.toLowerCase().includes(term)));
   }, [items, filter, q]);
 
-  const renderItem = (s) => <ScheduleItem key={s.id} s={s} busy={busyId === s.id} onSendNow={setConfirmSend} onToggle={toggle} onDelete={setConfirmDel} />;
+  const renderItem = (s) => (
+    <ScheduleItem
+      key={s.id} s={s} busy={busyId === s.id} rating={ratings.get(s.contact?.id)}
+      onSendNow={setConfirmSend} onToggle={toggle} onDelete={setConfirmDel}
+      onPaid={setPayTarget} onUndo={(p) => setConfirmUndo({ ...p, contactName: p.contactName ?? s.contact?.name })}
+    />
+  );
 
   return (
     <>
@@ -161,6 +208,17 @@ export default function Schedules({ kind }) {
         <Link to={`${cfg.route}/${kind === 'cobranca' ? 'nova' : 'novo'}`} className="btn btn-primary"><Icon name="plus" size={18} /> {cfg.newLabel}</Link>
       </header>
 
+      {kind === 'cobranca' && (
+        <div className="seg seg-view seg-tabs" role="tablist" aria-label="Seção de cobranças">
+          <button role="tab" aria-selected={tab === 'lista'} className={tab === 'lista' ? 'is-on' : ''} onClick={() => changeTab('lista')}><Icon name="list" size={16} /> Cobranças</button>
+          <button role="tab" aria-selected={tab === 'faturamento'} className={tab === 'faturamento' ? 'is-on' : ''} onClick={() => changeTab('faturamento')}><Icon name="trend" size={16} /> Faturamento</button>
+        </div>
+      )}
+
+      {tab === 'faturamento' ? (
+        <BillingDashboard version={version} clients={clients} onUndo={setConfirmUndo} />
+      ) : (
+      <>
       <div className="toolbar">
         <div className="seg seg-view" role="radiogroup" aria-label="Modo de visualização">
           <button role="radio" aria-checked={view === 'lista'} className={view === 'lista' ? 'is-on' : ''} onClick={() => changeView('lista')}><Icon name="list" size={16} /> Lista</button>
@@ -192,7 +250,16 @@ export default function Schedules({ kind }) {
       ) : (
         <ul className="sched-list">{visible.map(renderItem)}</ul>
       )}
+      </>
+      )}
 
+      {payTarget && <PayModal s={payTarget} busy={busyId === payTarget.id} onClose={() => setPayTarget(null)} onConfirm={confirmPaid} />}
+      {confirmUndo && (
+        <Modal title="Desfazer pagamento?" onClose={() => setConfirmUndo(null)}
+          footer={<><button className="btn btn-ghost" onClick={() => setConfirmUndo(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => undoPaid(confirmUndo)}>Desfazer pagamento</button></>}>
+          <p>O pagamento de <strong>{confirmUndo.contactName}</strong> (vencimento {isoToBR(confirmUndo.dueDate)}) deixa de contar no faturamento e na nota de pontualidade do cliente.</p>
+        </Modal>
+      )}
       {confirmSend && (
         <Modal title={`Enviar ${cfg.singular} agora?`} onClose={() => setConfirmSend(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmSend(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => sendNow(confirmSend)}>Enviar agora</button></>}>
@@ -202,7 +269,7 @@ export default function Schedules({ kind }) {
       {confirmDel && (
         <Modal title={`Excluir ${cfg.singular}?`} onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
-          <p>Os envios de <strong>{confirmDel.contact.name}</strong> deixam de acontecer. O histórico do que já foi enviado é mantido.</p>
+          <p>Os envios de <strong>{confirmDel.contact.name}</strong> deixam de acontecer. O histórico do que já foi enviado é mantido.{kind === 'cobranca' ? ' Os pagamentos já marcados continuam no faturamento.' : ''}</p>
         </Modal>
       )}
     </>

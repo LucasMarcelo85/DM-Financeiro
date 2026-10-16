@@ -225,6 +225,56 @@ try {
 
   r = await u('GET', '/messages?limit=50'); assert.ok(r.body.messages.some((m) => m.automatic) && r.body.messages.some((m) => !m.automatic)); ok('histórico separa envio automático e manual');
 
+  // ===== cobrança paga, faturamento e estrelas =====
+  r = await u('POST', '/schedules', { ...base, recurrence: 'mensal', contactId: maria.id, amountCents: 30000, dueDate: plusDays(-40), daysBefore: 0, sendTime: '00:00' });
+  assert.equal(r.status, 201); const bill = r.body.schedule; assert.ok(bill.payable.length >= 2); assert.equal(bill.payDefault, bill.dueDate);
+  r = await u('POST', `/schedules/${bill.id}/paid`, { paidAt: plusDays(-38) });
+  assert.equal(r.status, 201); const pay1 = r.body.payment; assert.equal(pay1.dueDate, bill.dueDate); assert.equal(pay1.lateDays, 2); assert.equal(pay1.amountCents, 30000);
+  assert.ok(!r.body.schedule.payable.includes(bill.dueDate)); assert.equal(r.body.schedule.payments.length, 1);
+  ok('marcar cobrança como paga: guarda vencimento, dia do pagamento e dias de atraso');
+
+  r = await u('POST', `/schedules/${bill.id}/paid`, { dueDate: bill.dueDate }); assert.equal(r.status, 409);
+  r = await u('POST', `/schedules/${bill.id}/paid`, { dueDate: '2020-01-01' }); assert.equal(r.status, 400);
+  r = await u('POST', `/schedules/${bill.id}/paid`, { paidAt: plusDays(3) }); assert.equal(r.status, 400);
+  r = await u('POST', `/schedules/${lembrete.id}/paid`, {}); assert.equal(r.status, 400);
+  r = await other('POST', `/schedules/${bill.id}/paid`, {}); assert.equal(r.status, 404);
+  ok('pagamento: não duplica o mesmo vencimento, recusa data futura, lembrete e cobrança de outro usuário');
+
+  const next = (await u('GET', `/schedules/${bill.id}`)).body.schedule.payDefault; assert.ok(next && next !== bill.dueDate);
+  r = await u('POST', `/schedules/${bill.id}/paid`, { dueDate: next, paidAt: plusDays(-1) });
+  assert.equal(r.status, 201); const pay2 = r.body.payment;
+
+  r = await u('GET', '/receipts/summary?days=30');
+  assert.equal(r.status, 200); assert.equal(r.body.periods['30'].count, 1); assert.equal(r.body.periods['30'].totalCents, 30000);
+  assert.equal(r.body.periods['60'].count, 2); assert.equal(r.body.periods['60'].totalCents, 60000); assert.equal(r.body.periods['90'].count, 2);
+  assert.equal(r.body.totalCents, 30000); assert.equal(r.body.items.length, 1); assert.equal(r.body.series.length, 1);
+  r = await u('GET', '/receipts/summary?days=60'); assert.equal(r.body.totalCents, 60000); assert.equal(r.body.averageCents, 30000);
+  r = await u('GET', `/receipts/summary?from=${plusDays(-45)}&to=${plusDays(-30)}`); assert.equal(r.body.count, 1); assert.equal(r.body.totalCents, 30000);
+  r = await u('GET', `/receipts/summary?from=${plusDays(-5)}&to=${plusDays(-30)}`); assert.equal(r.status, 400);
+  r = await other('GET', '/receipts/summary?days=90'); assert.equal(r.body.totalCents, 0);
+  ok('faturamento por 30, 60 e 90 dias e por intervalo de datas (cada usuário vê só o seu)');
+
+  r = await u('GET', '/receipts/clients');
+  assert.equal(r.body.clients.length, 1); const rate = r.body.clients[0];
+  assert.equal(rate.contactId, maria.id); assert.equal(rate.count, 2); assert.equal(rate.totalCents, 60000); assert.ok(rate.usualDay >= 1 && rate.usualDay <= 31);
+  assert.equal(rate.stars, Math.min(5, Math.max(1, 5 - Math.round((2 + pay2.lateDays) / 2))));
+  ok('avaliação do cliente em estrelas (5 = em dia, uma a menos por dia de atraso em média) com o dia habitual de pagamento');
+
+  // cobrança já paga não é enviada de novo no horário agendado
+  r = await u('POST', '/schedules', { ...base, contactId: maria.id }); const prepaid = r.body.schedule;
+  r = await u('POST', `/schedules/${prepaid.id}/paid`, {}); assert.equal(r.status, 201); assert.equal(r.body.payment.lateDays, 0);
+  sent.length = 0; await forceDue(prepaid.id);
+  const skipped = await eventually(async () => { const s = await row(prepaid.id); return s.status === 'concluida' && s; }, 'cobrança paga não é cobrada');
+  assert.equal(sent.length, 0); assert.equal(skipped.sent_count, 0); assert.equal(skipped.next_run_at, null);
+  ok('cobrança marcada como paga não é enviada de novo');
+
+  r = await u('DELETE', `/receipts/${pay2.id}`); assert.equal(r.status, 200);
+  r = await u('DELETE', `/receipts/${pay2.id}`); assert.equal(r.status, 404);
+  r = await other('DELETE', `/receipts/${pay1.id}`); assert.equal(r.status, 404);
+  assert.equal((await u('GET', '/receipts/summary?days=90')).body.periods['90'].count, 2); // pay1 + a cobrança paga antecipada
+  assert.ok((await u('GET', `/schedules/${bill.id}`)).body.schedule.payable.includes(next));
+  ok('desfazer pagamento devolve o vencimento para a lista e tira do faturamento');
+
   // ===== fim do teste grátis, bloqueio e pagamento =====
   const pending = await u('POST', '/schedules', { ...base, contactId: maria.id }); const blocked = pending.body.schedule;
   await db.query("UPDATE users SET trial_ends_at = now() - interval '1 second' WHERE email = 'maria@t.com'");
