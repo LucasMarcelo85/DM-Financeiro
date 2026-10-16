@@ -1,15 +1,16 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
-import { TIME_RE, firstOccurrence, parseISODate } from '../utils/schedule.js';
-import { scheduleDTO } from '../utils/serialize.js';
+import { TIME_RE, defaultPayableDue, firstOccurrence, localToday, parseISODate, payableDues, toISODate } from '../utils/schedule.js';
+import { billingPaymentDTO, scheduleDTO } from '../utils/serialize.js';
 import { deliver, instanceCandidates, logMessage, pickOpenInstance, renderFor } from '../services/dispatcher.js';
 
 const router = Router();
 const KINDS = ['cobranca', 'lembrete'];
 const NAMES = { cobranca: 'cobrança', lembrete: 'lembrete' };
 const PAST_MSG = 'Esse dia e horário de envio já passaram. Escolha uma data futura ou use "Enviar agora".';
-const include = { contact: true };
+// Junto com cada item vão os pagamentos marcados (os 24 vencimentos mais recentes).
+const include = { contact: true, billingPayments: { orderBy: { dueDate: 'desc' }, take: 24 } };
 
 async function getOwned(req) {
   const id = Number(req.params.id);
@@ -181,6 +182,47 @@ router.post('/:id/resume', async (req, res) => {
     include,
   });
   res.json({ schedule: scheduleDTO(updated) });
+});
+
+// Marca a cobrança como paga. Body (opcional): { dueDate: vencimento pago, paidAt: dia em que o cliente pagou }.
+// Sem dueDate usa o vencimento sugerido; sem paidAt usa hoje.
+router.post('/:id/paid', async (req, res) => {
+  const s = await getOwned(req);
+  if (s.kind !== 'cobranca') throw new AppError(400, 'Só cobranças podem ser marcadas como pagas.');
+  if (s.amountCents == null) throw new AppError(409, 'Esta cobrança está sem valor. Edite e informe o valor.');
+
+  const today = localToday();
+  const alreadyPaid = new Set(s.billingPayments.map((p) => toISODate(p.dueDate)));
+  const open = payableDues(s, today).filter((d) => !alreadyPaid.has(toISODate(d)));
+
+  let dueDate;
+  if (req.body?.dueDate != null && req.body.dueDate !== '') {
+    dueDate = parseISODate(req.body.dueDate);
+    if (!dueDate) throw new AppError(400, 'Vencimento inválido.');
+    if (alreadyPaid.has(toISODate(dueDate))) throw new AppError(409, 'Esse vencimento já está marcado como pago.');
+    if (!open.some((d) => d.getTime() === dueDate.getTime())) throw new AppError(400, 'Esse vencimento não faz parte desta cobrança.');
+  } else {
+    dueDate = defaultPayableDue(open, today);
+    if (!dueDate) throw new AppError(409, 'Todos os vencimentos desta cobrança já estão pagos.');
+  }
+
+  let paidAt = today;
+  if (req.body?.paidAt != null && req.body.paidAt !== '') {
+    paidAt = parseISODate(req.body.paidAt);
+    if (!paidAt) throw new AppError(400, 'Data do pagamento inválida.');
+    if (paidAt > today) throw new AppError(400, 'A data do pagamento não pode ser no futuro.');
+  }
+
+  let payment;
+  try {
+    payment = await prisma.billingPayment.create({
+      data: { userId: req.user.id, scheduleId: s.id, contactId: s.contactId, contactName: s.contact.name, amountCents: s.amountCents, dueDate, paidAt },
+    });
+  } catch (e) {
+    if (e?.code === 'P2002') throw new AppError(409, 'Esse vencimento já está marcado como pago.');
+    throw e;
+  }
+  res.status(201).json({ payment: billingPaymentDTO(payment), schedule: scheduleDTO(await getOwned(req)) });
 });
 
 router.post('/:id/send-now', async (req, res) => {
