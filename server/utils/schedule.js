@@ -89,6 +89,21 @@ export function occurrenceAfter(schedule, now = new Date()) {
   return null;
 }
 
+// Vencimentos de uma cobrança que dá para marcar como pagos: o da avulsa, ou os mensais de
+// 5 meses atrás até o mês que vem (pagamento adiantado).
+export function payableDues(schedule, today = localToday()) {
+  if (schedule.recurrence === 'avulsa') return [schedule.dueDate];
+  const kNow = monthIndexDiff(schedule.dueDate, today);
+  const out = [];
+  for (let k = Math.max(0, kNow - 5); k <= Math.max(0, kNow + 1); k++) out.push(dueForMonthOffset(schedule.dueDate, k));
+  return out;
+}
+
+// Qual vencimento sugerir: o mais antigo que já venceu e segue sem pagamento; se nenhum, o mais próximo.
+export function defaultPayableDue(openDues, today = localToday()) {
+  return openDues.find((d) => d <= today) ?? openDues[0] ?? null;
+}
+
 // Vencimento do agendamento dentro de um mês (ou null). month0 = 0..11.
 export function dueInMonth(schedule, year, month0) {
   if (schedule.recurrence === 'avulsa') {

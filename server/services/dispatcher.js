@@ -84,10 +84,26 @@ async function finalize(schedule, status, error, now) {
   await prisma.schedule.update({ where: { id: schedule.id }, data });
 }
 
+// Cobrança cujo vencimento já foi marcado como pago: não cobra de novo, só passa para a próxima data.
+async function skipPaid(schedule, now) {
+  const data = { attempts: 0 };
+  if (schedule.recurrence === 'mensal') {
+    const next = occurrenceAfter(schedule, now);
+    Object.assign(data, next ? { nextDueDate: next.nextDueDate, nextRunAt: next.nextRunAt } : { nextRunAt: null, status: 'concluida' });
+  } else {
+    Object.assign(data, { status: 'concluida', nextRunAt: null });
+  }
+  await prisma.schedule.update({ where: { id: schedule.id }, data });
+}
+
 async function processOne(s, originalRunAt) {
   const now = new Date();
   const contact = s.contact;
   const dueDate = s.nextDueDate ?? s.dueDate;
+
+  if (s.kind === 'cobranca' && (await prisma.billingPayment.findFirst({ where: { scheduleId: s.id, dueDate }, select: { id: true } }))) {
+    return skipPaid(s, now);
+  }
 
   if (now - originalRunAt > MAX_LATE_MS) {
     const error = 'O horário do envio passou (o sistema ficou parado ou o acesso estava bloqueado) e a mensagem não foi enviada.';

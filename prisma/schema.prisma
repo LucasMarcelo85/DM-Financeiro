@@ -72,10 +72,8 @@ model User {
   instances Instance[]
   payments  Payment[]
   contacts  Contact[]
-  schedules       Schedule[]
-  messages        Message[]
-  billingPayments BillingPayment[]
-  contracts       Contract[]
+  schedules Schedule[]
+  messages  Message[]
 
   @@map("users")
 }
