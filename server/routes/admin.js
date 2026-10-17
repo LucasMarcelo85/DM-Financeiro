@@ -38,7 +38,7 @@ router.delete('/users/:id', async (req, res) => {
   if (user.role === 'admin') throw new AppError(400, 'Contas de administrador não podem ser excluídas por aqui.');
 
   // Remove as instâncias na Evolution (se falhar, não impede a exclusão da conta).
-  const instances = await prisma.instance.findMany({ where: { userId: user.id }, select: { name: true } });
+  const instances = await prisma.instance.findMany({ where: { userId: user.id, provider: 'evolution' }, select: { name: true } });
   await Promise.all(instances.map((i) => evo.deleteInstance(i.name).catch((e) => console.warn(`[admin] não removeu ${i.name} na Evolution: ${e.message}`))));
 
   await prisma.user.delete({ where: { id: user.id } }); // apaga em cascata clientes, agendamentos e histórico

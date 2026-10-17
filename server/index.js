@@ -10,7 +10,9 @@ import { prisma, connectWithRetry } from './prisma.js';
 import { AppError, DAY } from './utils/helpers.js';
 import { auth, requireAccess, requireAdmin } from './middleware/auth.js';
 import authRoutes from './routes/auth.js';
-import instanceRoutes from './routes/instances.js';
+import instanceRoutes, { instanceRouter } from './routes/instances.js';
+import auditRoutes from './routes/audit.js';
+import auditWebhookRoutes from './routes/audit-webhooks.js';
 import contactRoutes from './routes/contacts.js';
 import scheduleRoutes from './routes/schedules.js';
 import statsRoutes from './routes/stats.js';
@@ -83,9 +85,11 @@ app.use(
     },
   })
 );
-const jsonSmall = express.json({ limit: '100kb' });
-const isContractsPath = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/');
-app.use((req, res, next) => (isContractsPath(req.path) ? next() : jsonSmall(req, res, next)));
+// Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
+const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
+// Caminhos com limite de corpo maior ou próprio: contratos (têm imagens) e webhook da Evolution (lotes de contatos).
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p.startsWith('/api/webhooks/evolution/');
+app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 
 const limiter = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde um pouco e tente de novo.' } });
@@ -103,8 +107,11 @@ app.get('/api/health', async (_req, res) => {
 });
 app.use('/api', authRoutes); // /plans e /auth/*
 app.use('/api/webhooks', webhookRouter);
+app.use('/api/webhooks', auditWebhookRoutes);
 app.use('/api/billing', auth, billingRouter);
 app.use('/api/instances', auth, requireAccess, instanceRoutes);
+app.use('/api/audit/instances', auth, requireAccess, instanceRouter('auditoria'));
+app.use('/api/audit', auth, requireAccess, auditRoutes);
 app.use('/api/contacts', auth, requireAccess, contactRoutes);
 app.use('/api/schedules', auth, requireAccess, scheduleRoutes);
 app.use('/api/stats', auth, requireAccess, statsRoutes);

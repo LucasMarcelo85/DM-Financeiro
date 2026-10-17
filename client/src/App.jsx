@@ -12,6 +12,7 @@ import Billing from './pages/Billing.jsx';
 import PaymentReturn from './pages/PaymentReturn.jsx';
 import Contracts from './pages/Contracts.jsx';
 import ContractEditor from './pages/ContractEditor.jsx';
+import Audit from './pages/Audit.jsx';
 import Admin from './pages/Admin.jsx';
 
 const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin'];
@@ -69,6 +70,7 @@ export default function App() {
         <Route path="cobranca" element={<Navigate to="/cobrancas" replace />} />
         <Route path="lembrete" element={<Navigate to="/lembretes" replace />} />
         <Route path="contratos" element={<Contracts />} />
+        <Route path="auditoria" element={<Audit />} />
         <Route path="plano" element={<Billing />} />
         <Route path="pagamento/retorno" element={<PaymentReturn />} />
         <Route element={<AdminOnly />}>

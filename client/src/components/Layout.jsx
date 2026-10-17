@@ -11,6 +11,7 @@ const NAV = [
   { to: '/cobrancas', label: 'Cobranças', icon: 'money' },
   { to: '/lembretes', label: 'Lembretes', icon: 'bell' },
   { to: '/contratos', label: 'Contratos', icon: 'file' },
+  { to: '/auditoria', label: 'Auditoria', icon: 'eye' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
 ];
 
@@ -73,7 +74,7 @@ export default function Layout() {
       </aside>
 
       <main className="main">
-        <div className="page">
+        <div className={`page ${pathname.startsWith('/auditoria') ? 'page-wide' : ''}`}>
           <Outlet />
         </div>
       </main>

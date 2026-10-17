@@ -54,7 +54,7 @@ function parseFields(body, kind) {
 async function resolveInstanceId(userId, value) {
   if (value == null || value === '') return null;
   const id = Number(value);
-  const inst = Number.isInteger(id) ? await prisma.instance.findFirst({ where: { id, userId } }) : null;
+  const inst = Number.isInteger(id) ? await prisma.instance.findFirst({ where: { id, userId, purpose: 'envio' } }) : null;
   if (!inst) throw new AppError(400, 'WhatsApp inválido.');
   return inst.id;
 }
@@ -117,7 +117,7 @@ router.post('/', async (req, res) => {
   }
 
   // Enviar agora: confere o WhatsApp, envia e guarda o registro como concluído.
-  const instances = await prisma.instance.findMany({ where: { userId: req.user.id }, orderBy: { id: 'asc' } });
+  const instances = await prisma.instance.findMany({ where: { userId: req.user.id, purpose: 'envio' }, orderBy: { id: 'asc' } });
   const { instance } = await pickOpenInstance(instanceCandidates({ instanceId }, instances));
   if (!instance) throw new AppError(409, 'Nenhum WhatsApp conectado. Conecte seu WhatsApp e tente de novo.', 'WHATSAPP_DISCONNECTED');
 
@@ -125,7 +125,7 @@ router.post('/', async (req, res) => {
   const { text, extra } = renderFor(created, contact, f.dueDate);
   let result;
   try {
-    result = await deliver(instance.name, contact.phone, text, extra);
+    result = await deliver(instance, contact.phone, text, extra);
   } catch (e) {
     await logMessage({ schedule: created, contact, instanceName: instance.name, status: 'failed', error: e.message, automatic: false });
     await prisma.schedule.delete({ where: { id: created.id } });
@@ -227,14 +227,14 @@ router.post('/:id/paid', async (req, res) => {
 
 router.post('/:id/send-now', async (req, res) => {
   const s = await getOwned(req);
-  const instances = await prisma.instance.findMany({ where: { userId: req.user.id }, orderBy: { id: 'asc' } });
+  const instances = await prisma.instance.findMany({ where: { userId: req.user.id, purpose: 'envio' }, orderBy: { id: 'asc' } });
   const { instance } = await pickOpenInstance(instanceCandidates(s, instances));
   if (!instance) throw new AppError(409, 'Nenhum WhatsApp conectado. Conecte seu WhatsApp e tente de novo.', 'WHATSAPP_DISCONNECTED');
 
   const { text, extra } = renderFor(s, s.contact, s.nextDueDate ?? s.dueDate);
   let result;
   try {
-    result = await deliver(instance.name, s.contact.phone, text, extra);
+    result = await deliver(instance, s.contact.phone, text, extra);
   } catch (e) {
     await logMessage({ schedule: s, contact: s.contact, instanceName: instance.name, status: 'failed', error: e.message, automatic: false });
     throw e;

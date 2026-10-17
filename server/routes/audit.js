@@ -1,0 +1,244 @@
+import { Router } from 'express';
+import { prisma } from '../prisma.js';
+import { AppError, onlyDigits } from '../utils/helpers.js';
+import { limitsFor } from '../plans.js';
+import * as wa from '../services/whatsapp.js';
+import { subscribe } from '../services/audit-hub.js';
+import { chatDTO, messageDTO, norm, recordMessage } from '../services/audit.js';
+
+const router = Router();
+const HEX = /^#[0-9a-f]{6}$/i;
+const MAX_LABELS = 40;
+const MAX_NOTE = 20000;
+const MAX_SEND = 4000;
+
+const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
+const int = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
+
+async function ownChat(req, id = req.params.id) {
+  const n = int(id);
+  const chat = n ? await prisma.auditChat.findFirst({ where: { id: n, userId: req.user.id }, include: { labels: { select: { labelId: true } }, instance: { select: { id: true, name: true, label: true, provider: true, metaPhoneDisplay: true } } } }) : null;
+  if (!chat) throw new AppError(404, 'Conversa não encontrada.');
+  return chat;
+}
+
+const listDTO = (c, extra = {}) => chatDTO(c, { labelIds: c.labels.map((l) => l.labelId), instanceLabel: c.instance?.label || c.instance?.metaPhoneDisplay || null, ...extra });
+
+// Cursor das mensagens: "<ms>_<id>" (ordem por horário e depois id).
+const cursorWhere = (ts, id, dir) => (dir === 'lt' ? { OR: [{ ts: { lt: ts } }, { ts, id: { lt: id } }] } : { OR: [{ ts: { gt: ts } }, { ts, id: { gt: id } }] });
+
+// ---------- Tempo real ----------
+router.get('/stream', (req, res) => {
+  res.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
+  res.flushHeaders();
+  res.write('retry: 3000\n\n');
+  const unsubscribe = subscribe(req.user.id, res);
+  const beat = setInterval(() => res.write(': ping\n\n'), 25000);
+  const done = () => { clearInterval(beat); unsubscribe(); };
+  req.on('close', done);
+  res.on('error', done);
+});
+
+// ---------- Conversas ----------
+router.get('/chats', async (req, res) => {
+  const userId = req.user.id;
+  const limit = clamp(int(req.query.limit) || 40, 1, 100);
+  const where = { userId };
+  if (int(req.query.instanceId)) where.instanceId = int(req.query.instanceId);
+  if (int(req.query.labelId)) where.labels = { some: { labelId: int(req.query.labelId) } };
+  if (req.query.unread === '1') where.unread = { gt: 0 };
+  if (int(req.query.before)) where.lastMessageAt = { lt: new Date(int(req.query.before)) };
+
+  const q = norm(String(req.query.q || '').trim()).slice(0, 100);
+  if (q) {
+    const digits = onlyDigits(q);
+    where.OR = [
+      { name: { contains: q, mode: 'insensitive' } },
+      ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []),
+      { messages: { some: { search: { contains: q } } } },
+    ];
+  }
+
+  const rows = await prisma.auditChat.findMany({
+    where, orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }], take: limit + 1,
+    include: { labels: { select: { labelId: true } }, instance: { select: { id: true, name: true, label: true, metaPhoneDisplay: true } } },
+  });
+  const more = rows.length > limit;
+  const page = rows.slice(0, limit);
+
+  // Com busca: mostra o trecho da última mensagem que contém a palavra.
+  let snippets = new Map();
+  if (q && page.length) {
+    const hits = await prisma.auditMessage.findMany({
+      where: { chatId: { in: page.map((c) => c.id) }, search: { contains: q } },
+      orderBy: { ts: 'desc' }, distinct: ['chatId'], select: { chatId: true, body: true },
+    });
+    snippets = new Map(hits.map((h) => [h.chatId, h.body.replace(/\s+/g, ' ').slice(0, 160)]));
+  }
+
+  res.json({
+    chats: page.map((c) => listDTO(c, snippets.has(c.id) ? { match: snippets.get(c.id) } : {})),
+    nextBefore: more ? page.at(-1).lastMessageAt.getTime() : null,
+  });
+});
+
+router.get('/chats/:id', async (req, res) => {
+  const c = await ownChat(req);
+  res.json({ chat: listDTO(c, { note: c.note, noteUpdatedAt: c.noteUpdatedAt ? c.noteUpdatedAt.getTime() : null, provider: c.instance.provider }) });
+});
+
+router.get('/chats/:id/messages', async (req, res) => {
+  const chat = await ownChat(req);
+  const limit = clamp(int(req.query.limit) || 50, 1, 100);
+  const order = [{ ts: 'desc' }, { id: 'desc' }];
+
+  if (int(req.query.around)) {
+    const target = await prisma.auditMessage.findFirst({ where: { id: int(req.query.around), chatId: chat.id } });
+    if (!target) throw new AppError(404, 'Mensagem não encontrada.');
+    const half = 25;
+    const older = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'lt') }, orderBy: order, take: half + 1 });
+    const newer = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'gt') }, orderBy: [{ ts: 'asc' }, { id: 'asc' }], take: half + 1 });
+    return res.json({
+      messages: [...older.slice(0, half).reverse(), target, ...newer.slice(0, half)].map(messageDTO),
+      hasOlder: older.length > half, hasNewer: newer.length > half,
+    });
+  }
+
+  let where = { chatId: chat.id };
+  const m = /^(\d+)_(\d+)$/.exec(String(req.query.before || ''));
+  if (m) where = { chatId: chat.id, ...cursorWhere(new Date(Number(m[1])), Number(m[2]), 'lt') };
+  const rows = await prisma.auditMessage.findMany({ where, orderBy: order, take: limit + 1 });
+  res.json({ messages: rows.slice(0, limit).reverse().map(messageDTO), hasOlder: rows.length > limit, hasNewer: false });
+});
+
+// Busca por palavra-chave dentro de UMA conversa (ignora maiúsculas e acentos).
+router.get('/chats/:id/search', async (req, res) => {
+  const chat = await ownChat(req);
+  const q = norm(String(req.query.q || '').trim()).slice(0, 100);
+  if (q.length < 2) throw new AppError(400, 'Digite pelo menos 2 letras para buscar.');
+  const where = { chatId: chat.id, search: { contains: q } };
+  const [total, rows] = await Promise.all([
+    prisma.auditMessage.count({ where }),
+    prisma.auditMessage.findMany({ where, orderBy: [{ ts: 'desc' }, { id: 'desc' }], take: 300, select: { id: true, ts: true, fromMe: true, body: true, search: true } }),
+  ]);
+  res.json({
+    total,
+    matches: rows.map((r) => {
+      const at = Math.max(0, r.search.indexOf(q));
+      const from = Math.max(0, at - 40);
+      return { id: r.id, ts: r.ts.getTime(), fromMe: r.fromMe, snippet: `${from > 0 ? '…' : ''}${r.body.slice(from, at + q.length + 60).replace(/\s+/g, ' ')}` };
+    }),
+  });
+});
+
+router.post('/chats/:id/read', async (req, res) => {
+  const chat = await ownChat(req);
+  if (chat.unread) await prisma.auditChat.update({ where: { id: chat.id }, data: { unread: 0 } });
+  res.json({ ok: true });
+});
+
+// Bloco de anotações da conversa (um texto livre por conversa).
+router.put('/chats/:id/note', async (req, res) => {
+  const chat = await ownChat(req);
+  const note = String(req.body?.note ?? '');
+  if (note.length > MAX_NOTE) throw new AppError(400, `A anotação pode ter até ${MAX_NOTE} caracteres.`);
+  const u = await prisma.auditChat.update({ where: { id: chat.id }, data: { note, noteUpdatedAt: note ? new Date() : null } });
+  res.json({ note: u.note, noteUpdatedAt: u.noteUpdatedAt ? u.noteUpdatedAt.getTime() : null });
+});
+
+router.put('/chats/:id/labels', async (req, res) => {
+  const chat = await ownChat(req);
+  const ids = [...new Set((Array.isArray(req.body?.labelIds) ? req.body.labelIds : []).map(Number).filter(Number.isInteger))];
+  const valid = ids.length ? await prisma.auditLabel.findMany({ where: { userId: req.user.id, id: { in: ids } }, select: { id: true } }) : [];
+  await prisma.$transaction([
+    prisma.auditChatLabel.deleteMany({ where: { chatId: chat.id } }),
+    prisma.auditChatLabel.createMany({ data: valid.map((l) => ({ chatId: chat.id, labelId: l.id })) }),
+  ]);
+  res.json({ labelIds: valid.map((l) => l.id) });
+});
+
+// Responder a conversa: só no plano que permite (Ouro).
+router.post('/chats/:id/send', async (req, res) => {
+  if (!limitsFor(req.user).auditSend) {
+    throw new AppError(403, 'Responder conversas pela auditoria é um recurso do plano Ouro. No seu plano você só visualiza as conversas.', 'PLAN_NO_SEND');
+  }
+  const chat = await ownChat(req);
+  const text = String(req.body?.text ?? '').trim();
+  if (!text) throw new AppError(400, 'Escreva a mensagem.');
+  if (text.length > MAX_SEND) throw new AppError(400, `A mensagem pode ter até ${MAX_SEND} caracteres.`);
+
+  const inst = await prisma.instance.findFirst({ where: { id: chat.instanceId, userId: req.user.id, purpose: 'auditoria' }, include: { user: true } });
+  if (!inst) throw new AppError(404, 'A conexão desta conversa não existe mais.');
+  if ((await wa.getState(inst)) !== 'open') throw new AppError(409, 'Este número está desconectado. Reconecte para enviar.', 'WHATSAPP_DISCONNECTED');
+
+  const to = chat.isGroup ? chat.jid : chat.phone || chat.jid;
+  const sent = await wa.sendText(inst, to, text);
+  const externalId = sent?.key?.id || `local-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`;
+  const saved = await recordMessage(inst, {
+    jid: chat.jid, isGroup: chat.isGroup, phone: chat.phone, chatName: null, externalId, fromMe: true, sender: chat.isGroup ? 'Você' : null, type: 'text', body: text, ts: Date.now(), status: 'sent',
+  }, { live: true });
+  // Se o webhook entregou a mesma mensagem antes, ela já existe: devolve a existente.
+  const message = saved?.message || messageDTO(await prisma.auditMessage.findFirst({ where: { chatId: chat.id, externalId } }));
+  res.status(201).json({ message });
+});
+
+// ---------- Etiquetas ----------
+const labelDTO = (l) => ({ id: l.id, name: l.name, color: l.color });
+
+function cleanLabelInput(b, { partial = false } = {}) {
+  const out = {};
+  if (!partial || b.name !== undefined) {
+    const name = String(b.name ?? '').replace(/\s+/g, ' ').trim();
+    if (name.length < 1 || name.length > 30) throw new AppError(400, 'O nome da etiqueta deve ter de 1 a 30 caracteres.');
+    out.name = name;
+  }
+  if (b.color !== undefined) {
+    if (!HEX.test(String(b.color))) throw new AppError(400, 'Cor inválida.');
+    out.color = String(b.color).toLowerCase();
+  }
+  return out;
+}
+
+router.get('/labels', async (req, res) => {
+  const rows = await prisma.auditLabel.findMany({ where: { userId: req.user.id }, orderBy: { name: 'asc' }, include: { _count: { select: { chats: true } } } });
+  res.json({ labels: rows.map((l) => ({ ...labelDTO(l), count: l._count.chats })) });
+});
+
+router.post('/labels', async (req, res) => {
+  const data = cleanLabelInput(req.body || {});
+  if ((await prisma.auditLabel.count({ where: { userId: req.user.id } })) >= MAX_LABELS) throw new AppError(400, `Você pode ter até ${MAX_LABELS} etiquetas.`);
+  try {
+    const l = await prisma.auditLabel.create({ data: { userId: req.user.id, ...data } });
+    res.status(201).json({ label: labelDTO(l) });
+  } catch (e) {
+    if (e.code === 'P2002') throw new AppError(409, 'Você já tem uma etiqueta com esse nome.');
+    throw e;
+  }
+});
+
+async function ownLabel(req) {
+  const id = int(req.params.id);
+  const l = id ? await prisma.auditLabel.findFirst({ where: { id, userId: req.user.id } }) : null;
+  if (!l) throw new AppError(404, 'Etiqueta não encontrada.');
+  return l;
+}
+
+router.patch('/labels/:id', async (req, res) => {
+  const l = await ownLabel(req);
+  const data = cleanLabelInput(req.body || {}, { partial: true });
+  if (!Object.keys(data).length) throw new AppError(400, 'Nada para atualizar.');
+  try {
+    res.json({ label: labelDTO(await prisma.auditLabel.update({ where: { id: l.id }, data })) });
+  } catch (e) {
+    if (e.code === 'P2002') throw new AppError(409, 'Você já tem uma etiqueta com esse nome.');
+    throw e;
+  }
+});
+
+router.delete('/labels/:id', async (req, res) => {
+  const l = await ownLabel(req);
+  await prisma.auditLabel.delete({ where: { id: l.id } });
+  res.json({ ok: true });
+});
+
+export default router;

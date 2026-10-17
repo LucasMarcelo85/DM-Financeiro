@@ -4,7 +4,7 @@ import { sleep } from '../utils/helpers.js';
 import { occurrenceAfter } from '../utils/schedule.js';
 import { renderTemplate } from '../utils/template.js';
 import { accessibleUserFilter } from './access.js';
-import * as evo from './evolution.js';
+import * as wa from './whatsapp.js';
 
 const MAX_LATE_MS = 6 * 60 * 60 * 1000; // passou de 6h do horário: não envia cobrança "velha"
 const RETRY_MS = 15 * 60 * 1000;
@@ -16,7 +16,7 @@ export async function pickOpenInstance(candidates) {
   let lastError = null;
   for (const inst of candidates) {
     try {
-      if ((await evo.getState(inst.name)) === 'open') return { instance: inst, error: null };
+      if ((await wa.getState(inst)) === 'open') return { instance: inst, error: null };
     } catch (e) {
       lastError = e.message;
     }
@@ -31,12 +31,12 @@ export const instanceCandidates = (schedule, userInstances) => {
 
 // Envia o texto e, se houver, o link/Pix em uma segunda mensagem.
 // Lança erro se o texto falhar; devolve 'partial' se só o link/Pix falhar.
-export async function deliver(instanceName, number, text, extra) {
-  await evo.sendText(instanceName, number, text);
+export async function deliver(instance, number, text, extra) {
+  await wa.sendText(instance, number, text);
   if (!extra) return { status: 'sent', error: null };
   try {
     await sleep(config.evolution.messageDelayMs);
-    await evo.sendText(instanceName, number, extra);
+    await wa.sendText(instance, number, extra);
     return { status: 'sent', error: null };
   } catch (e) {
     return { status: 'partial', error: `O texto foi enviado, mas o link/Pix não: ${e.message}` };
@@ -118,7 +118,7 @@ async function processOne(s, originalRunAt) {
   if (instance) {
     const { text, extra } = renderFor(s, contact, dueDate);
     try {
-      result = await deliver(instance.name, contact.phone, text, extra);
+      result = await deliver(instance, contact.phone, text, extra);
     } catch (e) {
       failure = e.message;
     }
@@ -149,7 +149,7 @@ export async function runDueSchedules() {
     where: { status: 'ativa', nextRunAt: { lte: now }, user: accessibleUserFilter(now) },
     orderBy: { nextRunAt: 'asc' },
     take: 25,
-    include: { contact: true, user: { include: { instances: { orderBy: { id: 'asc' } } } } },
+    include: { contact: true, user: { include: { instances: { where: { purpose: 'envio' }, orderBy: { id: 'asc' } } } } },
   });
 
   for (const s of due) {

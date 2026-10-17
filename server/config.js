@@ -22,11 +22,16 @@ if (!jwtSecret || jwtSecret === 'troque-por-uma-frase-longa-e-aleatoria') {
   console.warn('[config] JWT_SECRET não definido: usando uma chave temporária (os logins expiram a cada reinício).');
 }
 
+// Chave que protege (criptografa) os tokens da API oficial da Meta guardados no banco.
+// Use ENCRYPTION_KEY fixa em produção; sem ela usa o JWT_SECRET.
+const encryptionSeed = (env.ENCRYPTION_KEY || '').trim() || jwtSecret;
+
 export const config = {
   port: positive(env.PORT, 3001),
   appUrl: trimSlash(env.APP_URL) || 'http://localhost:5173',
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true' ? 1 : 0,
   jwtSecret,
+  secretKey: crypto.createHash('sha256').update(`dm-financeiro:${encryptionSeed}`).digest(),
   databaseUrl: stripQuotes(env.DATABASE_URL),
   timezone: (env.APP_TIMEZONE || 'America/Sao_Paulo').trim(),
   scheduler: {
@@ -51,10 +56,16 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
+  // API oficial do WhatsApp (Meta Cloud API).
+  meta: {
+    graphUrl: trimSlash(env.META_GRAPH_URL) || 'https://graph.facebook.com',
+    apiVersion: (env.META_API_VERSION || 'v21.0').trim(),
+  },
+  // Preço MENSAL de cada plano, em reais. Semestral (paga 5 de 6 meses) e anual (paga 9 de 12) saem daqui.
   prices: {
-    bronze: positive(env.PLAN_BRONZE_PRICE, 29.9),
-    prata: positive(env.PLAN_PRATA_PRICE, 49.9),
-    ouro: positive(env.PLAN_OURO_PRICE, 79.9),
+    bronze: positive(env.PLAN_BRONZE_PRICE, 34.9),
+    prata: positive(env.PLAN_PRATA_PRICE, 54.9),
+    ouro: positive(env.PLAN_OURO_PRICE, 64.9),
   },
 };
 

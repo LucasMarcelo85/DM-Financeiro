@@ -33,6 +33,18 @@ enum PaymentStatus {
   paid
 }
 
+// Para que a conexão do WhatsApp serve: enviar cobranças/lembretes ou apenas auditar conversas.
+enum InstancePurpose {
+  envio
+  auditoria
+}
+
+// Como o WhatsApp foi conectado: QR Code (Evolution API) ou API oficial da Meta (Cloud API).
+enum InstanceProvider {
+  evolution
+  meta
+}
+
 enum MessageKind {
   cobranca
   lembrete
@@ -76,20 +88,36 @@ model User {
   messages  Message[]
   billingPayments BillingPayment[]
   contracts       Contract[]
+  auditChats      AuditChat[]
+  auditLabels     AuditLabel[]
 
   @@map("users")
 }
 
 model Instance {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
-  name      String   @unique
-  createdAt DateTime @default(now()) @map("created_at")
+  id        Int              @id @default(autoincrement())
+  userId    Int              @map("user_id")
+  name      String           @unique
+  purpose   InstancePurpose  @default(envio)
+  provider  InstanceProvider @default(evolution)
+  // Nome amigável (ex.: "Atendimento"). Opcional.
+  label     String?
+  // Campos da API oficial da Meta (só usados quando provider = meta).
+  // Os segredos ficam criptografados (ver server/utils/secret.js) e nunca voltam para o navegador.
+  metaPhoneNumberId String? @map("meta_phone_number_id")
+  metaBusinessId    String? @map("meta_business_id")
+  metaAccessToken   String? @map("meta_access_token")
+  metaAppSecret     String? @map("meta_app_secret")
+  metaVerifyToken   String? @map("meta_verify_token")
+  metaPhoneDisplay  String? @map("meta_phone_display")
+  createdAt DateTime         @default(now()) @map("created_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  schedules Schedule[]
+  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules  Schedule[]
+  auditChats AuditChat[]
 
-  @@index([userId])
+  @@index([userId, purpose])
+  @@index([metaPhoneNumberId])
   @@map("instances")
 }
 
@@ -99,6 +127,9 @@ model Payment {
   orderNsu       String        @unique @map("order_nsu")
   plan           Plan
   amountCents    Int           @map("amount_cents")
+  // Período contratado (mensal, semestral ou anual) e quantos dias de acesso ele libera.
+  period         String        @default("mensal")
+  days           Int           @default(30)
   status         PaymentStatus @default(pending)
   slug           String?
   transactionNsu String?       @map("transaction_nsu")
@@ -235,4 +266,80 @@ model Contract {
 
   @@index([userId, updatedAt])
   @@map("contracts")
+}
+
+// ---------- Auditoria de conversas ----------
+// Uma conversa (contato ou grupo) vista por uma conexão de auditoria. A anotação é um bloco de texto por conversa.
+model AuditChat {
+  id            Int       @id @default(autoincrement())
+  userId        Int       @map("user_id")
+  instanceId    Int       @map("instance_id")
+  jid           String
+  isGroup       Boolean   @default(false) @map("is_group")
+  name          String?
+  phone         String    @default("")
+  note          String    @default("")
+  noteUpdatedAt DateTime? @map("note_updated_at")
+  lastMessageAt DateTime  @map("last_message_at")
+  lastText      String    @default("") @map("last_text")
+  lastFromMe    Boolean   @default(false) @map("last_from_me")
+  unread        Int       @default(0)
+  createdAt     DateTime  @default(now()) @map("created_at")
+
+  user     User            @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance Instance        @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  messages AuditMessage[]
+  labels   AuditChatLabel[]
+
+  @@unique([instanceId, jid])
+  @@index([userId, lastMessageAt])
+  @@map("audit_chats")
+}
+
+// Mensagem de uma conversa. `search` é o texto sem acentos e em minúsculas, usado na busca por palavra-chave.
+model AuditMessage {
+  id         Int      @id @default(autoincrement())
+  chatId     Int      @map("chat_id")
+  externalId String   @map("external_id")
+  fromMe     Boolean  @default(false) @map("from_me")
+  sender     String?
+  type       String   @default("text")
+  body       String   @default("")
+  search     String   @default("")
+  status     String?
+  ts         DateTime
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  chat AuditChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+
+  @@unique([chatId, externalId])
+  @@index([chatId, ts])
+  @@map("audit_messages")
+}
+
+// Etiqueta criada pelo usuário (ex.: "Cliente VIP") para marcar conversas.
+model AuditLabel {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String
+  color     String   @default("#1f55a6")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  chats AuditChatLabel[]
+
+  @@unique([userId, name])
+  @@map("audit_labels")
+}
+
+model AuditChatLabel {
+  chatId  Int @map("chat_id")
+  labelId Int @map("label_id")
+
+  chat  AuditChat  @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  label AuditLabel @relation(fields: [labelId], references: [id], onDelete: Cascade)
+
+  @@id([chatId, labelId])
+  @@index([labelId])
+  @@map("audit_chat_labels")
 }

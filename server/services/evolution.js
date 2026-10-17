@@ -51,8 +51,26 @@ export function normalizeQr(data) {
   return { qr, pairingCode: data?.pairingCode || data?.qrcode?.pairingCode || null };
 }
 
-export const createInstance = (name) =>
-  evo('POST', '/instance/create', { instanceName: name, qrcode: true, integration: config.evolution.integration });
+// Eventos que a auditoria precisa receber da Evolution (por webhook, em tempo real).
+export const WEBHOOK_EVENTS = ['MESSAGES_UPSERT', 'MESSAGES_UPDATE', 'SEND_MESSAGE', 'CONNECTION_UPDATE', 'CONTACTS_UPSERT', 'CONTACTS_UPDATE', 'CHATS_UPSERT', 'CHATS_UPDATE'];
+const webhookBody = (url) => ({ enabled: true, url, byEvents: false, base64: false, events: WEBHOOK_EVENTS });
+
+// `webhookUrl` (opcional): a conexão já nasce enviando as mensagens para a auditoria.
+export const createInstance = (name, { webhookUrl } = {}) =>
+  evo('POST', '/instance/create', {
+    instanceName: name,
+    qrcode: true,
+    integration: config.evolution.integration,
+    ...(webhookUrl ? { webhook: { url: webhookUrl, byEvents: false, base64: false, events: WEBHOOK_EVENTS } } : {}),
+  });
+
+// Liga/atualiza o webhook de uma conexão que já existe (Evolution v2).
+export const setWebhook = (name, url) => evo('POST', `/webhook/set/${enc(name)}`, { webhook: webhookBody(url) });
+
+const asList = (d) => (Array.isArray(d) ? d : d?.messages?.records || d?.records || d?.messages || d?.chats || []);
+export const findChats = async (name) => asList(await evo('POST', `/chat/findChats/${enc(name)}`, {}));
+export const findMessages = async (name, remoteJid, limit = 50) =>
+  asList(await evo('POST', `/chat/findMessages/${enc(name)}`, { where: { key: { remoteJid } }, page: 1, offset: limit }));
 
 export const connectInstance = (name) => evo('GET', `/instance/connect/${enc(name)}`);
 
