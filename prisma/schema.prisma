@@ -74,6 +74,8 @@ model User {
   contacts  Contact[]
   schedules Schedule[]
   messages  Message[]
+  billingPayments BillingPayment[]
+  contracts       Contract[]
 
   @@map("users")
 }
