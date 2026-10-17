@@ -1,0 +1,58 @@
+// Ícones do editor de contratos (mesmo estilo do Icon.jsx do sistema).
+const PATHS = {
+  undo: ['M9 14 4 9l5-5', 'M4 9h10.5a5.5 5.5 0 0 1 0 11H11'],
+  redo: ['M15 14l5-5-5-5', 'M20 9H9.5a5.5 5.5 0 0 0 0 11H13'],
+  title: ['M5 5h14', 'M12 5v14', 'M9 19h6'],
+  subtitle: ['M6 7h12', 'M12 7v10', 'M10 17h4'],
+  text: ['M4 6h16', 'M4 10h16', 'M4 14h16', 'M4 18h10'],
+  date: ['M3 5h18v16H3z', 'M3 10h18', 'M8 3v4M16 3v4', 'M8 14h3'],
+  capsule: ['M7 8h10a4 4 0 0 1 0 8H7a4 4 0 0 1 0-8z'],
+  image: ['M3 5h18v14H3z', 'M8.5 10a1.5 1.5 0 1 0 0-3 1.5 1.5 0 0 0 0 3z', 'M21 16l-5-5-8 8'],
+  logo: ['M12 3l2.6 5.3 5.9.9-4.3 4.1 1 5.8L12 16.3 6.8 19.1l1-5.8L3.5 9.2l5.9-.9z'],
+  line: ['M4 12h16'],
+  shape: ['M4 6h16v12H4z'],
+  header: ['M3 4h18v6H3z', 'M7 15h10M7 19h6'],
+  sign: ['M4 17c2-6 3-9 4.5-9S9 13 11 13s2-3 3.5-3S16 14 20 11', 'M4 21h16'],
+  footer: ['M7 5h10', 'M3 14h18v6H3z'],
+  plus: ['M12 5v14M5 12h14'],
+  minus: ['M5 12h14'],
+  back: ['M15 18l-6-6 6-6'],
+  up: ['M6 15l6-6 6 6'],
+  down: ['M6 9l6 6 6-6'],
+  copy: ['M9 9h11v11H9z', 'M5 15H4V4h11v1'],
+  lock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 8 0v4'],
+  unlock: ['M5 11h14v10H5z', 'M8 11V7a4 4 0 0 1 7.5-2'],
+  front: ['M8 8h12v12H8z', 'M4 4h8v4H8v4H4z'],
+  back2: ['M4 4h12v12H4z', 'M12 12h8v8h-8z'],
+  trash: ['M3 6h18', 'M8 6V4h8v2', 'M6 6l1 14h10l1-14'],
+  download: ['M12 4v11', 'M7 11l5 5 5-5', 'M4 20h16'],
+  upload: ['M12 16V5', 'M7 9l5-5 5 5', 'M4 20h16'],
+  print: ['M7 9V3h10v6', 'M7 17H4v-7h16v7h-3', 'M7 14h10v7H7z'],
+  bold: ['M7 5h6a3.5 3.5 0 0 1 0 7H7z', 'M7 12h7a3.5 3.5 0 0 1 0 7H7z'],
+  italic: ['M10 5h8', 'M6 19h8', 'M15 5 9 19'],
+  underline: ['M7 4v7a5 5 0 0 0 10 0V4', 'M5 20h14'],
+  alignLeft: ['M4 6h16', 'M4 10h10', 'M4 14h16', 'M4 18h10'],
+  alignCenter: ['M4 6h16', 'M7 10h10', 'M4 14h16', 'M7 18h10'],
+  alignRight: ['M4 6h16', 'M10 10h10', 'M4 14h16', 'M10 18h10'],
+  alignJustify: ['M4 6h16', 'M4 10h16', 'M4 14h16', 'M4 18h16'],
+  pageLeft: ['M4 4v16', 'M8 8h10v3H8z', 'M8 13h6v3H8z'],
+  pageCenterX: ['M12 4v16', 'M6 8h12v3H6z', 'M8 13h8v3H8z'],
+  pageRight: ['M20 4v16', 'M6 8h10v3H6z', 'M10 13h6v3h-6z'],
+  pageTop: ['M4 4h16', 'M8 8v10h3V8z', 'M13 8v6h3V8z'],
+  pageCenterY: ['M4 12h16', 'M8 6v12h3V6z', 'M13 8v8h3V8z'],
+  pageBottom: ['M4 20h16', 'M8 6v10h3V6z', 'M13 10v6h3v-6z'],
+  fit: ['M4 9V4h5', 'M20 9V4h-5', 'M4 15v5h5', 'M20 15v5h-5'],
+  check: ['M20 6 9 17l-5-5'],
+  x: ['M18 6 6 18M6 6l12 12'],
+  landscape: ['M3 6h18v12H3z'],
+  portrait: ['M6 3h12v18H6z'],
+  blocks: ['M4 4h7v7H4z', 'M13 4h7v7h-7z', 'M4 13h7v7H4z', 'M13 16.5h7', 'M16.5 13v7'],
+};
+
+export default function EIcon({ name, size = 18 }) {
+  return (
+    <svg width={size} height={size} viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
+      {(PATHS[name] || []).map((d) => <path key={d} d={d} />)}
+    </svg>
+  );
+}

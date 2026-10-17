@@ -14,7 +14,9 @@ import instanceRoutes from './routes/instances.js';
 import contactRoutes from './routes/contacts.js';
 import scheduleRoutes from './routes/schedules.js';
 import statsRoutes from './routes/stats.js';
+import receiptRoutes from './routes/receipts.js';
 import messageRoutes from './routes/messages.js';
+import contractRoutes from './routes/contracts.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
@@ -81,7 +83,9 @@ app.use(
     },
   })
 );
-app.use(express.json({ limit: '100kb' }));
+const jsonSmall = express.json({ limit: '100kb' });
+const isContractsPath = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/');
+app.use((req, res, next) => (isContractsPath(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 
 const limiter = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde um pouco e tente de novo.' } });
@@ -104,7 +108,9 @@ app.use('/api/instances', auth, requireAccess, instanceRoutes);
 app.use('/api/contacts', auth, requireAccess, contactRoutes);
 app.use('/api/schedules', auth, requireAccess, scheduleRoutes);
 app.use('/api/stats', auth, requireAccess, statsRoutes);
+app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
+app.use('/api/contracts', auth, requireAccess, express.json({ limit: '12mb' }), contractRoutes);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 
@@ -119,6 +125,7 @@ if (fs.existsSync(path.join(dist, 'index.html'))) {
 app.use((err, _req, res, _next) => {
   if (err instanceof AppError) return res.status(err.status).json({ error: err.message, code: err.code });
   if (err?.type === 'entity.parse.failed') return res.status(400).json({ error: 'Requisição inválida.' });
+  if (err?.type === 'entity.too.large') return res.status(413).json({ error: 'O conteúdo enviado é grande demais. Use imagens menores.' });
   console.error('[erro]', err);
   res.status(500).json({ error: 'Erro interno. Tente novamente em instantes.' });
 });

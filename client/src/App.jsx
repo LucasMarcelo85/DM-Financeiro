@@ -11,6 +11,7 @@ import ScheduleForm from './pages/ScheduleForm.jsx';
 import Billing from './pages/Billing.jsx';
 import PaymentReturn from './pages/PaymentReturn.jsx';
 import Contracts from './pages/Contracts.jsx';
+import ContractEditor from './pages/ContractEditor.jsx';
 import Admin from './pages/Admin.jsx';
 
 const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin'];
@@ -23,13 +24,14 @@ function Splash() {
   );
 }
 
-function Protected() {
+function Protected({ bare = false }) {
   const { user, loading } = useAuth();
   const { pathname } = useLocation();
   if (loading) return <Splash />;
   if (!user) return <Navigate to="/entrar" replace />;
   if (!user.access.hasAccess && !OPEN_WHEN_BLOCKED.includes(pathname)) return <Navigate to="/plano" replace />;
-  return <Layout />;
+  // `bare`: tela cheia, sem o menu lateral (editor de contratos).
+  return bare ? <Outlet /> : <Layout />;
 }
 
 function GuestOnly() {
@@ -50,6 +52,9 @@ export default function App() {
       <Route element={<GuestOnly />}>
         <Route path="/entrar" element={<Login />} />
         <Route path="/cadastro" element={<Register />} />
+      </Route>
+      <Route element={<Protected bare />}>
+        <Route path="contratos/:id" element={<ContractEditor />} />
       </Route>
       <Route element={<Protected />}>
         <Route index element={<Dashboard />} />

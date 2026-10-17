@@ -72,8 +72,10 @@ model User {
   instances Instance[]
   payments  Payment[]
   contacts  Contact[]
-  schedules Schedule[]
-  messages  Message[]
+  schedules       Schedule[]
+  messages        Message[]
+  billingPayments BillingPayment[]
+  contracts       Contract[]
 
   @@map("users")
 }
@@ -121,9 +123,10 @@ model Contact {
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
-  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
-  schedules Schedule[]
-  messages  Message[]
+  user             User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules        Schedule[]
+  messages         Message[]
+  billingPayments  BillingPayment[]
 
   @@unique([userId, phone])
   @@index([userId, name])
@@ -157,14 +160,40 @@ model Schedule {
   createdAt   DateTime       @default(now()) @map("created_at")
   updatedAt   DateTime       @updatedAt @map("updated_at")
 
-  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
-  contact  Contact   @relation(fields: [contactId], references: [id], onDelete: Cascade)
-  instance Instance? @relation(fields: [instanceId], references: [id], onDelete: SetNull)
-  messages Message[]
+  user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
+  instance        Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  messages        Message[]
+  billingPayments BillingPayment[]
 
   @@index([userId, kind])
   @@index([status, nextRunAt])
   @@map("schedules")
+}
+
+// Cobrança marcada como paga pelo usuário (uma linha por vencimento pago).
+// Alimenta o faturamento (30/60/90 dias ou por datas) e a avaliação em estrelas de cada cliente.
+// Se a cobrança ou o cliente forem excluídos, o recebimento continua no histórico (contactName guarda o nome).
+model BillingPayment {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  scheduleId  Int?     @map("schedule_id")
+  contactId   Int?     @map("contact_id")
+  contactName String   @map("contact_name")
+  amountCents Int      @map("amount_cents")
+  // Vencimento a que o pagamento se refere e o dia em que o cliente realmente pagou.
+  dueDate     DateTime @map("due_date") @db.Date
+  paidAt      DateTime @map("paid_at") @db.Date
+  createdAt   DateTime @default(now()) @map("created_at")
+
+  user     User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedule Schedule? @relation(fields: [scheduleId], references: [id], onDelete: SetNull)
+  contact  Contact?  @relation(fields: [contactId], references: [id], onDelete: SetNull)
+
+  @@unique([scheduleId, dueDate])
+  @@index([userId, paidAt])
+  @@index([userId, contactId])
+  @@map("billing_payments")
 }
 
 // Histórico de tudo que foi enviado.
@@ -189,4 +218,21 @@ model Message {
 
   @@index([userId, createdAt])
   @@map("messages")
+}
+
+// Modelos de contrato do usuário (criados no editor ou importados).
+// `data` guarda o documento do editor (páginas e elementos) em JSON; a API valida e limpa antes de salvar.
+model Contract {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String
+  pageCount Int      @default(1) @map("page_count")
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, updatedAt])
+  @@map("contracts")
 }
