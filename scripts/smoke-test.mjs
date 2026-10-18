@@ -534,6 +534,54 @@ try {
   r = await a('PATCH', `/admin/users/${maria2.id}/plan`, { plan: 'ouro' }); assert.equal(r.body.user.limits.instances, 3); assert.equal(r.body.user.limits.auditInstances, 5); assert.equal(r.body.user.limits.contracts, 20); assert.equal(r.body.user.limits.auditSend, true);
   r = await a('POST', `/admin/users/${maria2.id}/grant`); assert.equal(r.body.user.access.daysLeft, daysBefore + 30); ok('admin troca plano e dá acesso mensal (+30 dias)');
 
+  // ===== admin: telefone, última atividade, teste de 3 dias e retroceder =====
+  r = await a('GET', '/admin/users'); const lista = r.body.users;
+  const mr = lista.find((x) => x.email === 'maria@t.com'); assert.equal(mr.phone, '85999991234'); assert.ok(mr.lastActivityAt > Date.now() - 3600_000); assert.ok(mr.lastActivity);
+  assert.equal(mr.lastGrant.kind, 'mensal'); // a liberação acima aparece como "retrocedível"
+  const ot = lista.find((x) => x.email === 'e@t.com'); assert.equal(ot.lastGrant, null);
+  ok('lista do admin traz telefone, última atividade e a liberação que pode ser desfeita');
+
+  await db.query("UPDATE users SET last_activity_at = now() - interval '10 minutes', last_activity = 'Antigo' WHERE id = $1", [ot.id]);
+  await other('GET', '/contacts'); await other('GET', '/schedules'); await other('GET', '/auth/me'); await sleep(200);
+  let act = (await db.query('SELECT last_activity_at, last_activity FROM users WHERE id = $1', [ot.id])).rows[0]; assert.equal(act.last_activity, 'Antigo'); // só olhar telas não conta
+  r = await other('POST', '/contacts', { name: 'Cliente da Empresa', phone: '85 97777-0001' }); assert.equal(r.status, 201); await sleep(300);
+  act = (await db.query('SELECT last_activity_at, last_activity FROM users WHERE id = $1', [ot.id])).rows[0]; assert.equal(act.last_activity, 'Clientes'); assert.ok(Date.now() - act.last_activity_at.getTime() < 10_000);
+  r = await a('GET', '/admin/users'); assert.equal(r.body.users.find((x) => x.id === ot.id).lastActivity, 'Clientes');
+  ok('última atividade: só conta quando o usuário altera algo (e diz onde); olhar telas não conta');
+
+  const endsAt = async () => (await a('GET', '/admin/users')).body.users.find((x) => x.id === ot.id).access;
+  const t0 = (await endsAt()).endsAt; const DAYMS = 86400000;
+  r = await a('POST', `/admin/users/${ot.id}/grant`); assert.equal(r.status, 200); assert.equal(r.body.user.access.status, 'paid'); assert.ok(Math.abs(r.body.user.access.endsAt - (t0 + 30 * DAYMS)) < 5000); assert.equal(r.body.user.lastGrant.kind, 'mensal');
+  r = await a('POST', `/admin/users/${ot.id}/grant-trial`); assert.equal(r.status, 200); assert.equal(r.body.user.lastGrant.kind, 'teste'); assert.equal(r.body.user.lastGrant.days, 3);
+  const trialEnd = (await db.query('SELECT trial_ends_at FROM users WHERE id = $1', [ot.id])).rows[0].trial_ends_at.getTime(); assert.ok(Math.abs(trialEnd - (t0 + 3 * DAYMS)) < 5000);
+  r = await a('POST', `/admin/users/${ot.id}/undo-access`); assert.equal(r.status, 200); assert.equal(r.body.undone.kind, 'teste'); assert.equal(r.body.user.lastGrant.kind, 'mensal');
+  assert.equal((await db.query('SELECT trial_ends_at FROM users WHERE id = $1', [ot.id])).rows[0].trial_ends_at.getTime(), t0); ok('teste de 3 dias soma 3 dias de teste e "retroceder" desfaz só ele');
+  await db.query("UPDATE users SET access_until = access_until + interval '10 days' WHERE id = $1", [ot.id]); // o usuário pagou depois da liberação
+  r = await a('POST', `/admin/users/${ot.id}/undo-access`); assert.equal(r.status, 200); assert.equal(r.body.undone.kind, 'mensal');
+  assert.ok(Math.abs(r.body.user.access.endsAt - (t0 + 10 * DAYMS)) < 5000, 'o que o usuário pagou continua'); assert.equal(r.body.user.lastGrant, null);
+  r = await a('POST', `/admin/users/${ot.id}/undo-access`); assert.equal(r.status, 409); assert.equal(r.body.code, 'NOTHING_TO_UNDO');
+  ok('retroceder acesso mensal preserva o pagamento feito depois; sem nada para desfazer avisa');
+  await db.query('UPDATE users SET access_until = NULL WHERE id = $1', [ot.id]);
+  r = await a('POST', `/admin/users/${ot.id}/grant`); r = await a('POST', `/admin/users/${ot.id}/undo-access`); assert.equal((await db.query('SELECT access_until FROM users WHERE id = $1', [ot.id])).rows[0].access_until, null); assert.equal((await endsAt()).status, 'trial');
+  ok('retroceder logo após liberar volta exatamente ao estado anterior (teste grátis)');
+  r = await a('GET', `/admin/users/${ot.id}/access-events`); assert.equal(r.body.events.length, 3); assert.ok(r.body.events.every((e) => e.revertedAt && e.adminName === 'Administrador' || e.revertedAt));
+  r = await other('POST', `/admin/users/${ot.id}/grant-trial`); assert.equal(r.status, 403); r = await other('POST', `/admin/users/${ot.id}/undo-access`); assert.equal(r.status, 403);
+  const adm = (await a('GET', '/admin/users')).body.users.find((x) => x.role === 'admin');
+  r = await a('POST', `/admin/users/${adm.id}/grant`); assert.equal(r.status, 400); r = await a('POST', `/admin/users/${adm.id}/undo-access`); assert.equal(r.status, 400);
+  ok('histórico das liberações; só o admin usa; administrador não recebe liberação');
+
+  // ===== clientes: dados para variáveis dos contratos =====
+  r = await u('POST', '/contacts', { name: 'Cliente Contrato', phone: '85 98888-0001', document: '111.444.777-35', zip: '60000-000', street: ' Rua  das Flores ', number: '12', complement: 'Sala 3', district: 'Centro', city: 'Fortaleza', state: 'ce' });
+  assert.equal(r.status, 201, JSON.stringify(r.body)); const cc = r.body.contact;
+  assert.deepEqual([cc.document, cc.zip, cc.street, cc.number, cc.complement, cc.district, cc.city, cc.state], ['11144477735', '60000000', 'Rua das Flores', '12', 'Sala 3', 'Centro', 'Fortaleza', 'CE']);
+  r = await u('POST', '/contacts', { name: 'CPF Ruim', phone: '85 98888-0002', document: '123.456.789-00' }); assert.equal(r.status, 400); assert.match(r.body.error, /CPF\/CNPJ/);
+  r = await u('POST', '/contacts', { name: 'CEP Ruim', phone: '85 98888-0003', zip: '600' }); assert.equal(r.status, 400);
+  r = await u('POST', '/contacts', { name: 'UF Ruim', phone: '85 98888-0004', state: 'Ceara' }); assert.equal(r.status, 400);
+  r = await u('POST', '/contacts', { name: 'Empresa Cliente', phone: '85 98888-0005', document: '11.222.333/0001-81' }); assert.equal(r.status, 201); assert.equal(r.body.contact.document, '11222333000181');
+  r = await u('PATCH', `/contacts/${cc.id}`, { name: 'Cliente Contrato Novo', phone: '85 98888-0001' }); assert.equal(r.body.contact.name, 'Cliente Contrato Novo'); assert.equal(r.body.contact.city, 'Fortaleza'); assert.equal(r.body.contact.document, '11144477735'); // quem não manda o endereço não apaga
+  r = await u('PATCH', `/contacts/${cc.id}`, { name: 'Cliente Contrato Novo', phone: '85 98888-0001', city: '', complement: '' }); assert.equal(r.body.contact.city, null); assert.equal(r.body.contact.street, 'Rua das Flores');
+  ok('clientes guardam CPF/CNPJ e endereço (validados) para virarem variáveis nos contratos');
+
   // ===== plano Ouro: responder pela auditoria =====
   sent.length = 0;
   r = await u('POST', `/audit/chats/${ana.id}/send`, { text: '   ' }); assert.equal(r.status, 400);

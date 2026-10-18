@@ -80,16 +80,20 @@ model User {
   trialEndsAt  DateTime  @map("trial_ends_at")
   accessUntil  DateTime? @map("access_until")
   createdAt    DateTime  @default(now()) @map("created_at")
+  // Última vez que o usuário mexeu em algo (qualquer alteração, não só abrir telas) e em qual área.
+  lastActivityAt DateTime? @map("last_activity_at")
+  lastActivity   String?   @map("last_activity")
 
   instances Instance[]
   payments  Payment[]
   contacts  Contact[]
-  schedules Schedule[]
-  messages  Message[]
+  schedules       Schedule[]
+  messages        Message[]
   billingPayments BillingPayment[]
   contracts       Contract[]
   auditChats      AuditChat[]
   auditLabels     AuditLabel[]
+  accessEvents    AccessEvent[]
 
   @@map("users")
 }
@@ -151,6 +155,15 @@ model Contact {
   phone     String
   email     String?
   notes     String?
+  // Dados extras do cliente, usados como variáveis nos contratos (ex.: {{cliente.documento}}).
+  document   String?
+  zip        String?
+  street     String?
+  number     String?
+  complement String?
+  district   String?
+  city       String?
+  state      String?
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
 
@@ -342,4 +355,26 @@ model AuditChatLabel {
   @@id([chatId, labelId])
   @@index([labelId])
   @@map("audit_chat_labels")
+}
+
+// Liberações de acesso feitas pelo administrador (mensal ou teste). Guarda o estado de antes e de depois
+// para permitir "retroceder" uma liberação feita sem querer.
+model AccessEvent {
+  id              Int       @id @default(autoincrement())
+  userId          Int       @map("user_id")
+  adminId         Int?      @map("admin_id")
+  adminName       String    @default("") @map("admin_name")
+  kind            String // 'mensal' | 'teste'
+  days            Int
+  prevAccessUntil DateTime? @map("prev_access_until")
+  prevTrialEndsAt DateTime  @map("prev_trial_ends_at")
+  newAccessUntil  DateTime? @map("new_access_until")
+  newTrialEndsAt  DateTime  @map("new_trial_ends_at")
+  revertedAt      DateTime? @map("reverted_at")
+  createdAt       DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("access_events")
 }

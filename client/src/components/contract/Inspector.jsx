@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import EIcon from './EIcon.jsx';
+import VariablePicker from './VariablePicker.jsx';
 import { FONTS, FONT_GROUPS, TYPE_LABELS, clamp, hasFixedHeight, isTextual } from '../../lib/contract/model.js';
 
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -82,6 +83,7 @@ function Tgl({ on, onClick, title, icon, disabled }) {
 }
 
 export default function Inspector({ el, doc, activePageIndex, api }) {
+  const caret = useRef(null); // posição do cursor no texto, para inserir variáveis ali
   const patch = (p, key) => api.patch(p, key);
   const set = (k) => (v, key) => patch({ [k]: v }, key || `k:${k}`);
 
@@ -99,6 +101,10 @@ export default function Inspector({ el, doc, activePageIndex, api }) {
             </div>
           </div>
           <ColorField label="Cor de fundo da página" value={page.bg} onChange={(v, key) => api.setPageBg(v, key)} id="pagebg" />
+        </Section>
+        <Section title="Variáveis do cliente">
+          <p className="muted small">Use dados do cliente no contrato. Clique para criar uma caixa de texto com a variável, ou selecione um texto antes para inserir nele.</p>
+          <VariablePicker onPick={(k) => api.insertVariable(k)} />
         </Section>
         <Section title="Blocos prontos">
           <p className="muted small">Insere na página aberta. Depois arraste e edite como quiser.</p>
@@ -159,7 +165,12 @@ export default function Inspector({ el, doc, activePageIndex, api }) {
 
       {textual && el.t !== 'date' && (
         <Section title="Texto">
-          <textarea className="input" rows={4} value={el.text} onChange={(e) => patch({ text: e.target.value }, `txt:${el.id}`)} aria-label="Conteúdo do texto" />
+          <textarea className="input" rows={4} value={el.text} onChange={(e) => { caret.current = e.target.selectionStart; patch({ text: e.target.value }, `txt:${el.id}`); }}
+            onSelect={(e) => { caret.current = e.target.selectionStart; }} onBlur={(e) => { caret.current = e.target.selectionStart; }} aria-label="Conteúdo do texto" />
+          <details className="ce-vars" open={/\{\{/.test(el.text || '')}>
+            <summary>Inserir variável do cliente</summary>
+            <VariablePicker onPick={(k) => api.insertVariable(k, caret.current)} />
+          </details>
         </Section>
       )}
 

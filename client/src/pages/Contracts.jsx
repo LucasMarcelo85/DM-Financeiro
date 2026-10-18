@@ -7,6 +7,7 @@ import { useToast } from '../components/Toast.jsx';
 import { dateBR, plural } from '../lib/format.js';
 import { IMPORT_ACCEPT, importFile } from '../lib/contract/import.js';
 import { TEMPLATES, buildTemplate } from '../lib/contract/templates.js';
+import ClientPicker from '../components/contract/ClientPicker.jsx';
 
 function NewContractModal({ onClose, onCreate, busy }) {
   const [key, setKey] = useState('blank');
@@ -41,6 +42,7 @@ export default function Contracts() {
   const [busy, setBusy] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
   const [report, setReport] = useState(null); // avisos depois de importar
+  const [fillFor, setFillFor] = useState(null); // contrato que vai ser gerado para um cliente
 
   const load = useCallback(() => {
     api.get('/contracts').then(setData).catch((e) => toast(e.message, 'error'));
@@ -123,6 +125,7 @@ export default function Contracts() {
               </Link>
               <div className="ct-actions">
                 <Link className="btn btn-primary btn-sm" to={`/contratos/${c.id}`}><Icon name="edit" size={16} /> Editar</Link>
+                <button className="btn btn-ghost btn-sm" onClick={() => setFillFor(c)} title="Abrir o contrato já preenchido com os dados de um cliente">Gerar para cliente</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => duplicate(c)} disabled={full}>Duplicar</button>
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(c)} aria-label={`Excluir ${c.name}`} title="Excluir"><Icon name="trash" size={18} /></button>
               </div>
@@ -131,6 +134,7 @@ export default function Contracts() {
         </ul>
       )}
 
+      {fillFor && <ClientPicker title={`Gerar "${fillFor.name}" para qual cliente?`} onClose={() => setFillFor(null)} onPick={(cl) => nav(`/contratos/${fillFor.id}?cliente=${cl.id}`)} />}
       {newOpen && <NewContractModal busy={busy === 'create'} onClose={() => setNewOpen(false)} onCreate={create} />}
 
       {report && (

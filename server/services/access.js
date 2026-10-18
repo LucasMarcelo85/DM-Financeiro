@@ -47,3 +47,51 @@ export async function extendAccess(userId, days, plan, db = prisma) {
     data: { accessUntil: new Date(base + days * DAY), ...(plan ? { plan } : {}) },
   });
 }
+
+// ---------- Liberações do administrador (com histórico, para poder retroceder) ----------
+export const eventDTO = (e) => ({
+  id: e.id, kind: e.kind, days: e.days, adminName: e.adminName, createdAt: ms(e.createdAt), revertedAt: e.revertedAt ? ms(e.revertedAt) : null,
+});
+
+// kind 'mensal': soma 30 dias de acesso pago · kind 'teste': soma 3 dias de teste (os dias do teste grátis).
+export async function grantAccess(userId, kind, admin) {
+  return prisma.$transaction(async (tx) => {
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    const now = Date.now();
+    const days = kind === 'teste' ? config.trialDays : config.accessDays;
+    const data = kind === 'teste'
+      ? { trialEndsAt: new Date(Math.max(now, ms(user.trialEndsAt)) + days * DAY) }
+      : { accessUntil: new Date(Math.max(now, ms(user.accessUntil), ms(user.trialEndsAt)) + days * DAY) };
+    const updated = await tx.user.update({ where: { id: userId }, data });
+    const event = await tx.accessEvent.create({
+      data: {
+        userId, adminId: admin.id, adminName: admin.name, kind, days,
+        prevAccessUntil: user.accessUntil, prevTrialEndsAt: user.trialEndsAt,
+        newAccessUntil: updated.accessUntil, newTrialEndsAt: updated.trialEndsAt,
+      },
+    });
+    return { user: updated, event };
+  });
+}
+
+// Desfaz a liberação mais recente que ainda não foi desfeita. Devolve null se não houver nenhuma.
+// Se o usuário pagou depois da liberação, o que ele pagou é preservado: só saem os dias liberados pelo admin.
+export async function undoLastGrant(userId) {
+  return prisma.$transaction(async (tx) => {
+    const event = await tx.accessEvent.findFirst({ where: { userId, revertedAt: null }, orderBy: { id: 'desc' } });
+    if (!event) return null;
+    const user = await tx.user.findUnique({ where: { id: userId } });
+    let data;
+    if (event.kind === 'teste') {
+      data = { trialEndsAt: event.prevTrialEndsAt };
+    } else {
+      const untouched = ms(user.accessUntil) === ms(event.newAccessUntil);
+      let next = untouched ? event.prevAccessUntil : new Date(Math.max(ms(user.accessUntil) - event.days * DAY, ms(event.prevAccessUntil)));
+      if (next && !event.prevAccessUntil && next.getTime() <= Date.now()) next = null;
+      data = { accessUntil: next };
+    }
+    const updated = await tx.user.update({ where: { id: userId }, data });
+    const done = await tx.accessEvent.update({ where: { id: event.id }, data: { revertedAt: new Date() } });
+    return { user: updated, event: done };
+  });
+}

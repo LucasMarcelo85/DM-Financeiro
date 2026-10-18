@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { AppError, DAY, isValidCNPJ, isValidCPF, normalizePhone, onlyDigits } from '../utils/helpers.js';
-import { auth, clearSession, setSession } from '../middleware/auth.js';
+import { auth, clearSession, setSession, touchActivity } from '../middleware/auth.js';
 import { publicUser } from '../services/access.js';
 import { isPlan, listPlans } from '../plans.js';
 
@@ -46,6 +46,7 @@ router.post('/auth/register', async (req, res) => {
     throw e;
   }
   setSession(res, user.id);
+  touchActivity(user.id, 'Cadastro');
   res.status(201).json({ user: publicUser(user) });
 });
 
@@ -64,6 +65,7 @@ router.post('/auth/login', async (req, res) => {
     throw new AppError(401, 'E-mail, CPF/CNPJ ou senha incorretos.');
   }
   setSession(res, user.id);
+  touchActivity(user.id, 'Login');
   res.json({ user: publicUser(user) });
 });
 

@@ -715,3 +715,36 @@ button.fat-card:hover { border-color: #b9c4d2; }
   .au-back { display: inline-grid; }
   .au-list { border-right: 0; }
 }
+
+/* ---------- Contratos: variáveis e cliente (vp-, cp-, ce-client) ---------- */
+.vp { display: grid; gap: 0.9rem; }
+.vp-group h4 { margin: 0 0 0.4rem; font-size: 0.78rem; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
+.vp-chips { display: flex; flex-wrap: wrap; gap: 0.35rem; }
+.vp-chip { padding: 0.3rem 0.7rem; border-radius: 999px; border: 1.5px solid #b6cdf0; background: #eef4fd; color: var(--blue); font: inherit; font-size: 0.83rem; font-weight: 700; cursor: pointer; }
+.vp-chip:hover { background: var(--blue); color: #fff; border-color: var(--blue); }
+.vp-chip:focus-visible { outline: 3px solid rgba(31, 85, 166, 0.45); outline-offset: 1px; }
+.ce-vars { background: #f4f7fb; border-radius: var(--r-sm); padding: 0.5rem 0.7rem; }
+.ce-vars summary { cursor: pointer; font-weight: 700; color: var(--blue); font-size: 0.85rem; }
+.ce-vars .vp { margin-top: 0.6rem; }
+.ce-client { display: inline-flex; align-items: center; max-width: 16rem; }
+.ce-client.is-on .btn { background: #e3edfb; border-color: #b6cdf0; color: var(--blue); }
+.ce-client-name { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; max-width: 10rem; }
+.ce-preview { display: flex; flex-wrap: wrap; gap: 0.3rem 1rem; padding: 0.45rem 0.9rem; background: #e3edfb; border-bottom: 1px solid #b6cdf0; font-size: 0.88rem; }
+.ce-preview-warn { color: var(--amber-d); font-weight: 600; }
+.ce-preview-ok { color: var(--green-d); font-weight: 600; }
+.cp-list { list-style: none; margin: 0.6rem 0 0; padding: 0; display: grid; gap: 0.35rem; max-height: 22rem; overflow-y: auto; }
+.cp-item { display: grid; gap: 0.1rem; width: 100%; text-align: left; padding: 0.6rem 0.8rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); cursor: pointer; font: inherit; color: var(--text); }
+.cp-item:hover, .cp-item:focus-visible { border-color: var(--blue); background: #f5f9ff; outline: none; }
+@media (max-width: 64rem) { .ce-client-name { max-width: 6rem; } }
+
+/* ---------- Usuários (admin): telefone, última atividade e ações; cliente: dados para contratos ---------- */
+.user-row { grid-template-columns: minmax(0, 1fr) auto auto; }
+.user-actions { grid-column: 1 / -1; justify-content: flex-start; flex-wrap: wrap; }
+.user-id .user-contact { display: flex; flex-wrap: wrap; gap: 0.1rem 0.9rem; white-space: normal; overflow: visible; }
+.user-contact a { color: var(--blue); font-weight: 600; text-decoration: none; }
+.user-contact a:hover { text-decoration: underline; }
+.user-last { color: var(--muted); }
+.field-row { display: grid; grid-template-columns: 1fr 1fr; gap: 0.75rem; }
+.contact-extra { background: #f4f7fb; border-radius: var(--r-sm); padding: 0.6rem 0.8rem; display: grid; gap: 0.6rem; }
+.contact-extra summary { cursor: pointer; font-weight: 700; color: var(--blue); }
+.contact-extra > :not(summary) { margin-top: 0.6rem; }

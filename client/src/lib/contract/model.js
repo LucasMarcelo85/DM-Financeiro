@@ -7,6 +7,8 @@
 // Medidas em pixels CSS (96 dpi). A4 = 794 x 1123.
 // O servidor valida o mesmo formato em server/utils/contract.js (manter as fontes em sincronia).
 
+import { fillText } from './fill.js';
+
 export const PAGE_SIZES = { portrait: { w: 794, h: 1123 }, landscape: { w: 1123, h: 794 } };
 export const pageSize = (orientation) => PAGE_SIZES[orientation] || PAGE_SIZES.portrait;
 export const MARGIN = 64;
@@ -127,10 +129,11 @@ export function formatDateISO(iso, format = 'long') {
   const d = new Date(Date.UTC(Number(m[1]), Number(m[2]) - 1, Number(m[3])));
   return d.toLocaleDateString('pt-BR', { ...(DATE_OPTS[format] || DATE_OPTS.long), timeZone: 'UTC' });
 }
-export function elementText(el, today = isoToday()) {
-  if (el.t !== 'date') return el.text || '';
+// `ctx`: dados das variáveis ({{cliente.nome}}...). Sem ctx o texto aparece como foi escrito.
+export function elementText(el, today = isoToday(), ctx = null) {
+  if (el.t !== 'date') return fillText(el.text || '', ctx);
   const iso = el.dateMode === 'fixed' && el.dateValue ? el.dateValue : today;
-  return `${el.prefix || ''}${formatDateISO(iso, el.dateFormat)}`;
+  return `${fillText(el.prefix || '', ctx)}${formatDateISO(iso, el.dateFormat)}`;
 }
 
 // ---------- Estilos (os mesmos no editor, na medição e na impressão) ----------

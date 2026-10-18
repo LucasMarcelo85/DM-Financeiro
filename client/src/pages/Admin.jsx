@@ -4,7 +4,18 @@ import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { dateBR, digits, formatDoc } from '../lib/format.js';
+import { dateBR, dateTimeBR, digits, formatDoc, formatStoredPhone } from '../lib/format.js';
+
+// "há 5 min", "há 3 h", "há 2 dias"
+function ago(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 60) return 'agora mesmo';
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  const d = Math.floor(s / 86400);
+  return `há ${d} ${d === 1 ? 'dia' : 'dias'}`;
+}
+const GRANT_LABEL = { mensal: 'acesso mensal (+30 dias)', teste: 'teste de 3 dias' };
 
 const STATUS = {
   admin: ['Admin', 'pill-admin'],
@@ -20,6 +31,7 @@ export default function Admin() {
   const [query, setQuery] = useState('');
   const [busyId, setBusyId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [confirmUndo, setConfirmUndo] = useState(null);
 
   const load = useCallback(() => {
     api.get('/admin/users').then((r) => setUsers(r.users)).catch((e) => toast(e.message, 'error'));
@@ -91,6 +103,14 @@ export default function Admin() {
                 <div className="user-id">
                   <strong>{u.name}</strong>
                   <span>{formatDoc(u.document)} · {u.email}</span>
+                  <span className="user-contact">
+                    {u.phone
+                      ? <a href={`https://wa.me/55${digits(u.phone)}`} target="_blank" rel="noreferrer" title="Abrir conversa no WhatsApp">{formatStoredPhone(u.phone)}</a>
+                      : 'Sem telefone'}
+                    <span className="user-last" title={u.lastActivityAt ? new Date(u.lastActivityAt).toLocaleString('pt-BR') : ''}>
+                      {u.lastActivityAt ? `Última atividade: ${ago(u.lastActivityAt)}${u.lastActivity ? ` · ${u.lastActivity}` : ''}` : 'Ainda não mexeu em nada'}
+                    </span>
+                  </span>
                 </div>
                 <div className="user-plan">
                   {isAdmin ? (
@@ -109,9 +129,18 @@ export default function Admin() {
                 </div>
                 <div className="user-actions">
                   {!isAdmin && (
-                    <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant`), 'Acesso mensal liberado.')}>
-                      <Icon name="calendar" size={16} /> Dar acesso mensal
-                    </button>
+                    <>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant`), 'Acesso mensal liberado (+30 dias).')}>
+                        <Icon name="calendar" size={16} /> Dar acesso mensal
+                      </button>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant-trial`), 'Teste de 3 dias liberado.')} title="Dá mais 3 dias de teste grátis">
+                        <Icon name="clock" size={16} /> Dar teste de 3 dias
+                      </button>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id || !u.lastGrant} onClick={() => setConfirmUndo(u)}
+                        title={u.lastGrant ? `Desfaz: ${GRANT_LABEL[u.lastGrant.kind]} dado em ${dateTimeBR(u.lastGrant.createdAt)}` : 'Não há liberação do administrador para desfazer'}>
+                        <Icon name="undo" size={16} /> Retroceder
+                      </button>
+                    </>
                   )}
                   {!isAdmin && !self && (
                     <button className="icon-btn icon-btn-danger" disabled={busyId === u.id} onClick={() => setConfirmDel(u)} aria-label={`Excluir ${u.name}`} title="Excluir">
@@ -123,6 +152,15 @@ export default function Admin() {
             );
           })}
         </ul>
+      )}
+
+      {confirmUndo && (
+        <Modal title="Retroceder a última liberação?" onClose={() => setConfirmUndo(null)}
+          footer={<><button className="btn btn-ghost" onClick={() => setConfirmUndo(null)}>Cancelar</button>
+            <button className="btn btn-primary" onClick={() => { const u = confirmUndo; setConfirmUndo(null); act(u.id, () => api.post(`/admin/users/${u.id}/undo-access`), 'Liberação desfeita.'); }}>Retroceder</button></>}>
+          <p>Vai desfazer o <strong>{GRANT_LABEL[confirmUndo.lastGrant.kind]}</strong> que {confirmUndo.lastGrant.adminName || 'um administrador'} deu a <strong>{confirmUndo.name}</strong> em {dateTimeBR(confirmUndo.lastGrant.createdAt)}.</p>
+          <p className="muted small">O que o usuário pagou depois não é perdido. Se tiver mais liberações, dá para retroceder uma de cada vez, da mais nova para a mais antiga.</p>
+        </Modal>
       )}
 
       {confirmDel && (

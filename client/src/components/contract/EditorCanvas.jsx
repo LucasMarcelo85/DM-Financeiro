@@ -59,7 +59,7 @@ function EditArea({ el, onChange, onDone }) {
   );
 }
 
-function Page({ page, index, count, orientation, zoom, today, selectedId, editingId, active, on }) {
+function Page({ page, index, count, orientation, zoom, today, ctx, selectedId, editingId, active, on }) {
   const { w: PW, h: PH } = pageSize(orientation);
   const pageRef = useRef(null);
   const zoomRef = useRef(zoom);
@@ -216,7 +216,7 @@ function Page({ page, index, count, orientation, zoom, today, selectedId, editin
                   {editing ? (
                     <EditArea el={el} onChange={(text) => on.patch(page.id, el.id, { text }, `txt:${el.id}`)} onDone={on.stopEdit} />
                   ) : (
-                    <Content el={el} today={today} />
+                    <Content el={el} today={today} ctx={ctx} />
                   )}
                 </div>
               );
@@ -247,7 +247,7 @@ function Page({ page, index, count, orientation, zoom, today, selectedId, editin
   );
 }
 
-export default function EditorCanvas({ doc, zoom, selectedId, editingId, activePageId, on }) {
+export default function EditorCanvas({ doc, zoom, ctx, selectedId, editingId, activePageId, on }) {
   const today = isoToday();
   return (
     <div className="ce-pages">
@@ -260,6 +260,7 @@ export default function EditorCanvas({ doc, zoom, selectedId, editingId, activeP
           orientation={doc.orientation}
           zoom={zoom}
           today={today}
+          ctx={ctx}
           selectedId={selectedId}
           editingId={editingId}
           active={page.id === activePageId}

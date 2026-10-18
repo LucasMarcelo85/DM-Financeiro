@@ -20,6 +20,18 @@ export function setSession(res, userId) {
 
 export const clearSession = (res) => res.clearCookie(COOKIE, { path: '/' });
 
+// Em que parte do sistema o usuário mexeu (aparece para o administrador).
+const AREAS = {
+  '/api/contacts': 'Clientes', '/api/schedules': 'Cobranças e lembretes', '/api/messages': 'Mensagens', '/api/instances': 'WhatsApp',
+  '/api/contracts': 'Contratos', '/api/audit': 'Auditoria', '/api/billing': 'Plano e pagamento', '/api/receipts': 'Faturamento', '/api/auth': 'Conta',
+};
+const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
+const ACTIVITY_EVERY_MS = 30_000;
+
+// Marca "agora" como a última atividade do usuário (login, ou qualquer alteração que ele faça).
+export const touchActivity = (userId, area) =>
+  prisma.user.update({ where: { id: userId }, data: { lastActivityAt: new Date(), lastActivity: area } }).catch(() => {});
+
 export async function auth(req, _res, next) {
   const token = req.cookies?.[COOKIE];
   if (!token) throw new AppError(401, 'Faça login para continuar.', 'UNAUTHENTICATED');
@@ -32,6 +44,10 @@ export async function auth(req, _res, next) {
   const user = await prisma.user.findUnique({ where: { id } });
   if (!user) throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
   req.user = user;
+  // Só alterações contam como "mexeu em algo" (abrir telas e atualizações automáticas, não). No máximo 1 gravação a cada 30 s.
+  if (WRITES.has(req.method) && (!user.lastActivityAt || Date.now() - user.lastActivityAt.getTime() > ACTIVITY_EVERY_MS)) {
+    touchActivity(user.id, AREAS[req.baseUrl] || 'Sistema');
+  }
   next();
 }
 

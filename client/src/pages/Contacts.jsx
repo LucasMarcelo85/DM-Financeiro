@@ -4,11 +4,19 @@ import { api } from '../api.js';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
-import { formatStoredPhone, initials, maskPhone, plural } from '../lib/format.js';
+import { digits, formatStoredPhone, initials, maskCNPJ, maskCPF, maskPhone, plural } from '../lib/format.js';
+
+const maskAnyDoc = (v) => (digits(v).length > 11 ? maskCNPJ(v) : maskCPF(v));
+const maskCEP = (v) => { const d = digits(v).slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
+const EXTRA = ['document', 'zip', 'street', 'number', 'complement', 'district', 'city', 'state'];
 
 function ContactForm({ initial, onClose, onSaved }) {
   const toast = useToast();
-  const [f, setF] = useState({ name: initial?.name || '', phone: initial?.phone ? formatStoredPhone(initial.phone) : '', email: initial?.email || '', notes: initial?.notes || '' });
+  const [f, setF] = useState({
+    name: initial?.name || '', phone: initial?.phone ? formatStoredPhone(initial.phone) : '', email: initial?.email || '', notes: initial?.notes || '',
+    document: initial?.document ? maskAnyDoc(initial.document) : '', zip: initial?.zip ? maskCEP(initial.zip) : '',
+    street: initial?.street || '', number: initial?.number || '', complement: initial?.complement || '', district: initial?.district || '', city: initial?.city || '', state: initial?.state || '',
+  });
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const set = (k) => (e) => setF((x) => ({ ...x, [k]: e.target.value }));
@@ -30,6 +38,24 @@ function ContactForm({ initial, onClose, onSaved }) {
         <label className="field"><span>WhatsApp</span><input className="input" type="tel" inputMode="tel" value={f.phone} placeholder="(85) 99999-9999" onChange={(e) => setF((x) => ({ ...x, phone: maskPhone(e.target.value) }))} autoComplete="off" /></label>
         <label className="field"><span>E-mail (opcional)</span><input className="input" type="email" value={f.email} onChange={set('email')} autoComplete="off" /></label>
         <label className="field"><span>Observação (opcional)</span><textarea className="input" rows={2} value={f.notes} onChange={set('notes')} maxLength={500} /></label>
+        <details className="contact-extra" open={EXTRA.some((k) => initial?.[k])}>
+          <summary>Dados para contratos <small>(opcional)</small></summary>
+          <p className="muted small">Esses dados viram variáveis nos contratos, como {'{{cliente.documento}}'} e {'{{cliente.endereco}}'}.</p>
+          <label className="field"><span>CPF ou CNPJ</span><input className="input" inputMode="numeric" value={f.document} onChange={(e) => setF((x) => ({ ...x, document: maskAnyDoc(e.target.value) }))} placeholder="000.000.000-00" autoComplete="off" /></label>
+          <div className="field-row">
+            <label className="field"><span>CEP</span><input className="input" inputMode="numeric" value={f.zip} onChange={(e) => setF((x) => ({ ...x, zip: maskCEP(e.target.value) }))} placeholder="00000-000" autoComplete="off" /></label>
+            <label className="field"><span>Estado (UF)</span><input className="input" value={f.state} onChange={(e) => setF((x) => ({ ...x, state: e.target.value.replace(/[^a-zA-Z]/g, '').slice(0, 2).toUpperCase() }))} placeholder="CE" autoComplete="off" /></label>
+          </div>
+          <label className="field"><span>Rua</span><input className="input" value={f.street} onChange={set('street')} maxLength={120} autoComplete="off" /></label>
+          <div className="field-row">
+            <label className="field"><span>Número</span><input className="input" value={f.number} onChange={set('number')} maxLength={20} autoComplete="off" /></label>
+            <label className="field"><span>Complemento</span><input className="input" value={f.complement} onChange={set('complement')} maxLength={80} autoComplete="off" /></label>
+          </div>
+          <div className="field-row">
+            <label className="field"><span>Bairro</span><input className="input" value={f.district} onChange={set('district')} maxLength={80} autoComplete="off" /></label>
+            <label className="field"><span>Cidade</span><input className="input" value={f.city} onChange={set('city')} maxLength={80} autoComplete="off" /></label>
+          </div>
+        </details>
         {error && <p className="form-error" role="alert">{error}</p>}
         <div className="modal-footer">
           <button type="button" className="btn btn-ghost" onClick={onClose}>Cancelar</button>

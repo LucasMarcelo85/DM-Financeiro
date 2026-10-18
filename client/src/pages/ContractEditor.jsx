@@ -1,11 +1,14 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { useNavigate, useParams } from 'react-router-dom';
+import { useNavigate, useParams, useSearchParams } from 'react-router-dom';
+import { useAuth } from '../auth.jsx';
 import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
 import Modal from '../components/Modal.jsx';
 import EditorCanvas from '../components/contract/EditorCanvas.jsx';
 import Inspector from '../components/contract/Inspector.jsx';
 import EIcon from '../components/contract/EIcon.jsx';
+import ClientPicker from '../components/contract/ClientPicker.jsx';
+import VariablePicker from '../components/contract/VariablePicker.jsx';
 import {
   MARGIN, MAX_ELEMENTS, MAX_PAGES, addElement, addPage, clamp, cloneElement, duplicatePage, exportPayload, findElement, hasFixedHeight,
   mapPage, movePage, newElement, normalizeDoc, pageSize, patchElement, removeElement, removePage, reorderElement, round1,
@@ -13,6 +16,7 @@ import {
 import { fitImage, IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { IMPORT_ACCEPT, importFile } from '../lib/contract/import.js';
 import { footerBlock, headerBlock, signaturesBlock } from '../lib/contract/templates.js';
+import { buildContext, missingVariables, variableLabel } from '../lib/contract/variables.js';
 import { downloadJson, printContract } from '../lib/contract/print.jsx';
 
 const PALETTE = [
@@ -20,6 +24,7 @@ const PALETTE = [
   { id: 'subtitle', label: 'Subtítulo', icon: 'subtitle' },
   { id: 'text', label: 'Texto', icon: 'text' },
   { id: 'date', label: 'Data', icon: 'date' },
+  { id: 'variavel', label: 'Variável', icon: 'braces' },
   { id: 'capsule', label: 'Cápsula', icon: 'capsule' },
   { id: 'logo', label: 'Logo', icon: 'logo' },
   { id: 'image', label: 'Imagem', icon: 'image' },
@@ -32,6 +37,8 @@ export default function ContractEditor() {
   const { id } = useParams();
   const nav = useNavigate();
   const toast = useToast();
+  const { user } = useAuth();
+  const [qs, setQs] = useSearchParams();
 
   const [doc, setDocState] = useState(null);
   const [name, setName] = useState('');
@@ -44,6 +51,9 @@ export default function ContractEditor() {
   const [busy, setBusy] = useState('');
   const [leave, setLeave] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [contact, setContact] = useState(null); // cliente escolhido: as variáveis mostram os dados dele
+  const [picker, setPicker] = useState(false);
+  const [varsOpen, setVarsOpen] = useState(false);
 
   const docRef = useRef(null);
   const nameRef = useRef('');
@@ -122,6 +132,19 @@ export default function ContractEditor() {
   const activePage = useMemo(() => doc?.pages.find((p) => p.id === activePageId) || doc?.pages[0], [doc, activePageId]);
   const activeIndex = doc ? Math.max(0, doc.pages.findIndex((p) => p.id === activePage?.id)) : 0;
   const selected = useMemo(() => (doc && selectedId ? findElement(doc, selectedId) : null), [doc, selectedId]);
+  const ctx = useMemo(() => (contact ? buildContext({ contact, user }) : null), [contact, user]);
+  const ctxRef = useRef(null);
+  ctxRef.current = ctx;
+  const missing = useMemo(() => (ctx && doc ? missingVariables(doc, ctx) : []), [ctx, doc]);
+
+  // Abriu pela lista com "Gerar para cliente" (?cliente=ID): já escolhe o cliente.
+  const clienteId = qs.get('cliente');
+  useEffect(() => {
+    if (!clienteId) return;
+    api.get(`/contacts/${clienteId}`).then((r) => setContact(r.contact)).catch(() => toast('Cliente não encontrado.', 'error'));
+  }, [clienteId, toast]);
+  const chooseClient = (c) => { setContact(c); setPicker(false); if (qs.get('cliente')) setQs({}, { replace: true }); };
+  const clearClient = () => { setContact(null); if (qs.get('cliente')) setQs({}, { replace: true }); };
 
   // ---------------------------------------------------------------- salvar
   const save = useCallback(async () => {
@@ -194,6 +217,7 @@ export default function ContractEditor() {
   }
 
   function addByType(type) {
+    if (type === 'variavel') { setVarsOpen(true); return; }
     if (type === 'logo' || type === 'image') {
       imgMode.current = type;
       imgInput.current?.click();
@@ -273,6 +297,30 @@ export default function ContractEditor() {
       commit(patchElement(d, page.id, el.id, patch));
     }
     return undefined;
+  }
+
+  // Insere {{variável}} no texto selecionado (na posição do cursor, se houver) ou numa nova caixa de texto.
+  function insertVariable(key, caret) {
+    const token = `{{${key}}}`;
+    const d = docRef.current;
+    const f = selectedRef.current && findElement(d, selectedRef.current);
+    if (f && ['title', 'subtitle', 'text', 'capsule'].includes(f.el.t) && !f.el.locked) {
+      const text = f.el.text || '';
+      const at = Number.isInteger(caret) && caret >= 0 && caret <= text.length ? caret : text.length;
+      const before = text.slice(0, at);
+      const glue = at === text.length && before && !/[\s(\[]$/.test(before) ? ' ' : '';
+      commit(patchElement(d, f.page.id, f.el.id, { text: `${before}${glue}${token}${text.slice(at)}` }), `var:${f.el.id}`);
+      toast(`Inserido: ${variableLabel(key)}`);
+      return;
+    }
+    const page = d.pages.find((p) => p.id === activePageIdRef.current) || d.pages[0];
+    const { w: PW } = pageSize(d.orientation);
+    const el = newElement('text', { text: token });
+    el.w = Math.min(el.w, PW - MARGIN * 2);
+    el.x = Math.round((PW - el.w) / 2);
+    el.y = nextY(page, d.orientation);
+    insert(el);
+    toast(`Nova caixa criada com: ${variableLabel(key)}`);
   }
 
   function pageAction(action, index) {
@@ -357,7 +405,7 @@ export default function ContractEditor() {
   async function print() {
     setSelectedId(null); setEditingId(null);
     setBusy('Preparando...');
-    try { await printContract(docRef.current, nameRef.current); } catch { toast('Não foi possível abrir a impressão.', 'error'); } finally { setBusy(''); }
+    try { await printContract(docRef.current, contact ? `${nameRef.current} - ${contact.name}` : nameRef.current, ctxRef.current); } catch { toast('Não foi possível abrir a impressão.', 'error'); } finally { setBusy(''); }
   }
 
   const exportJson = () => downloadJson(`${(nameRef.current || 'contrato').replace(/[^\w\- ]+/g, '').trim() || 'contrato'}.json`, exportPayload(nameRef.current, docRef.current));
@@ -378,6 +426,10 @@ export default function ContractEditor() {
         />
         <span className={`ce-status is-${saveState}`} role="status">{SAVE_LABEL[saveState]}</span>
         <span className="ce-grow" />
+        <span className={`ce-client ${contact ? 'is-on' : ''}`}>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPicker(true)} title="Ver o contrato com os dados de um cliente"><EIcon name="user" size={16} /> <span className="ce-client-name">{contact ? contact.name : 'Ver com cliente'}</span></button>
+          {contact && <button type="button" className="ce-mini" onClick={clearClient} aria-label="Voltar a mostrar as variáveis" title="Voltar a mostrar as variáveis"><EIcon name="x" size={14} /></button>}
+        </span>
         <button type="button" className="ce-mini" onClick={undo} disabled={!past.current.length} title="Desfazer (Ctrl+Z)" aria-label="Desfazer"><EIcon name="undo" /></button>
         <button type="button" className="ce-mini" onClick={redo} disabled={!future.current.length} title="Refazer (Ctrl+Y)" aria-label="Refazer"><EIcon name="redo" /></button>
         <span className="ce-zoom">
@@ -392,6 +444,15 @@ export default function ContractEditor() {
         <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saveState === 'saving' || saveState === 'saved'}>Salvar</button>
       </header>
 
+      {contact && (
+        <div className="ce-preview" role="status">
+          <span>Mostrando os dados de <strong>{contact.name}</strong> nas variáveis. O PDF sai assim.</span>
+          {missing.length > 0
+            ? <span className="ce-preview-warn">Faltam no cadastro: {missing.map((m) => m.label).join(', ')}. Saem como ________ (complete em Clientes).</span>
+            : <span className="ce-preview-ok">Todos os campos usados estão preenchidos.</span>}
+        </div>
+      )}
+
       <div className="ce-body">
         <nav className="ce-palette" aria-label="Inserir elementos">
           {PALETTE.map((p) => (
@@ -403,7 +464,7 @@ export default function ContractEditor() {
         </nav>
 
         <main className="ce-stage" ref={stageRef}>
-          <EditorCanvas doc={doc} zoom={zoom} selectedId={selectedId} editingId={editingId} activePageId={activePage?.id} on={canvasApi} />
+          <EditorCanvas doc={doc} zoom={zoom} ctx={ctx} selectedId={selectedId} editingId={editingId} activePageId={activePage?.id} on={canvasApi} />
         </main>
 
         <aside className={`ce-side ${panelOpen ? 'is-open' : ''}`} aria-label="Propriedades">
@@ -418,6 +479,7 @@ export default function ContractEditor() {
               patch: patchSelected,
               act,
               insertBlock,
+              insertVariable,
               setOrientation: (o) => commit({ ...docRef.current, orientation: o }),
               setPageBg: (bg, key) => commit(mapPage(docRef.current, activePage.id, (p) => ({ ...p, bg })), key),
             }}
@@ -432,6 +494,13 @@ export default function ContractEditor() {
         onPickImage(file, mode.startsWith('replace:') ? 'image' : mode, mode.startsWith('replace:') ? mode.slice(8) : null);
       }} />
       <input ref={importInput} type="file" accept={IMPORT_ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onImport(f); }} />
+      {picker && <ClientPicker title="Ver o contrato com os dados de..." onPick={chooseClient} onClose={() => setPicker(false)} />}
+      {varsOpen && (
+        <Modal title="Variáveis do contrato" onClose={() => setVarsOpen(false)} footer={<button className="btn btn-primary" onClick={() => setVarsOpen(false)}>Pronto</button>}>
+          <p className="muted small">Clique para inserir no texto selecionado (ou numa nova caixa). Na hora de gerar, cada variável vira o dado do cliente: use <strong>Ver com cliente</strong> para conferir e imprimir.</p>
+          <VariablePicker onPick={(k) => insertVariable(k)} />
+        </Modal>
+      )}
       {busy && <div className="ce-busy" role="status">{busy}</div>}
 
       {leave && (

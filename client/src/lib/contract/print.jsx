@@ -3,7 +3,7 @@ import { isoToday, pageSize } from './model.js';
 
 // Imprime / salva em PDF: monta as páginas dentro do próprio site (só visíveis na impressão)
 // e chama o diálogo de impressão do navegador ("Salvar como PDF").
-export async function printContract(doc, name) {
+export async function printContract(doc, name, ctx = null) {
   const { renderToStaticMarkup } = await import('react-dom/server');
   const { w, h } = pageSize(doc.orientation);
   const today = isoToday();
@@ -12,7 +12,7 @@ export async function printContract(doc, name) {
     .map((page) =>
       renderToStaticMarkup(
         <div className="dmp-page" style={{ background: page.bg }}>
-          {page.els.map((el) => <StaticElement key={el.id} el={el} today={today} />)}
+          {page.els.map((el) => <StaticElement key={el.id} el={el} today={today} ctx={ctx} />)}
         </div>
       )
     )
