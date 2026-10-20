@@ -27,6 +27,7 @@ let evoState = 'close';
 const readBody = (req) => new Promise((r) => { let s = ''; req.on('data', (c) => (s += c)); req.on('end', () => r(s ? JSON.parse(s) : {})); });
 const json = (res, code, obj) => { res.writeHead(code, { 'Content-Type': 'application/json' }); res.end(JSON.stringify(obj)); };
 
+const fake = { chats: [], messages: {}, contacts: [], groups: [], media: {}, ascending: false }; // o que a Evolution falsa devolve (cada teste ajusta)
 const evoCalls = []; // chamadas à Evolution que a auditoria faz (criar com webhook, ligar webhook...)
 let evoSeq = 0;
 const evo = http.createServer(async (req, res) => {
@@ -34,15 +35,16 @@ const evo = http.createServer(async (req, res) => {
   if (req.headers.apikey !== 'k') return json(res, 401, { message: 'unauthorized' });
   evoCalls.push({ url: req.url, body: b });
   if (req.url === '/instance/create') return json(res, 201, { instance: { instanceName: b.instanceName }, qrcode: { base64: 'data:image/png;base64,AAAA' } });
-  if (req.url.startsWith('/webhook/set/')) return json(res, 201, { webhook: b.webhook });
-  if (req.url.startsWith('/chat/findChats/')) return json(res, 200, [{ remoteJid: '5585911112222@s.whatsapp.net', name: 'Histórico Hugo' }]);
-  if (req.url.startsWith('/chat/findMessages/')) return json(res, 200, { messages: { records: [
-    { key: { remoteJid: b.where.key.remoteJid, fromMe: false, id: 'HIST1' }, pushName: 'Histórico Hugo', message: { conversation: 'mensagem antiga 1' }, messageTimestamp: 1700000000 },
-    { key: { remoteJid: b.where.key.remoteJid, fromMe: true, id: 'HIST2' }, message: { conversation: 'mensagem antiga 2' }, messageTimestamp: 1700000100 }] } });
   if (req.url.startsWith('/instance/connect/')) return json(res, 200, { base64: 'AAAA' });
   if (req.url.startsWith('/instance/connectionState/')) return json(res, 200, { instance: { state: evoState } });
   if (req.url.startsWith('/instance/logout/')) { evoState = 'close'; return json(res, 200, {}); }
   if (req.url.startsWith('/instance/delete/')) return json(res, 200, {});
+  if (req.url.startsWith('/webhook/set/')) return json(res, 201, { webhook: b.webhook });
+  if (req.url.startsWith('/chat/findChats/')) return json(res, 200, fake.chats);
+  if (req.url.startsWith('/chat/findMessages/')) { const all = fake.messages[b.where.key.remoteJid] || []; const per = b.offset || 50; const pages = Math.max(1, Math.ceil(all.length / per)); const pg = b.page || 1; return json(res, 200, { messages: { total: all.length, pages, currentPage: pg, records: fake.ascending ? all.slice((pg - 1) * per, pg * per) : [...all].reverse().slice((pg - 1) * per, pg * per) } }); }
+  if (req.url.startsWith('/chat/findContacts/')) return json(res, 200, fake.contacts.filter((c) => !b.where?.remoteJid || c.remoteJid === b.where.remoteJid));
+  if (req.url.startsWith('/group/fetchAllGroups/')) return json(res, 200, fake.groups);
+  if (req.url.startsWith('/chat/getBase64FromMediaMessage/')) { const f = fake.media[b.message.key.id]; return f ? json(res, 201, { base64: f.base64, mimetype: f.mimetype, fileName: f.fileName }) : json(res, 400, { message: 'Message not found' }); }
   if (req.url.startsWith('/message/sendText/')) { sent.push(b); return json(res, 201, { key: { id: `EVOSENT${++evoSeq}` } }); }
   json(res, 404, { message: 'not found' });
 });
@@ -91,7 +93,7 @@ const server = spawn('node', ['server/index.js'], {
   cwd: root,
   env: { ...process.env, PORT: String(port), DATABASE_URL: dbUrl.toString(), JWT_SECRET: 'x'.repeat(40), APP_URL: 'http://localhost:5173',
     EVOLUTION_API_URL: `http://127.0.0.1:${evoPort}`, EVOLUTION_API_KEY: 'k', EVOLUTION_MESSAGE_DELAY_MS: '50',
-    META_GRAPH_URL: `http://127.0.0.1:${graphPort}`, ENCRYPTION_KEY: 'chave-de-teste-para-tokens', INFINITEPAY_HANDLE: 'loja', INFINITEPAY_API_URL: `http://127.0.0.1:${ipPort}`, SCHEDULER_INTERVAL_SECONDS: '1',
+    META_GRAPH_URL: `http://127.0.0.1:${graphPort}`, AUDIT_SYNC_SECONDS: '1', AUDIT_SYNC_IDLE_SECONDS: '2', ENCRYPTION_KEY: 'chave-de-teste-para-tokens', INFINITEPAY_HANDLE: 'loja', INFINITEPAY_API_URL: `http://127.0.0.1:${ipPort}`, SCHEDULER_INTERVAL_SECONDS: '1',
     ADMIN_EMAIL: 'admin@t.com', ADMIN_PASSWORD: 'admin12345', APP_TIMEZONE: 'America/Sao_Paulo' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
@@ -427,7 +429,7 @@ try {
   await hook('messages.upsert', { key: { remoteJid: '120363000000000000@g.us', fromMe: false, id: 'G1', participant: '5585977776666@s.whatsapp.net' }, pushName: 'Beto', message: { ephemeralMessage: { message: { conversation: 'oi grupo' } } }, messageTimestamp: T0 + 30 });
   r = await u('GET', '/audit/chats'); assert.equal(r.body.chats.length, 2);
   const ana = r.body.chats.find((c) => c.phone === '5585988887777'); const grp = r.body.chats.find((c) => c.isGroup);
-  assert.equal(ana.name, 'Cliente Ana'); assert.equal(ana.unread, 3); assert.equal(ana.lastText, 'comprovante do pix'); assert.equal(ana.instanceId, aud1.id); assert.equal(r.body.chats[0].id, ana.id);
+  assert.equal(ana.name, 'Cliente Ana'); assert.equal(ana.unread, 1); assert.equal(ana.lastText, 'comprovante do pix'); assert.equal(ana.instanceId, aud1.id); assert.equal(r.body.chats[0].id, ana.id);
   assert.equal(grp.lastText, 'oi grupo');
   r = await u('GET', `/audit/chats/${ana.id}/messages`); assert.deepEqual(r.body.messages.map((m) => m.body), ['Olá, qual o preço do orçamento?', 'Pode fechar', 'Claro, vou mandar o contrato', 'comprovante do pix']);
   assert.equal(r.body.messages[2].fromMe, true); assert.equal(r.body.messages[3].type, 'image'); assert.equal(r.body.hasOlder, false);
@@ -478,9 +480,7 @@ try {
   ok('paginação (50 por vez), mensagens mais antigas e "ir até a mensagem encontrada"');
   r = await client('hook')('POST', `/webhooks/evolution/11144477735-aud?token=${hookToken}`, { event: 'contacts.upsert', data: Array.from({ length: 2500 }, (_, i) => ({ remoteJid: `55859${String(i).padStart(8, '0')}@s.whatsapp.net`, pushName: `Contato ${i}` })) });
   assert.equal(r.status, 200); ok('webhook aceita lote grande de contatos (mais de 100 kb)');
-  r = await u('POST', `/audit/instances/${aud1.id}/sync`); assert.equal(r.body.imported, 2);
-  r = await u('GET', '/audit/chats?q=Hugo'); const hugo = r.body.chats[0]; assert.equal(hugo.unread, 0); assert.equal(hugo.name, 'Histórico Hugo');
-  r = await u('GET', `/audit/chats/${hugo.id}/messages`); assert.deepEqual(r.body.messages.map((m) => m.body), ['mensagem antiga 1', 'mensagem antiga 2']); ok('sincronizar histórico da Evolution (sem marcar como não lido)');
+  // (importação do histórico, busca automática, mídia e nomes são testados mais abaixo)
 
   // ===== auditoria: tempo real (SSE) =====
   const ctl = new AbortController();
@@ -497,6 +497,142 @@ try {
   // ===== auditoria: enviar mensagem (só plano Ouro) =====
   r = await u('POST', `/audit/chats/${ana.id}/send`, { text: 'oi' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'PLAN_NO_SEND');
   ok('plano Prata só visualiza: tentar enviar pela auditoria é bloqueado');
+
+  // ===== auditoria robusta: grupos, busca, não lidas, ordem, nomes, mídia, atualização automática =====
+  const nowS = () => Math.floor(Date.now() / 1000);
+  const AJ = '5585988887777@s.whatsapp.net'; const GJ = '120363000000000000@g.us';
+  const getApi = (path, headers = {}, who = 'u') => fetch(`http://localhost:${port}/api${path}`, { headers: { Cookie: jar[who], ...headers } });
+  const chatsOf = async (qs = '') => (await u('GET', `/audit/chats?limit=100${qs}`)).body;
+  const msgsOf = async (id) => (await u('GET', `/audit/chats/${id}/messages?limit=100`)).body.messages;
+
+  r = await u('GET', '/audit/chats?kind=groups'); assert.deepEqual(r.body.chats.map((c) => c.id), [grp.id]);
+  r = await u('GET', '/audit/chats?kind=direct'); assert.ok(r.body.chats.length >= 2 && r.body.chats.every((c) => !c.isGroup)); assert.ok(r.body.chats.some((c) => c.id === ana.id));
+  ok('filtro: só grupos, só contatos');
+
+  // --- busca: acentos, várias palavras, frase, nomes
+  await hook('contacts.upsert', [{ remoteJid: '5585900001111@s.whatsapp.net', pushName: 'Paulo Açaí' }]);
+  r = await chatsOf('&q=acai'); assert.equal(r.chats.length, 1); assert.equal(r.chats[0].name, 'Paulo Açaí');
+  r = await chatsOf(`&q=${encodeURIComponent('paulo numero 7')}`); assert.equal(r.chats.length, 1);
+  r = await chatsOf(`&q=${encodeURIComponent('"numero 7"')}`); assert.equal(r.chats.length, 1);
+  r = await chatsOf(`&q=${encodeURIComponent('"7 numero"')}`); assert.equal(r.chats.length, 0);
+  r = await chatsOf(`&q=${encodeURIComponent('ana orcamento')}`); assert.equal(r.chats.length, 1); assert.equal(r.chats[0].id, ana.id);
+  r = await chatsOf(`&q=${encodeURIComponent('ana zzzz')}`); assert.equal(r.chats.length, 0);
+  r = await u('GET', `/audit/chats/${(await chatsOf('&q=acai')).chats[0].id}/search?q=${encodeURIComponent('mensagem 59')}`); assert.equal(r.body.total, 1);
+  ok('busca por várias palavras (todas), frase entre aspas e nome sem acento');
+
+  // --- não lidas por mensagem
+  const dora = (id, text, dt = 0, extra = {}) => ({ key: { remoteJid: '5585955550000@s.whatsapp.net', fromMe: false, id, ...extra.key }, pushName: 'Dora', message: { conversation: text }, messageTimestamp: nowS() + dt, ...extra.rest });
+  const unreadOf = async (name) => (await chatsOf()).chats.find((c) => c.name === name)?.unread;
+  await hook('messages.upsert', dora('D1', 'oi', -30)); await hook('messages.upsert', dora('D2', 'tudo bem?', -20));
+  assert.equal(await unreadOf('Dora'), 2);
+  r = await chatsOf(); assert.equal(r.unreadTotal, r.chats.reduce((n, c) => n + c.unread, 0)); assert.equal(r.unreadChats, r.chats.filter((c) => c.unread).length);
+  await hook('messages.update', [{ keyId: 'D1', status: 'READ' }]); assert.equal(await unreadOf('Dora'), 1); // o dono leu essa no celular
+  const doraId = (await chatsOf()).chats.find((c) => c.name === 'Dora').id;
+  r = await u('POST', `/audit/chats/${doraId}/read`); assert.equal(r.body.unread, 0); assert.equal(await unreadOf('Dora'), 0);
+  await hook('messages.upsert', dora('D3', 'cheguei', -10)); assert.equal(await unreadOf('Dora'), 1);
+  await hook('messages.upsert', { key: { remoteJid: '5585955550000@s.whatsapp.net', fromMe: true, id: 'D4' }, message: { conversation: 'já te respondo' }, messageTimestamp: nowS() }); assert.equal(await unreadOf('Dora'), 0); // o dono respondeu pelo celular
+  await hook('messages.upsert', dora('D5', 'chegou atrasada', -5)); assert.equal(await unreadOf('Dora'), 0); // anterior à resposta do dono: já foi vista
+  await hook('messages.upsert', dora('D6', 'mensagem antiga', -3 * 3600)); assert.equal(await unreadOf('Dora'), 0); // histórico (3 h atrás) não conta como nova
+  await hook('messages.upsert', dora('D7', 'agora sim', 5)); assert.equal(await unreadOf('Dora'), 1);
+  r = await chatsOf('&unread=1'); assert.ok(r.chats.some((c) => c.name === 'Dora')); await u('POST', `/audit/chats/${doraId}/read`); r = await chatsOf('&unread=1'); assert.ok(!r.chats.some((c) => c.name === 'Dora'));
+  ok('não lidas: abrir a conversa, responder pelo celular, "lida" do WhatsApp, mensagem atrasada e histórico');
+
+  // --- ordem
+  const ord = (id, ts, text, fromMe = false) => ({ key: { remoteJid: '5585933330000@s.whatsapp.net', fromMe, id }, pushName: 'Ordem', message: { conversation: text }, messageTimestamp: ts });
+  await hook('messages.upsert', ord('O2', nowS() - 100, 'segunda')); await hook('messages.upsert', ord('O1', nowS() - 300, 'primeira')); await hook('messages.upsert', ord('O3', nowS() + 3 * 86400, 'do futuro'));
+  const ordem = (await chatsOf()).chats.find((c) => c.name === 'Ordem');
+  assert.deepEqual((await msgsOf(ordem.id)).map((m) => m.body), ['primeira', 'segunda', 'do futuro']);
+  assert.ok(ordem.lastMessageAt <= Date.now() + 70_000); assert.equal(ordem.lastText, 'do futuro');
+  r = await chatsOf(); const times = r.chats.map((c) => c.lastMessageAt); assert.deepEqual(times, [...times].sort((a, b) => b - a));
+  ok('ordem: lista pela mensagem mais recente, conversa em ordem de horário (mesmo se chegou atrasada) e data futura não gruda no topo');
+
+  // --- nomes
+  await hook('messages.upsert', { key: { remoteJid: '5585944443333@s.whatsapp.net', fromMe: false, id: 'NN1' }, message: { conversation: 'sem nome' }, messageTimestamp: nowS() });
+  assert.equal((await chatsOf()).chats.find((c) => c.phone === '5585944443333').name, null);
+  await hook('contacts.upsert', [{ remoteJid: '5585944443333@s.whatsapp.net', pushName: 'Maria Souza' }]);
+  assert.equal((await chatsOf('&q=souza')).chats[0].name, 'Maria Souza');
+  await hook('chats.upsert', [{ id: GJ, name: 'Equipe Vendas' }]); r = await chatsOf('&kind=groups&q=vendas'); assert.equal(r.chats[0].name, 'Equipe Vendas');
+  await hook('messages.upsert', { key: { remoteJid: GJ, fromMe: false, id: 'G2', participant: '5585966660000@s.whatsapp.net' }, message: { conversation: 'oi time' }, messageTimestamp: nowS() });
+  let gm = (await msgsOf(grp.id)).find((m) => m.body === 'oi time'); assert.equal(gm.sender, null); assert.equal(gm.senderPhone, '5585966660000');
+  await hook('contacts.upsert', [{ remoteJid: '5585966660000@s.whatsapp.net', pushName: 'Carlos' }]);
+  gm = (await msgsOf(grp.id)).find((m) => m.body === 'oi time'); assert.equal(gm.sender, 'Carlos');
+  ok('nomes: contato, assunto do grupo e quem falou no grupo (aparece o nome em vez do número)');
+
+  // --- mensagem editada
+  await hook('messages.upsert', { key: { remoteJid: AJ, fromMe: false, id: 'ED1' }, pushName: 'Cliente Ana', message: { conversation: 'valor errado 100' }, messageTimestamp: nowS() });
+  await hook('messages.upsert', { key: { remoteJid: AJ, fromMe: false, id: 'ED2' }, message: { protocolMessage: { type: 14, key: { id: 'ED1' }, editedMessage: { conversation: 'valor certo 200' } } }, messageTimestamp: nowS() });
+  assert.ok((await msgsOf(ana.id)).some((m) => m.body === 'valor certo 200')); assert.equal((await u('GET', `/audit/chats/${ana.id}/search?q=certo`)).body.total, 1);
+  ok('mensagem editada atualiza o texto e a busca');
+
+  // --- canal de atualização de segurança (/updates)
+  const cur = (await u('GET', '/audit/chats?limit=1')).body.cursor;
+  await hook('messages.upsert', { key: { remoteJid: AJ, fromMe: false, id: 'UPD1' }, pushName: 'Cliente Ana', message: { conversation: 'chegou pelo canal de segurança' }, messageTimestamp: nowS() });
+  r = await u('GET', `/audit/updates?after=${cur}`); assert.equal(r.body.messages.length, 1); assert.equal(r.body.messages[0].body, 'chegou pelo canal de segurança'); assert.equal(r.body.chats[0].id, ana.id); assert.ok(r.body.cursor > cur);
+  r = await u('GET', `/audit/updates?after=${r.body.cursor}`); assert.equal(r.body.messages.length, 0);
+  r = await other('GET', `/audit/updates?after=${cur}`); assert.equal(r.body.messages.length, 0);
+  ok('/updates devolve só o que chegou depois (e só do dono): a tela se atualiza mesmo se o tempo real for barrado');
+
+  // --- mídia
+  const PNG = Buffer.from('iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==', 'base64');
+  const media = (id, node, rest = {}) => ({ key: { remoteJid: AJ, fromMe: false, id }, pushName: 'Cliente Ana', message: { ...node, ...rest }, messageTimestamp: nowS() });
+  await hook('messages.upsert', media('IMG1', { imageMessage: { mimetype: 'image/png', caption: 'foto do comprovante', jpegThumbnail: { 0: 255, 1: 216, 2: 255, 3: 217 } } }, { base64: PNG.toString('base64') }));
+  let im = (await msgsOf(ana.id)).find((m) => m.body === 'foto do comprovante'); assert.equal(im.type, 'image'); assert.deepEqual([im.media.mime, im.media.thumb], ['image/png', true]);
+  let f = await getApi(`/audit/messages/${im.id}/media`); assert.equal(f.status, 200); assert.equal(f.headers.get('content-type'), 'image/png'); assert.match(f.headers.get('content-disposition'), /^inline/); assert.match(f.headers.get('content-security-policy'), /sandbox/);
+  assert.ok(Buffer.from(await f.arrayBuffer()).equals(PNG));
+  assert.equal((await chatsOf(`&q=${encodeURIComponent('comprovante')}`)).chats.some((c) => c.id === ana.id), true);
+  fake.media.AUD1 = { base64: Buffer.from('OggS-audio-de-teste').toString('base64'), mimetype: 'audio/ogg; codecs=opus' };
+  await hook('messages.upsert', media('AUD1', { audioMessage: { mimetype: 'audio/ogg; codecs=opus', seconds: 7, ptt: true } }));
+  const au = (await msgsOf(ana.id)).find((m) => m.type === 'audio'); assert.equal(au.media.seconds, 7);
+  await eventually(async () => (await db.query('SELECT 1 FROM audit_media WHERE message_id = $1', [au.id])).rowCount === 1, 'áudio baixado sozinho da Evolution');
+  f = await getApi(`/audit/messages/${au.id}/media`); assert.equal(f.status, 200); assert.equal(f.headers.get('content-type'), 'audio/ogg; codecs=opus'); assert.equal(await f.text(), 'OggS-audio-de-teste');
+  fake.media.VID1 = { base64: Buffer.from('0123456789ABCDEF').toString('base64'), mimetype: 'video/mp4' };
+  await hook('messages.upsert', media('VID1', { videoMessage: { mimetype: 'video/mp4', caption: 'vídeo da obra', seconds: 3 } }));
+  const vi = (await msgsOf(ana.id)).find((m) => m.type === 'video'); assert.equal((await db.query('SELECT 1 FROM audit_media WHERE message_id = $1', [vi.id])).rowCount, 0); // vídeo só baixa quando alguém abre
+  f = await getApi(`/audit/messages/${vi.id}/media`, { Range: 'bytes=2-5' }); assert.equal(f.status, 206); assert.equal(f.headers.get('content-range'), 'bytes 2-5/16'); assert.equal(await f.text(), '2345');
+  f = await getApi(`/audit/messages/${vi.id}/media`, { Range: 'bytes=-4' }); assert.equal(f.status, 206); assert.equal(await f.text(), 'CDEF');
+  f = await getApi(`/audit/messages/${vi.id}/media`, { Range: 'bytes=99-120' }); assert.equal(f.status, 416);
+  f = await getApi(`/audit/messages/${vi.id}/media`); assert.equal(f.status, 200); assert.equal(f.headers.get('content-length'), '16');
+  await hook('messages.upsert', media('GONE1', { imageMessage: { mimetype: 'image/jpeg', jpegThumbnail: 'AAAA' } }));
+  const lost = (await msgsOf(ana.id)).filter((m) => m.type === 'image' && m.id !== im.id).at(-1); f = await getApi(`/audit/messages/${lost.id}/media`); assert.equal(f.status, 200); assert.equal(f.headers.get('content-type'), 'image/jpeg'); // arquivo sumiu: mostra a miniatura
+  await hook('messages.upsert', media('GONE2', { videoMessage: { mimetype: 'video/mp4' } })); const gone2 = (await msgsOf(ana.id)).filter((m) => m.type === 'video' && m.id !== vi.id).at(-1); f = await getApi(`/audit/messages/${gone2.id}/media`); assert.equal(f.status, 404);
+  fake.media.SVG1 = { base64: Buffer.from('<svg xmlns="http://www.w3.org/2000/svg"><script>alert(1)</script></svg>').toString('base64'), mimetype: 'image/svg+xml' };
+  await hook('messages.upsert', media('SVG1', { imageMessage: { mimetype: 'image/svg+xml' } })); await sleep(1200);
+  const svg = (await msgsOf(ana.id)).find((m) => m.media?.mime === 'image/svg+xml'); f = await getApi(`/audit/messages/${svg.id}/media`); assert.equal(f.headers.get('content-type'), 'application/octet-stream'); assert.match(f.headers.get('content-disposition'), /^attachment/);
+  await hook('messages.upsert', media('DOC1', { documentMessage: { mimetype: 'application/pdf', fileName: 'contrato final.pdf' } }, { base64: Buffer.from('%PDF-1.4 teste').toString('base64') }));
+  const doc1 = (await msgsOf(ana.id)).find((m) => m.type === 'document'); assert.equal(doc1.body, 'contrato final.pdf'); f = await getApi(`/audit/messages/${doc1.id}/media`); assert.match(f.headers.get('content-disposition'), /^attachment; filename="contrato final.pdf"/); assert.equal(f.headers.get('content-type'), 'application/octet-stream');
+  assert.equal((await getApi(`/audit/messages/${im.id}/media`, {}, 'other')).status, 404); assert.equal((await fetch(`http://localhost:${port}/api/audit/messages/${im.id}/media`)).status, 401);
+  ok('mídia: foto/áudio/vídeo/documento guardados e servidos (com avançar no vídeo), miniatura de reserva, SVG/documento só para baixar, dono apenas');
+
+  // --- atualização automática: aparece sozinho, sem webhook e sem clicar em importar
+  fake.groups = [{ id: '120363111111111111@g.us', subject: 'Grupo Automático' }];
+  const AUTO = '5585922224444@s.whatsapp.net'; const AUTOG = '120363111111111111@g.us';
+  const rec = (jid, id, text, extra = {}) => ({ key: { remoteJid: jid, fromMe: false, id, ...extra.key }, pushName: extra.pushName, message: { conversation: text }, messageTimestamp: nowS() });
+  fake.chats = [{ remoteJid: AUTO, name: 'Cliente Automático', updatedAt: new Date().toISOString() }, { remoteJid: AUTOG, updatedAt: new Date().toISOString() }];
+  fake.messages[AUTO] = [rec(AUTO, 'AUTO1', 'olá, apareci sozinho', { pushName: 'Cliente Automático' })];
+  fake.messages[AUTOG] = [rec(AUTOG, 'AUTOG1', 'mensagem automática do grupo', { key: { participant: '5585977771111@s.whatsapp.net' }, pushName: 'Zé' })];
+  const auto = await eventually(async () => (await chatsOf()).chats.find((c) => c.name === 'Cliente Automático'), 'conversa nova aparecer sozinha');
+  assert.equal(auto.unread, 1); assert.equal((await msgsOf(auto.id))[0].body, 'olá, apareci sozinho');
+  const autoG = await eventually(async () => (await chatsOf('&kind=groups')).chats.find((c) => c.name === 'Grupo Automático'), 'grupo novo com nome');
+  assert.equal((await msgsOf(autoG.id))[0].sender, 'Zé');
+  fake.messages[AUTO].push(rec(AUTO, 'AUTO2', 'segunda mensagem sozinha')); fake.chats[0].updatedAt = new Date().toISOString();
+  await eventually(async () => (await msgsOf(auto.id)).length === 2 && (await chatsOf()).chats.find((c) => c.id === auto.id).unread === 2, 'mensagem nova buscada sozinha');
+  fake.ascending = true; fake.messages[AUTO].push(rec(AUTO, 'AUTO3', 'terceira (Evolution em ordem crescente)')); fake.chats[0].updatedAt = new Date().toISOString();
+  await eventually(async () => (await msgsOf(auto.id)).some((m) => m.body.startsWith('terceira')), 'busca também funciona se a Evolution devolve do mais antigo ao mais novo'); fake.ascending = false;
+  ok('atualização automática: conversas, grupos (com nome) e mensagens novas aparecem sozinhos, contadas como não lidas');
+
+  // --- importar histórico (botão "Sincronizar agora") e primeira busca = tudo lido
+  const OLD = '5585911112222@s.whatsapp.net';
+  fake.chats.push({ remoteJid: OLD, name: 'Histórico Hugo', updatedAt: '2023-11-14T22:13:20.000Z' });
+  fake.messages[OLD] = [
+    { key: { remoteJid: OLD, fromMe: false, id: 'HIST1' }, pushName: 'Histórico Hugo', message: { conversation: 'mensagem antiga 1' }, messageTimestamp: 1700000000 },
+    { key: { remoteJid: OLD, fromMe: true, id: 'HIST2' }, message: { conversation: 'mensagem antiga 2' }, messageTimestamp: 1700000100 },
+  ];
+  r = await u('POST', `/audit/instances/${aud1.id}/sync`); assert.equal(r.status, 200); assert.equal(r.body.started || r.body.running, true);
+  const hugo = await eventually(async () => (await chatsOf('&q=Hugo')).chats.find((c) => c.instanceId === aud1.id), 'histórico importado');
+  assert.equal(hugo.unread, 0); assert.deepEqual((await msgsOf(hugo.id)).map((m) => m.body), ['mensagem antiga 1', 'mensagem antiga 2']);
+  r = await u('GET', '/audit/instances'); const ai = r.body.instances.find((i) => i.id === aud1.id); assert.ok(ai.lastSyncAt > Date.now() - 60_000); assert.ok('sync' in ai);
+  ok('"Sincronizar agora" importa o histórico em segundo plano (histórico entra como lido) e a conexão mostra a última sincronização');
+  fake.chats = []; fake.messages = {}; fake.groups = [];
 
   // ===== API oficial da Meta =====
   const meta = { phoneNumberId: '100200300400', businessId: '555666777', accessToken: GOOD, appSecret: 'segredo-do-app-meta-1234' };
@@ -624,7 +760,7 @@ try {
 
   console.log('\nTudo certo ✔');
 } catch (e) {
-  console.error('\nFALHOU:', e.message); if (e.stack) console.error(e.stack.split('\n').slice(1, 4).join('\n')); process.exitCode = 1;
+  console.error('\nFALHOU:', e.message); if (e.stack) console.error(e.stack.split('\n').filter((l) => l.includes('smoke-test.mjs')).slice(0, 2).join('\n')); process.exitCode = 1;
 } finally {
   server.kill(); evo.close(); ip.close(); graph.close();
   await db.end().catch(() => {});

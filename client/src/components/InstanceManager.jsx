@@ -7,6 +7,7 @@ import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
 import { formatDoc, plural } from '../lib/format.js';
+import { ago } from '../lib/audit.js';
 
 // Conexões de WhatsApp. `purpose`: 'envio' (cobranças e lembretes) ou 'auditoria' (só leitura das conversas).
 // Cada conexão pode ser por QR Code (WhatsApp comum) ou pela API oficial da Meta (WhatsApp Cloud API).
@@ -191,7 +192,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
 
   async function sync(inst) {
     const r = await run(`s${inst.id}`, () => api.post(`${base}/${inst.id}/sync`));
-    if (r) toast(r.imported ? `${plural(r.imported, 'mensagem importada', 'mensagens importadas')}.` : 'Nada novo para importar.');
+    if (r) toast(r.started ? 'Importação iniciada. O progresso aparece na tela e as conversas entram sozinhas.' : 'Já está importando.');
   }
 
   const remove = async (inst) => {
@@ -237,6 +238,15 @@ export default function InstanceManager({ purpose = 'envio' }) {
                   {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
                   {i.provider !== 'meta' && i.label ? ` · ${formatDoc(i.name)}` : ''}
                 </span>
+                {audit && i.connected && i.provider === 'evolution' && (
+                  <span className="inst-health">
+                    {i.sync?.running
+                      ? `Importando conversas: ${i.sync.done} de ${i.sync.total || '...'} (${plural(i.sync.imported, 'mensagem', 'mensagens')})`
+                      : `Atualização automática ligada${i.lastSyncAt ? ` · última busca ${ago(i.lastSyncAt)}` : ' · primeira busca em instantes'}`}
+                    {' · '}
+                    {i.lastEventAt ? `tempo real recebendo (último evento ${ago(i.lastEventAt)})` : data?.appUrlIsPublic ? 'tempo real: nenhum evento ainda (a busca automática cobre)' : 'tempo real indisponível (o sistema precisa estar publicado); a busca automática cobre'}
+                  </span>
+                )}
               </div>
               <div className="instance-actions">
                 {i.provider === 'meta' ? (
@@ -248,7 +258,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
                 ) : (
                   <>
                     {!i.connected && <button className="btn btn-primary btn-sm" onClick={() => connect(i)} disabled={busy === `c${i.id}`}>{busy === `c${i.id}` ? 'Gerando...' : 'Ler QR Code'}</button>}
-                    {i.connected && audit && <button className="btn btn-ghost btn-sm" onClick={() => sync(i)} disabled={busy === `s${i.id}`}>{busy === `s${i.id}` ? 'Importando...' : 'Importar histórico'}</button>}
+                    {i.connected && audit && <button className="btn btn-ghost btn-sm" onClick={() => sync(i)} disabled={busy === `s${i.id}`}>{busy === `s${i.id}` ? 'Iniciando...' : 'Importar tudo agora'}</button>}
                     {i.connected && (
                       <button className="btn btn-ghost btn-sm" onClick={() => run(`l${i.id}`, () => api.post(`${base}/${i.id}/logout`), 'WhatsApp desconectado.')} disabled={busy === `l${i.id}`}>
                         <Icon name="unplug" size={16} /> Desconectar

@@ -5,16 +5,24 @@ import { evolutionTokenFor } from '../utils/webhooks.js';
 import * as meta from '../services/meta.js';
 import { ingestEvolution, ingestMeta } from '../services/audit.js';
 
+const lastTouch = new Map(); // grava "último evento recebido" no máximo a cada 10 s por conexão
+
 // Recebe as mensagens da Evolution (QR Code) e da Meta (API oficial). Sempre responde 200 depois de validar
 // quem chamou, para o servidor de origem não ficar reenviando; erros internos só vão para o log.
 const router = Router();
 
-router.post('/evolution/:name', express.json({ limit: '3mb' }), async (req, res) => {
+router.post('/evolution/:name', express.json({ limit: '40mb' }), async (req, res) => {
   const { name } = req.params;
   if (!safeEqual(req.query.token, evolutionTokenFor(name))) return res.status(401).json({ error: 'Token inválido.' });
   try {
     const inst = await prisma.instance.findUnique({ where: { name }, include: { user: true } });
-    if (inst && inst.purpose === 'auditoria' && inst.provider === 'evolution') await ingestEvolution(inst, req.body?.event, req.body?.data);
+    if (inst && inst.purpose === 'auditoria' && inst.provider === 'evolution') {
+      if (Date.now() - (lastTouch.get(inst.id) || 0) > 10_000) {
+        lastTouch.set(inst.id, Date.now());
+        prisma.instance.update({ where: { id: inst.id }, data: { lastEventAt: new Date() } }).catch(() => {});
+      }
+      await ingestEvolution(inst, req.body?.event, req.body?.data);
+    }
   } catch (e) {
     console.error(`[auditoria] erro ao receber evento de ${name}:`, e);
   }

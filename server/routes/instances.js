@@ -9,13 +9,14 @@ import { appUrlIsPublic, evolutionWebhookUrl, metaWebhookUrl } from '../utils/we
 import * as evo from '../services/evolution.js';
 import * as meta from '../services/meta.js';
 import * as wa from '../services/whatsapp.js';
-import { syncInstance } from '../services/audit.js';
+import { syncInstance, syncState } from '../services/audit.js';
 
-const SELECT = { id: true, name: true, label: true, provider: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true };
+const SELECT = { id: true, name: true, label: true, provider: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
 
 // Nunca devolve o token nem o App Secret: só diz se estão cadastrados.
 const publicInstance = (i, extra = {}) => ({
   id: i.id, name: i.name, label: i.label, provider: i.provider,
+  lastSyncAt: i.lastSyncAt ? i.lastSyncAt.getTime() : null, lastEventAt: i.lastEventAt ? i.lastEventAt.getTime() : null, sync: syncState(i.id),
   ...(i.provider === 'meta'
     ? { metaPhoneNumberId: i.metaPhoneNumberId, metaBusinessId: i.metaBusinessId, metaPhoneDisplay: i.metaPhoneDisplay, metaVerifyToken: i.metaVerifyToken, hasToken: Boolean(i.metaAccessToken), hasAppSecret: Boolean(i.metaAppSecret) }
     : {}),
@@ -218,11 +219,14 @@ export function instanceRouter(purpose) {
   });
 
   if (audit) {
-    // Traz conversas antigas que a Evolution já tem (melhor esforço; o tempo real vem pelo webhook).
+    // "Sincronizar agora": busca TODO o histórico que a Evolution tem, em segundo plano (o progresso aparece na tela).
+    // A busca normal já roda sozinha; este botão serve para forçar a importação completa.
     router.post('/:id/sync', async (req, res) => {
       const inst = await own(req);
       if (inst.provider !== 'evolution') throw new AppError(400, 'A API oficial da Meta não permite buscar o histórico: só as mensagens novas chegam.');
-      res.json(await syncInstance(inst));
+      if (syncState(inst.id)?.running) return res.json({ started: false, running: true });
+      syncInstance({ ...inst, user: req.user }, { deep: true }).catch((e) => console.warn(`[auditoria] sincronização de ${inst.name}: ${e.message}`));
+      return res.json({ started: true, running: true });
     });
   }
 
