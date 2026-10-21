@@ -41,8 +41,8 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <Brand light />
-          <button className="icon-btn topbar-logout" onClick={logout} aria-label="Sair">
-            <Icon name="logout" />
+          <button className="btn btn-ghost-light btn-sm topbar-logout" onClick={logout}>
+            <Icon name="logout" size={16} /> Sair
           </button>
         </div>
 
@@ -68,9 +68,6 @@ export default function Layout() {
             <strong title={user.name}>{user.name}</strong>
             {user.role === 'admin' ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} />}
           </div>
-          <button className="btn btn-ghost-light btn-sm" onClick={logout}>
-            <Icon name="logout" size={16} /> Sair
-          </button>
         </div>
       </aside>
 

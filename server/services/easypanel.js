@@ -57,6 +57,8 @@ export async function addDomainToEasypanel(domain) {
   if (domains.some((item) => String(item.host || '').toLowerCase() === domain.toLowerCase())) return;
 
   await callApi('domains.createDomain', {
+    projectName: config.easypanel.projectName,
+    serviceName: config.easypanel.serviceName,
     id: randomUUID(),
     https: true,
     host: domain,
@@ -68,7 +70,6 @@ export async function addDomainToEasypanel(domain) {
     serviceDestination: {
       protocol: 'http',
       port: 3001,
-      path: '/',
       projectName: config.easypanel.projectName,
       serviceName: config.easypanel.serviceName,
     },
@@ -78,5 +79,11 @@ export async function addDomainToEasypanel(domain) {
 export async function removeDomainFromEasypanel(domain) {
   const domains = await listServiceDomains();
   const existing = domains.find((item) => String(item.host || '').toLowerCase() === domain.toLowerCase());
-  if (existing) await callApi('domains.deleteDomain', { id: existing.id });
+  if (existing) {
+    await callApi('domains.deleteDomain', {
+      projectName: config.easypanel.projectName,
+      serviceName: config.easypanel.serviceName,
+      id: existing.id,
+    });
+  }
 }
