@@ -78,11 +78,13 @@ export const config = {
   easypanel: {
     url: trimSlash(env.EASYPANEL_API_URL),
     apiKey: (env.EASYPANEL_API_KEY || '').trim(),
-    projectName: (env.EASYPANEL_PROJECT_NAME || 'ferramentas').trim(),
-    serviceName: (env.EASYPANEL_SERVICE_NAME || 'dmfinanceiro').trim(),
+    projectName: (env.EASYPANEL_PROJECT_NAME || '').trim(),
+    serviceName: (env.EASYPANEL_SERVICE_NAME || '').trim(),
   },
 };
 
 export const evolutionConfigured = () => Boolean(config.evolution.url && config.evolution.apiKey);
 export const infinitepayConfigured = () => Boolean(config.infinitepay.handle);
-export const easypanelConfigured = () => Boolean(config.easypanel.url && config.easypanel.apiKey);
+export const easypanelConfigured = () => Boolean(
+  config.easypanel.url && config.easypanel.apiKey && config.easypanel.projectName && config.easypanel.serviceName
+);
