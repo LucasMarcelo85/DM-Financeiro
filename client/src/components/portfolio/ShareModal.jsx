@@ -6,9 +6,9 @@ import { pageUrl } from '../../lib/portfolio/model.js';
 import { canNativeShare, copyText, emailShareUrl, whatsappShareUrl } from '../../lib/portfolio/share.js';
 
 // Link da página para copiar e enviar. Se a página ainda é rascunho, avisa e oferece publicar.
-export default function ShareModal({ name, path, published, busy, onPublish, onClose }) {
+export default function ShareModal({ name, path, customUrl, published, busy, onPublish, onClose }) {
   const toast = useToast();
-  const url = pageUrl(path);
+  const url = pageUrl(path, customUrl);
   const input = useRef(null);
   const timer = useRef(null);
   const [copied, setCopied] = useState(false);

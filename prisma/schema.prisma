@@ -85,6 +85,9 @@ model User {
   lastActivity   String?   @map("last_activity")
   // Endereço público do portfólio (dominio/<portfolioSlug>), feito do nome/razão social. Criado na 1ª página.
   portfolioSlug  String?   @unique @map("portfolio_slug")
+  // Domínio próprio do portfólio (ex.: usuario.com.br). Só atende depois de verificado (DNS apontando para o servidor).
+  customDomain           String?   @unique @map("custom_domain")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
 
   instances Instance[]
   payments  Payment[]

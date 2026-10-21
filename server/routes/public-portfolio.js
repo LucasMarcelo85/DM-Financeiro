@@ -4,6 +4,7 @@ import { AppError } from '../utils/helpers.js';
 import { accessibleUserFilter } from '../services/access.js';
 import { decodeImage, portfolioCover, portfolioDescription } from '../utils/portfolio.js';
 import { isReservedSlug, isValidSlug } from '../utils/slug.js';
+import { hostKey } from '../utils/domain.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
 // Só aparece se a página estiver publicada e o dono ainda tiver acesso ao sistema (teste grátis ou plano pago).
@@ -35,6 +36,13 @@ router.get('/portfolio', async (req, res) => {
   });
 });
 
+// Autorização de certificado sob demanda (Caddy "on_demand_tls { ask ... }"): 200 só para domínio verificado de algum usuário.
+router.get('/domain-check', async (req, res) => {
+  const domain = hostKey(req.query.domain);
+  const row = domain ? await prisma.user.findFirst({ where: { customDomain: domain, customDomainVerifiedAt: { not: null } }, select: { id: true } }) : null;
+  res.status(row ? 200 : 404).end();
+});
+
 // Miniatura do link: o WhatsApp e as redes sociais precisam de uma imagem por endereço (não aceitam data URL).
 router.get('/portfolio/image', async (req, res) => {
   const found = await findPublicPage(req.query.u, req.query.p);
@@ -50,15 +58,27 @@ const PATH_RE = /^\/([a-z0-9-]{1,60})(?:\/([a-z0-9-]{1,60}))?\/?$/;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Se o endereço pedido é de uma página publicada, devolve os dados da pré-visualização; senão, null.
+// Em domínio próprio o endereço não leva o nome do usuário: "/" = página principal e "/<página>" = as demais.
+const CUSTOM_PATH_RE = /^\/(?:([a-z0-9-]{1,60}))?\/?$/;
+
 export async function portfolioShareMeta(req) {
-  const m = PATH_RE.exec(req.path);
-  if (!m || isReservedSlug(m[1])) return null;
-  const found = await findPublicPage(m[1], m[2]);
+  let userSlug;
+  let pageSlug;
+  if (req.customDomain) {
+    const c = CUSTOM_PATH_RE.exec(req.path);
+    if (!c) return null;
+    [userSlug, pageSlug] = [req.customDomain.slug, c[1]];
+  } else {
+    const m = PATH_RE.exec(req.path);
+    if (!m || isReservedSlug(m[1])) return null;
+    [userSlug, pageSlug] = [m[1], m[2]];
+  }
+  const found = await findPublicPage(userSlug, pageSlug);
   if (!found) return null;
   const { owner, page } = found;
   const origin = `${req.protocol}://${req.get('host')}`;
   const doc = page.data || {};
-  const q = `u=${encodeURIComponent(owner.portfolioSlug)}${m[2] ? `&p=${encodeURIComponent(m[2])}` : ''}`;
+  const q = `u=${encodeURIComponent(owner.portfolioSlug)}${pageSlug ? `&p=${encodeURIComponent(pageSlug)}` : ''}`;
   return {
     title: doc.seo?.title || page.name || owner.name,
     description: portfolioDescription(doc),
@@ -68,8 +88,9 @@ export async function portfolioShareMeta(req) {
   };
 }
 
-export function injectMeta(html, meta) {
-  const tags = [
+// `pfUser`: em domínio próprio, avisa o front de qual usuário é o site (o endereço não tem o nome dele).
+export function injectMeta(html, meta, pfUser = '') {
+  const tags = !meta ? [] : [
     `<meta name="description" content="${esc(meta.description)}" />`,
     '<meta property="og:type" content="website" />',
     `<meta property="og:site_name" content="${esc(meta.siteName)}" />`,
@@ -78,11 +99,12 @@ export function injectMeta(html, meta) {
     `<meta property="og:url" content="${esc(meta.url)}" />`,
     meta.image ? `<meta property="og:image" content="${esc(meta.image)}" />` : '',
     `<meta name="twitter:card" content="${meta.image ? 'summary_large_image' : 'summary'}" />`,
-  ].filter(Boolean).join('\n    ');
+  ];
+  if (pfUser) tags.push(`<meta name="pf-user" content="${esc(pfUser)}" />`);
+  const joined = tags.filter(Boolean).join('\n    ');
   // Funções no replace: o título pode ter "$&" ou "$1" e não pode ser interpretado como padrão.
-  return html
-    .replace(/<title>[^<]*<\/title>/, () => `<title>${esc(meta.title)}</title>`)
-    .replace('</head>', () => `    ${tags}\n  </head>`);
+  const withTitle = meta ? html.replace(/<title>[^<]*<\/title>/, () => `<title>${esc(meta.title)}</title>`) : html;
+  return withTitle.replace('</head>', () => `    ${joined}\n  </head>`);
 }
 
 export default router;

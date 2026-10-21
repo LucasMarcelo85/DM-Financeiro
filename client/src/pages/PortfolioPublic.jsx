@@ -5,8 +5,11 @@ import PortfolioView from '../components/portfolio/PortfolioView.jsx';
 import { DEFAULT_THEME, normalizeDoc, themeVars } from '../lib/portfolio/model.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
-export default function PortfolioPublic() {
-  const { userSlug, pageSlug } = useParams();
+// `fixedUser`: em domínio próprio o dono do site vem do servidor, não do endereço.
+export default function PortfolioPublic({ fixedUser = '' }) {
+  const params = useParams();
+  const userSlug = fixedUser || params.userSlug;
+  const pageSlug = params.pageSlug;
   const [state, setState] = useState({ loading: true, page: null, owner: null });
 
   useEffect(() => {

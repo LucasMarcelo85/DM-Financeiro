@@ -25,7 +25,7 @@ export default function PortfolioEditor() {
   const toast = useToast();
 
   const [doc, setDocState] = useState(null);
-  const [meta, setMeta] = useState(null); // { slug, published, isMain, path }
+  const [meta, setMeta] = useState(null); // { slug, published, isMain, path, customUrl }
   const [name, setName] = useState('');
   const [saveState, setSaveState] = useState('saved');
   const [selectedId, setSelectedId] = useState(null);
@@ -58,7 +58,7 @@ export default function PortfolioEditor() {
         docRef.current = d;
         setDocState(d);
         setName(p.name);
-        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path });
+        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, customUrl: p.customUrl });
       })
       .catch((e) => { toast(e.message, 'error'); nav('/portfolio', { replace: true }); });
     return () => { alive = false; };
@@ -154,13 +154,13 @@ export default function PortfolioEditor() {
   async function saveSlug(slug) {
     try {
       const { portfolio } = await api.patch(`/portfolios/${id}`, { slug });
-      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path }));
+      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path, customUrl: portfolio.customUrl }));
       toast('Endereço atualizado.');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function copyLink() {
-    if (await copyText(pageUrl(meta.path))) toast('Link copiado!'); else setShare(true);
+    if (await copyText(pageUrl(meta.path, meta.customUrl))) toast('Link copiado!'); else setShare(true);
   }
 
   // ---------------------------------------------------------------- blocos
@@ -291,7 +291,7 @@ export default function PortfolioEditor() {
         </aside>
       </div>
 
-      {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
+      {share && <ShareModal name={name} path={meta.path} customUrl={meta.customUrl} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
 
       {leave && (
         <Modal title="Não foi possível salvar" onClose={() => setLeave(false)}
