@@ -42,6 +42,7 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
   | WhatsApps para cobranças | 1 | 1 | 3 |
   | Números para auditoria | 1 | 3 | 5 |
   | Modelos de contrato | 2 | 7 | 20 |
+  | Páginas de portfólio | 1 | 2 | 7 |
   | Responder pela auditoria | não | não | sim |
 
   Períodos: **mensal** (1 mensalidade, 30 dias), **semestral** (paga 5 mensalidades, 183 dias) e **anual** (paga 9 mensalidades, 365 dias). A tela de planos mostra o valor total de cada período lado a lado, sem destacar o desconto. Cada pagamento guarda o período e os dias que libera. O admin lista e exclui usuários, troca o plano e dá acesso mensal (+30 dias).
@@ -104,6 +105,20 @@ Cada conexão (de **cobranças** ou de **auditoria**) pode usar **QR Code** (Evo
 - As cobranças automáticas saem por qualquer conexão de envio conectada (QR Code ou API oficial).
 - Regra da Meta: mensagem de texto livre só é aceita até 24 h depois da última mensagem do cliente; fora disso a Meta exige um modelo (template) aprovado, o que ainda não está implementado.
 - A versão da Graph API fica em `META_API_VERSION` (padrão `v21.0`).
+
+## Portfólio
+
+Tela **Portfólio** (menu, logo abaixo de Auditoria): o usuário cria páginas públicas com a própria marca e envia o link.
+
+- **Editor** (`client/src/pages/PortfolioEditor.jsx`, no mesmo estilo do de contratos): cor e fontes do tema, **banner**, **logo**, **imagem**, **galeria**, **vídeo** (YouTube, Vimeo ou arquivo `.mp4`/`.webm` por link https), **títulos e textos**, **botões com link** (site, WhatsApp, telefone ou e-mail), divisor e espaço. Arrastar para reordenar, desfazer/refazer, salvamento automático e visualização como no celular ou no computador. Começa em branco ou por um modelo pronto.
+- **Domínio próprio:** em *Portfólio > Domínio próprio* o usuário cadastra o domínio dele (ex.: `usuario.com.br`). A página principal passa a abrir em `usuario.com.br` e as demais em `usuario.com.br/<página>`, em vez de `sistema.com.br/<usuário>` (o endereço antigo continua funcionando). O IP do servidor vem da variável `SERVER_IP` do `.env`: o usuário cria no DNS dele um registro **tipo A** (nome `@`, e `www` se quiser) apontando para esse IP e clica em *Verificar agora*. O domínio só passa a atender depois que o DNS aponta para `SERVER_IP` (ou é um CNAME para o `APP_URL`); sem `SERVER_IP` o domínio é aceito sem conferir. Em domínio próprio só as rotas públicas do portfólio respondem (sem login nem painel).
+  - **HTTPS:** o servidor não emite certificados. Na EasyPanel, adicione o domínio do usuário na aba *Domínios* do serviço (o Traefik emite o certificado). Com Caddy, use `on_demand_tls { ask https://SISTEMA/api/public/domain-check }`: a rota responde 200 só para domínio verificado.
+  - **Cloudflare:** com a nuvem laranja (proxy) o registro A não mostra o IP do servidor e a verificação falha; use a nuvem cinza (somente DNS).
+- **Endereço:** `dominio/<nome completo ou razão social>` abre a **página principal**; as demais ficam em `dominio/<nome>/<página>`. O endereço do usuário é criado na primeira página, sem acento e em minúsculas (`Padaria São João Ltda.` vira `padaria-sao-joao-ltda`), e **não muda mais**, para os links já enviados não quebrarem. Se outro usuário já tiver o mesmo nome, vira `-2`, `-3`. Nomes de telas do sistema (`admin`, `contratos`, `portfolio`...) são reservados.
+- **Limite por plano:** Bronze 1 página, Prata 2, Ouro 7 (o admin tem o limite do Ouro).
+- **Compartilhar:** **Copiar link**, enviar por WhatsApp ou e-mail e o compartilhamento do aparelho. O link mostra título, descrição e imagem no WhatsApp e nas redes sociais.
+- **Publicar:** a página nasce como rascunho (só o dono vê). Publicada, qualquer pessoa abre sem login, **enquanto o dono tiver acesso ao sistema** (teste grátis ou plano pago).
+- **Segurança:** o servidor reconstrói o documento só com campos conhecidos. Links dos botões só `http`/`https`, vídeo só dos provedores acima e imagens PNG, JPG, WebP ou GIF (SVG é recusado).
 
 ## Contratos com variáveis do cliente
 

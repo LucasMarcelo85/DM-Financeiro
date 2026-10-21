@@ -105,7 +105,7 @@ export default function Register() {
                 <strong>{p.name}</strong>
                 <span>{brl(p.priceCents)}/mês</span>
                 <small>
-                  {plural(p.instances, 'WhatsApp', 'WhatsApps')} · {p.auditInstances} p/ auditoria · {plural(p.contracts, 'contrato', 'contratos')}
+                  {plural(p.instances, 'WhatsApp', 'WhatsApps')} · {p.auditInstances} p/ auditoria · {plural(p.contracts, 'contrato', 'contratos')} · {plural(p.portfolios, 'página de portfólio', 'páginas de portfólio')}
                 </small>
               </label>
             ))}

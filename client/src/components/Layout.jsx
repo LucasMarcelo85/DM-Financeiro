@@ -12,6 +12,7 @@ const NAV = [
   { to: '/lembretes', label: 'Lembretes', icon: 'bell' },
   { to: '/contratos', label: 'Contratos', icon: 'file' },
   { to: '/auditoria', label: 'Auditoria', icon: 'eye' },
+  { to: '/portfolio', label: 'Portfólio', icon: 'globe' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
 ];
 

@@ -19,8 +19,11 @@ import statsRoutes from './routes/stats.js';
 import receiptRoutes from './routes/receipts.js';
 import messageRoutes from './routes/messages.js';
 import contractRoutes from './routes/contracts.js';
+import portfolioRoutes from './routes/portfolios.js';
+import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/public-portfolio.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
+import { customDomainMiddleware } from './services/domains.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 
@@ -80,16 +83,21 @@ app.use(
         'style-src': ["'self'", "'unsafe-inline'", 'https://fonts.googleapis.com'],
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:'],
+        // Vídeos do portfólio: YouTube/Vimeo (embutidos) ou arquivo direto por https.
+        'frame-src': ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+        'media-src': ["'self'", 'https:'],
         'connect-src': ["'self'"],
         'frame-ancestors': ["'none'"],
       },
     },
   })
 );
+// Domínio próprio de um portfólio (meusite.com.br): só as rotas públicas do portfólio respondem nele.
+app.use(customDomainMiddleware);
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
-// Caminhos com limite de corpo maior ou próprio: contratos (têm imagens) e webhook da Evolution (lotes de contatos).
-const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p.startsWith('/api/webhooks/evolution/');
+// Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 
@@ -119,14 +127,39 @@ app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/contracts', auth, requireAccess, express.json({ limit: '12mb' }), contractRoutes);
+app.use('/api/portfolios', auth, requireAccess, express.json({ limit: '12mb' }), portfolioRoutes);
+app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
+  const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio (antes do express.static, que serviria o index.html puro em "/").
+  app.use(async (req, res, next) => {
+    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
+    try {
+      const meta = await portfolioShareMeta(req);
+      return res.status(meta ? 200 : 404).type('html').send(injectMeta(shell, meta, req.customDomain.slug));
+    } catch (e) {
+      console.error('[portfolio] domínio próprio:', e.message);
+      return next(e);
+    }
+  });
   app.use(express.static(dist));
-  app.use((_req, res) => res.sendFile(path.join(dist, 'index.html')));
+  app.use(async (req, res) => {
+    // Endereço de uma página do portfólio: entrega o HTML já com título, descrição e imagem do link (WhatsApp, redes sociais).
+    if (req.method === 'GET') {
+      try {
+        const meta = await portfolioShareMeta(req);
+        if (meta) return res.type('html').send(injectMeta(shell, meta));
+      } catch (e) {
+        console.error('[portfolio] pré-visualização do link:', e.message);
+      }
+    }
+    return res.sendFile(path.join(dist, 'index.html'));
+  });
 }
 
 // eslint-disable-next-line no-unused-vars

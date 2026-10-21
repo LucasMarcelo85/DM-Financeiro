@@ -3,10 +3,11 @@ import { config } from './config.js';
 // Limites de cada plano.
 //  instances: WhatsApps para cobranças e lembretes · auditInstances: números conectados na auditoria
 //  contracts: modelos de contrato · auditSend: pode responder conversas dentro da auditoria
+//  portfolios: páginas de portfólio (páginas públicas personalizáveis)
 const LIMITS = {
-  bronze: { instances: 1, auditInstances: 1, contracts: 2, auditSend: false },
-  prata: { instances: 1, auditInstances: 3, contracts: 7, auditSend: false },
-  ouro: { instances: 3, auditInstances: 5, contracts: 20, auditSend: true },
+  bronze: { instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, auditSend: false },
+  prata: { instances: 1, auditInstances: 3, contracts: 7, portfolios: 2, auditSend: false },
+  ouro: { instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, auditSend: true },
 };
 LIMITS.admin = LIMITS.ouro;
 
