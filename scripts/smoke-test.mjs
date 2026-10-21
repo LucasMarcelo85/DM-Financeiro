@@ -363,10 +363,126 @@ try {
   r = await u('POST', '/contacts', { name: 'Grande', phone: '85999990000', notes: 'x'.repeat(200 * 1024) }); assert.equal(r.status, 413);
   ok('corpo enorme é recusado (413); as outras rotas continuam com o limite de 100kb');
 
+  // ===== portfólio (páginas públicas personalizáveis) =====
+  const pub = client('pub');
+  const PNG = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mP8z8BQDwAEhQGAhKmMIQAAAABJRU5ErkJggg==';
+  const pf = {
+    v: 1, theme: { primary: '#1f55a6', bg: '#ffffff', text: '#14202e', headingFont: 'playfair', bodyFont: 'inter', radius: 'soft', width: 'normal' },
+    seo: { title: 'Minha empresa', description: 'Descrição para o link' },
+    blocks: [
+      { id: 'b1', t: 'banner', title: 'Olá', subtitle: 'Sub', bgColor: '#1f55a6', showButton: true, buttonLabel: 'Fale', link: { kind: 'whatsapp', phone: '(85) 99999-1234', message: 'Oi' } },
+      { id: 'b2', t: 'button', label: 'Site', link: { kind: 'link', url: 'meusite.com.br' } },
+      { id: 'b3', t: 'video', url: 'https://youtu.be/dQw4w9WgXcQ', caption: 'Vídeo' },
+    ],
+  };
+
+  r = await pub('GET', '/portfolios'); assert.equal(r.status, 401);
+  r = await u('GET', '/portfolios'); assert.equal(r.status, 200); assert.equal(r.body.limit, 2); assert.equal(r.body.portfolios.length, 0); assert.equal(r.body.userSlug, 'maria-teste');
+  r = await u('POST', '/portfolios', { name: '  Minha   página ', data: pf }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  const pg1 = r.body.portfolio;
+  assert.equal(pg1.name, 'Minha página'); assert.equal(pg1.isMain, true); assert.equal(pg1.published, false); assert.equal(pg1.slug, 'minha-pagina'); assert.equal(pg1.path, '/maria-teste');
+  assert.equal(pg1.data.blocks[0].link.phone, '5585999991234'); assert.equal(pg1.data.blocks[1].link.url, 'https://meusite.com.br');
+  ok('portfólio: 1ª página vira a principal e o endereço sai do nome do usuário (dominio/maria-teste)');
+
+  // O documento é reconstruído no servidor: nada perigoso chega à página pública.
+  r = await u('PATCH', `/portfolios/${pg1.id}`, { data: { ...pf, theme: { ...pf.theme, primary: 'red' }, blocks: [
+    { id: 'x1', t: 'button', label: 'Mal', link: { kind: 'link', url: 'javascript:alert(1)' } },
+    { id: 'x2', t: 'video', url: 'https://evil.example/video' },
+    { id: 'x3', t: 'script', src: 'http://evil' },
+    { id: 'x4', t: 'text', text: '<img src=x onerror=alert(1)>', extra: 'ignorado' },
+    { id: 'x5', t: 'button', label: 'Mail', link: { kind: 'email', email: 'nao-e-email' } },
+  ] } });
+  assert.equal(r.status, 200);
+  const cleaned = (await u('GET', `/portfolios/${pg1.id}`)).body.portfolio.data;
+  assert.equal(cleaned.theme.primary, '#f2a33a'); assert.equal(cleaned.blocks.length, 4);
+  assert.equal(cleaned.blocks[0].link.url, ''); assert.equal(cleaned.blocks[1].url, ''); assert.equal(cleaned.blocks[3].link.email, '');
+  assert.equal(cleaned.blocks[2].text, '<img src=x onerror=alert(1)>'); assert.equal(cleaned.blocks[2].extra, undefined);
+  r = await u('POST', '/portfolios', { name: 'Svg', data: { blocks: [{ t: 'image', src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }] } }); assert.equal(r.status, 400);
+  r = await u('POST', '/portfolios', { name: 'Grande', data: { blocks: [{ t: 'image', src: `data:image/png;base64,${'A'.repeat(2_600_000)}` }] } }); assert.equal(r.status, 400);
+  r = await u('POST', '/portfolios', { name: 'Gigante', data: { blocks: Array.from({ length: 4 }, () => ({ t: 'image', src: `data:image/png;base64,${'A'.repeat(2_400_000)}` })) } }); assert.equal(r.status, 413);
+  r = await u('POST', '/portfolios', { name: 'Vazio', data: { blocks: 'oi' } }); assert.equal(r.status, 400);
+  r = await u('POST', '/portfolios', { name: '   ' }); assert.equal(r.status, 400);
+  r = await u('GET', '/portfolios'); assert.equal(r.body.portfolios.length, 1);
+  ok('portfólio: link javascript:, vídeo de site desconhecido, bloco inválido, e-mail e cor inválidos são limpos; SVG e página gigante são recusados');
+
+  await u('PATCH', `/portfolios/${pg1.id}`, { data: pf });
+  r = await pub('GET', '/public/portfolio?u=maria-teste'); assert.equal(r.status, 404);
+  r = await u('PATCH', `/portfolios/${pg1.id}`, { published: 'sim' }); assert.equal(r.status, 400);
+  r = await u('PATCH', `/portfolios/${pg1.id}`, { published: true }); assert.equal(r.status, 200); assert.equal(r.body.portfolio.published, true);
+  r = await pub('GET', '/public/portfolio?u=maria-teste');
+  assert.equal(r.status, 200); assert.equal(r.body.owner.name, 'Maria Teste'); assert.equal(r.body.owner.email, undefined); assert.equal(r.body.page.data.blocks[0].title, 'Olá');
+  assert.equal((await pub('GET', '/public/portfolio?u=MARIA-TESTE')).status, 200);
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste&p=minha-pagina')).status, 200);
+  for (const bad of ['u=ninguem', 'u=api', 'u=portfolio', 'u=maria-teste&p=nao-existe', 'u=..%2Fetc', 'u=', '']) assert.equal((await pub('GET', `/public/portfolio?${bad}`)).status, 404, bad);
+  ok('página pública (sem login): só aparece depois de publicada; endereço inexistente, reservado ou malformado dá 404');
+
+  // Segunda página (prata = 2) e limites por plano
+  r = await u('POST', '/portfolios', { name: 'Segunda' }); assert.equal(r.status, 201); const pg2 = r.body.portfolio;
+  assert.equal(pg2.isMain, false); assert.equal(pg2.path, '/maria-teste/segunda'); assert.deepEqual(pg2.data.blocks, []);
+  r = await u('POST', '/portfolios', { name: 'Terceira' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED');
+  r = await u('POST', `/portfolios/${pg1.id}/duplicate`); assert.equal(r.status, 403);
+  ok('limite de páginas: prata = 2');
+  r = await other('GET', '/portfolios'); assert.equal(r.body.limit, 1);
+  await db.query("INSERT INTO users (kind, name, document, email, password_hash, trial_ends_at, portfolio_slug) VALUES ('PF', 'Outro', '99999999999', 'dup@t.com', 'x', now() + interval '3 days', 'empresa-ltda')");
+  r = await other('POST', '/portfolios', { name: 'Institucional' }); assert.equal(r.status, 201);
+  assert.equal(r.body.portfolio.path, '/empresa-ltda-2'); const otherPg = r.body.portfolio; // o endereço "empresa-ltda" já era de outro usuário
+  r = await other('POST', '/portfolios', { name: 'Outra' }); assert.equal(r.status, 403);
+  await db.query("DELETE FROM users WHERE email = 'dup@t.com'");
+  ok('limite de páginas: bronze = 1; endereço igual ao de outro usuário ganha sufixo (empresa-ltda-2)');
+
+  // Editar, endereço, página principal e exclusão
+  r = await u('PATCH', `/portfolios/${pg2.id}`, { slug: 'Meus Trabalhos!' }); assert.equal(r.status, 200); assert.equal(r.body.portfolio.slug, 'meus-trabalhos'); assert.equal(r.body.portfolio.path, '/maria-teste/meus-trabalhos');
+  r = await u('PATCH', `/portfolios/${pg2.id}`, { slug: 'minha-pagina' }); assert.equal(r.status, 409);
+  r = await u('PATCH', `/portfolios/${pg2.id}`, { slug: '***' }); assert.equal(r.status, 400);
+  r = await u('PATCH', `/portfolios/${pg2.id}`, {}); assert.equal(r.status, 400);
+  r = await u('PATCH', `/portfolios/${pg2.id}`, { name: 'Trabalhos', data: pf, published: true }); assert.equal(r.status, 200); assert.equal(r.body.portfolio.name, 'Trabalhos');
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste&p=meus-trabalhos')).status, 200);
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste&p=segunda')).status, 404);
+
+  r = await u('POST', `/portfolios/${pg2.id}/main`); assert.equal(r.status, 200);
+  r = await u('GET', '/portfolios'); assert.equal(r.body.portfolios[0].id, pg2.id); assert.equal(r.body.portfolios[0].path, '/maria-teste'); assert.equal(r.body.portfolios.filter((p) => p.isMain).length, 1);
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste')).body.page.name, 'Trabalhos');
+  r = await u('DELETE', `/portfolios/${pg2.id}`); assert.equal(r.status, 200);
+  r = await u('GET', '/portfolios'); assert.equal(r.body.portfolios.length, 1); assert.equal(r.body.portfolios[0].id, pg1.id); assert.equal(r.body.portfolios[0].isMain, true);
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste&p=meus-trabalhos')).status, 404);
+  ok('editar endereço (sem repetir), tornar principal, excluir (a mais antiga vira a principal) e o link antigo deixa de abrir');
+
+  // Imagem de capa do link (WhatsApp/redes sociais não leem data URL)
+  r = await u('POST', `/portfolios/${pg1.id}/duplicate`); assert.equal(r.status, 201); const cover = r.body.portfolio;
+  r = await u('PATCH', `/portfolios/${cover.id}`, { published: true, data: { ...pf, blocks: [{ id: 'l1', t: 'logo', src: PNG }, ...pf.blocks] } }); assert.equal(r.status, 200);
+  const imgRes = await fetch(`http://localhost:${port}/api/public/portfolio/image?u=maria-teste&p=${cover.slug}`);
+  assert.equal(imgRes.status, 200); assert.equal(imgRes.headers.get('content-type'), 'image/png');
+  assert.deepEqual([...new Uint8Array(await imgRes.arrayBuffer()).slice(0, 4)], [0x89, 0x50, 0x4e, 0x47]);
+  assert.equal((await fetch(`http://localhost:${port}/api/public/portfolio/image?u=maria-teste&p=${pg1.slug}`)).status, 404); // sem imagem na página
+  r = await u('DELETE', `/portfolios/${cover.id}`); assert.equal(r.status, 200);
+  ok('miniatura do link: devolve a primeira imagem da página (PNG) e 404 quando não há imagem');
+
+  // Um usuário não enxerga nem mexe nas páginas do outro
+  r = await other('GET', `/portfolios/${pg1.id}`); assert.equal(r.status, 404);
+  r = await other('PATCH', `/portfolios/${pg1.id}`, { name: 'Hack' }); assert.equal(r.status, 404);
+  r = await other('PATCH', `/portfolios/${pg1.id}`, { published: false }); assert.equal(r.status, 404);
+  r = await other('POST', `/portfolios/${pg1.id}/duplicate`); assert.equal(r.status, 404);
+  r = await other('POST', `/portfolios/${pg1.id}/main`); assert.equal(r.status, 404);
+  r = await other('DELETE', `/portfolios/${pg1.id}`); assert.equal(r.status, 404);
+  assert.equal((await other('GET', '/portfolios')).body.portfolios.length, 1);
+  assert.equal((await pub('GET', '/public/portfolio?u=empresa-ltda-2')).status, 404); // rascunho de outro usuário continua privado
+  ok('um usuário não vê, edita nem exclui as páginas do outro');
+
+  // Ouro: 7 páginas
+  await db.query("UPDATE users SET plan = 'ouro' WHERE email = 'maria@t.com'");
+  r = await u('GET', '/portfolios'); assert.equal(r.body.limit, 7);
+  for (let i = 2; i <= 7; i++) { r = await u('POST', '/portfolios', { name: `Página ${i}` }); assert.equal(r.status, 201, `página ${i}`); }
+  r = await u('POST', '/portfolios', { name: 'Oitava' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED');
+  assert.equal((await u('GET', '/portfolios')).body.portfolios.length, 7);
+  await db.query("DELETE FROM portfolios WHERE user_id = (SELECT id FROM users WHERE email = 'maria@t.com') AND id <> $1", [pg1.id]);
+  await db.query("UPDATE users SET plan = 'prata' WHERE email = 'maria@t.com'");
+  ok('limite de páginas: ouro = 7');
+
   // ===== fim do teste grátis, bloqueio e pagamento =====
   const pending = await u('POST', '/schedules', { ...base, contactId: maria.id }); const blocked = pending.body.schedule;
   await db.query("UPDATE users SET trial_ends_at = now() - interval '1 second' WHERE email = 'maria@t.com'");
   r = await u('GET', '/schedules'); assert.equal(r.status, 402); assert.equal(r.body.code, 'PAYMENT_REQUIRED');
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste')).status, 404); ok('sem acesso ao sistema, a página pública do usuário deixa de abrir');
   sent.length = 0; await forceDue(blocked.id); await sleep(3500); assert.equal(sent.length, 0); ok('sem acesso: API bloqueada e nenhum envio automático sai');
   r = await u('POST', '/billing/checkout', { plan: 'prata' }); assert.equal(r.status, 200);
   const order = decodeURIComponent(r.body.url.split('o=')[1]);
@@ -375,6 +491,7 @@ try {
   r = await u('POST', '/billing/confirm', { order_nsu: order, transaction_nsu: 't1', slug: 's1' }); assert.equal(r.body.user.access.status, 'paid'); assert.equal(r.body.user.access.daysLeft, 30);
   r = await u('POST', '/billing/confirm', { order_nsu: order, transaction_nsu: 't1', slug: 's1' }); assert.equal(r.body.user.access.daysLeft, 30);
   r = await u('GET', '/schedules'); assert.equal(r.status, 200); ok('pagamento libera 30 dias (e confirmar de novo não soma dias)');
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste')).status, 200); ok('depois do pagamento a página pública volta a abrir');
 
   // ===== planos e períodos =====
   r = await client('anon')('GET', '/plans'); const P = Object.fromEntries(r.body.plans.map((x) => [x.id, x]));
@@ -382,6 +499,7 @@ try {
   assert.deepEqual(P.prata.prices, { mensal: 5490, semestral: 27450, anual: 49410 });
   assert.deepEqual(P.ouro.prices, { mensal: 6490, semestral: 32450, anual: 58410 });
   const lim = (x) => [x.instances, x.auditInstances, x.contracts, x.auditSend];
+  assert.deepEqual([P.bronze.portfolios, P.prata.portfolios, P.ouro.portfolios], [1, 2, 7]);
   assert.deepEqual(lim(P.bronze), [1, 1, 2, false]); assert.deepEqual(lim(P.prata), [1, 3, 7, false]); assert.deepEqual(lim(P.ouro), [3, 5, 20, true]);
   ok('planos: limites e preços (semestral = 5 mensalidades, anual = 9)');
   const daysLeft = async () => (await u('GET', '/auth/me')).body.user.access.daysLeft;
@@ -619,6 +737,8 @@ try {
   const left = (await db.query('SELECT (SELECT count(*) FROM contacts WHERE user_id=$1)::int c, (SELECT count(*) FROM schedules WHERE user_id=$1)::int s, (SELECT count(*) FROM messages WHERE user_id=$1)::int m', [maria2.id])).rows[0];
   assert.deepEqual(left, { c: 0, s: 0, m: 0 }); ok('admin exclui usuário e tudo dele (clientes, cobranças e histórico) é apagado em cascata');
   assert.equal((await db.query('SELECT count(*)::int n FROM contracts WHERE user_id = $1', [maria2.id])).rows[0].n, 0); ok('os contratos do usuário excluído também são apagados');
+  assert.equal((await db.query('SELECT count(*)::int n FROM portfolios WHERE user_id = $1', [maria2.id])).rows[0].n, 0);
+  assert.equal((await pub('GET', '/public/portfolio?u=maria-teste')).status, 404); ok('as páginas de portfólio do usuário excluído também são apagadas (e o link deixa de abrir)');
   const gone = (await db.query('SELECT (SELECT count(*) FROM audit_chats)::int c, (SELECT count(*) FROM audit_messages)::int m, (SELECT count(*) FROM audit_labels)::int l, (SELECT count(*) FROM audit_chat_labels)::int cl, (SELECT count(*) FROM instances WHERE user_id = $1)::int i', [maria2.id])).rows[0];
   assert.deepEqual(gone, { c: 0, m: 0, l: 0, cl: 0, i: 0 }); ok('conversas, mensagens, etiquetas e conexões de auditoria do usuário excluído também são apagadas');
 

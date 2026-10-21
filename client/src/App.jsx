@@ -13,6 +13,9 @@ import PaymentReturn from './pages/PaymentReturn.jsx';
 import Contracts from './pages/Contracts.jsx';
 import ContractEditor from './pages/ContractEditor.jsx';
 import Audit from './pages/Audit.jsx';
+import Portfolios from './pages/Portfolios.jsx';
+import PortfolioEditor from './pages/PortfolioEditor.jsx';
+import PortfolioPublic from './pages/PortfolioPublic.jsx';
 import Admin from './pages/Admin.jsx';
 
 const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin'];
@@ -56,6 +59,7 @@ export default function App() {
       </Route>
       <Route element={<Protected bare />}>
         <Route path="contratos/:id" element={<ContractEditor />} />
+        <Route path="portfolio/:id" element={<PortfolioEditor />} />
       </Route>
       <Route element={<Protected />}>
         <Route index element={<Dashboard />} />
@@ -71,12 +75,16 @@ export default function App() {
         <Route path="lembrete" element={<Navigate to="/lembretes" replace />} />
         <Route path="contratos" element={<Contracts />} />
         <Route path="auditoria" element={<Audit />} />
+        <Route path="portfolio" element={<Portfolios />} />
         <Route path="plano" element={<Billing />} />
         <Route path="pagamento/retorno" element={<PaymentReturn />} />
         <Route element={<AdminOnly />}>
           <Route path="admin" element={<Admin />} />
         </Route>
       </Route>
+      {/* Páginas públicas do portfólio: dominio/<usuário> e dominio/<usuário>/<página> (sem login). As rotas fixas acima têm prioridade. */}
+      <Route path=":userSlug" element={<PortfolioPublic />} />
+      <Route path=":userSlug/:pageSlug" element={<PortfolioPublic />} />
       <Route path="*" element={<Navigate to="/" replace />} />
     </Routes>
   );

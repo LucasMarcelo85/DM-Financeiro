@@ -7,11 +7,13 @@ export function planFeatureRows(p) {
     { ok: true, ...n(p.instances, 'WhatsApp para cobranças e lembretes', 'WhatsApps para cobranças e lembretes') },
     { ok: true, ...n(p.auditInstances, 'número para auditoria', 'números para auditoria') },
     { ok: true, ...n(p.contracts, 'modelo de contrato', 'modelos de contrato') },
+    { ok: true, ...n(p.portfolios, 'página de portfólio', 'páginas de portfólio') },
     { ok: true, label: 'Cobranças e lembretes automáticos' },
     { ok: true, label: 'Conexão por QR Code ou API oficial da Meta' },
     { ok: true, label: 'Auditoria das conversas em tempo real' },
     { ok: true, label: 'Etiquetas, anotações e busca por palavra-chave' },
     { ok: true, label: 'Editor de contratos com importação de arquivos' },
+    { ok: true, label: 'Portfólio: páginas personalizadas com link para compartilhar' },
     { ok: Boolean(p.auditSend), label: 'Enviar mensagens pela auditoria' },
   ];
 }

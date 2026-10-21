@@ -83,6 +83,8 @@ model User {
   // Última vez que o usuário mexeu em algo (qualquer alteração, não só abrir telas) e em qual área.
   lastActivityAt DateTime? @map("last_activity_at")
   lastActivity   String?   @map("last_activity")
+  // Endereço público do portfólio (dominio/<portfolioSlug>), feito do nome/razão social. Criado na 1ª página.
+  portfolioSlug  String?   @unique @map("portfolio_slug")
 
   instances Instance[]
   payments  Payment[]
@@ -91,6 +93,7 @@ model User {
   messages        Message[]
   billingPayments BillingPayment[]
   contracts       Contract[]
+  portfolios      Portfolio[]
   auditChats      AuditChat[]
   auditLabels     AuditLabel[]
   accessEvents    AccessEvent[]
@@ -279,6 +282,27 @@ model Contract {
 
   @@index([userId, updatedAt])
   @@map("contracts")
+}
+
+// ---------- Portfólio (páginas públicas personalizáveis) ----------
+// Endereço: dominio/<User.portfolioSlug> abre a página principal (isMain); as outras abrem em dominio/<portfolioSlug>/<slug>.
+// `data` é o documento do editor (tema + blocos), validado em server/utils/portfolio.js.
+model Portfolio {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String
+  slug      String
+  published Boolean  @default(false)
+  isMain    Boolean  @default(false) @map("is_main")
+  data      Json
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, slug])
+  @@index([userId, updatedAt])
+  @@map("portfolios")
 }
 
 // ---------- Auditoria de conversas ----------

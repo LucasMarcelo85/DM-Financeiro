@@ -23,7 +23,7 @@ export const clearSession = (res) => res.clearCookie(COOKIE, { path: '/' });
 // Em que parte do sistema o usuário mexeu (aparece para o administrador).
 const AREAS = {
   '/api/contacts': 'Clientes', '/api/schedules': 'Cobranças e lembretes', '/api/messages': 'Mensagens', '/api/instances': 'WhatsApp',
-  '/api/contracts': 'Contratos', '/api/audit': 'Auditoria', '/api/billing': 'Plano e pagamento', '/api/receipts': 'Faturamento', '/api/auth': 'Conta',
+  '/api/contracts': 'Contratos', '/api/portfolios': 'Portfólio', '/api/audit': 'Auditoria', '/api/billing': 'Plano e pagamento', '/api/receipts': 'Faturamento', '/api/auth': 'Conta',
 };
 const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
 const ACTIVITY_EVERY_MS = 30_000;
