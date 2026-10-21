@@ -103,8 +103,8 @@ export function verifySignature(rawBody, header, appSecret) {
 function content(m) {
   const t = m.type;
   if (t === 'text') return { type: 'text', body: m.text?.body || '' };
-  if (['image', 'video', 'audio', 'sticker'].includes(t)) return { type: t, body: m[t]?.caption || '' };
-  if (t === 'document') return { type: 'document', body: m.document?.caption || m.document?.filename || '' };
+  if (['image', 'video', 'audio', 'sticker'].includes(t)) return { type: t, body: m[t]?.caption || '', media: { ref: m[t]?.id, mime: m[t]?.mime_type, seconds: null } };
+  if (t === 'document') return { type: 'document', body: m.document?.caption || m.document?.filename || '', media: { ref: m.document?.id, mime: m.document?.mime_type, name: m.document?.filename } };
   if (t === 'location') return { type: 'location', body: [m.location?.name, m.location?.address].filter(Boolean).join(' - ') };
   if (t === 'contacts') return { type: 'contact', body: (m.contacts || []).map((c) => c.name?.formatted_name).filter(Boolean).join(', ') };
   if (t === 'button') return { type: 'text', body: m.button?.text || '' };
@@ -137,4 +137,15 @@ export function parseWebhook(payload) {
     }
   }
   return out;
+}
+
+// Baixa uma mídia da API oficial: primeiro pega o endereço temporário e depois o arquivo (os dois pedem o token).
+export async function fetchMedia(inst, mediaId) {
+  const token = tokenOf(inst);
+  if (!token || !mediaId) throw new Error('Sem token ou sem identificador da mídia.');
+  const info = await graph('GET', `/${encodeURIComponent(mediaId)}`, token);
+  if (!info?.url) throw new Error('A Meta não devolveu o endereço da mídia.');
+  const res = await fetch(info.url, { headers: { Authorization: `Bearer ${token}` }, signal: AbortSignal.timeout(60000) });
+  if (!res.ok) throw new Error(`A Meta recusou o download (${res.status}).`);
+  return { buffer: Buffer.from(await res.arrayBuffer()), mime: info.mime_type || res.headers.get('content-type') };
 }

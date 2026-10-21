@@ -56,6 +56,13 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
+  // Auditoria: o servidor também busca as mensagens sozinho (além do webhook), para a tela nunca depender só dele.
+  // AUDIT_SYNC_SECONDS=0 desliga. Com alguém olhando a tela a busca é a cada AUDIT_SYNC_SECONDS; sem ninguém, a cada AUDIT_SYNC_IDLE_SECONDS.
+  auditSync: {
+    intervalMs: Math.max(0, Number(env.AUDIT_SYNC_SECONDS ?? 15)) * 1000,
+    idleMs: Math.max(1, Number(env.AUDIT_SYNC_IDLE_SECONDS ?? 300)) * 1000,
+    mediaMaxBytes: Math.max(1, Number(env.AUDIT_MEDIA_MAX_MB ?? 20)) * 1024 * 1024,
+  },
   // API oficial do WhatsApp (Meta Cloud API).
   meta: {
     graphUrl: trimSlash(env.META_GRAPH_URL) || 'https://graph.facebook.com',

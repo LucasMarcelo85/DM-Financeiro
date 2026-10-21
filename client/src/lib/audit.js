@@ -10,21 +10,53 @@ export function foldSameLength(s) {
   return out;
 }
 
-// Divide o texto em pedaços, marcando os que contêm a palavra buscada (sem diferenciar acento/maiúscula).
+// "preço orçamento" -> ['preco', 'orcamento']; texto entre aspas é uma frase só. Igual à busca do servidor.
+export function searchTerms(q) {
+  const out = [];
+  for (const m of foldSameLength(String(q || '')).matchAll(/"([^"]+)"|(\S+)/g)) {
+    const t = (m[1] ?? m[2]).trim();
+    if (t) out.push(t.slice(0, 80));
+  }
+  return out.slice(0, 6);
+}
+
+// Divide o texto em pedaços, marcando os que contêm alguma das palavras buscadas (sem diferenciar acento/maiúscula).
 export function highlightParts(text, q) {
-  const needle = foldSameLength(String(q || '').trim());
-  if (needle.length < 2 || !text) return [{ t: text, hit: false }];
+  const needles = searchTerms(q).filter((t) => t.length >= 2);
+  if (!needles.length || !text) return [{ t: text, hit: false }];
   const hay = foldSameLength(text);
+  const mark = new Array(text.length).fill(false);
+  for (const n of needles) for (let at = hay.indexOf(n); at !== -1; at = hay.indexOf(n, at + 1)) mark.fill(true, at, at + n.length);
   const parts = [];
   let from = 0;
-  for (let at = hay.indexOf(needle); at !== -1; at = hay.indexOf(needle, from)) {
-    if (at > from) parts.push({ t: text.slice(from, at), hit: false });
-    parts.push({ t: text.slice(at, at + needle.length), hit: true });
-    from = at + needle.length;
+  for (let i = 1; i <= text.length; i++) {
+    if (i === text.length || mark[i] !== mark[from]) { parts.push({ t: text.slice(from, i), hit: mark[from] }); from = i; }
   }
-  if (from < text.length) parts.push({ t: text.slice(from), hit: false });
   return parts;
 }
+
+// Coloca uma mensagem na posição certa (por horário e depois pelo número), mesmo que ela tenha chegado atrasada.
+export function insertSorted(list, msg) {
+  if (list.some((m) => m.id === msg.id)) return list;
+  const after = (a, b) => a.ts > b.ts || (a.ts === b.ts && a.id > b.id);
+  if (!list.length || after(msg, list[list.length - 1])) return [...list, msg];
+  let i = list.length;
+  while (i > 0 && after(list[i - 1], msg)) i -= 1;
+  return [...list.slice(0, i), msg, ...list.slice(i)];
+}
+
+// "há 5 min", "há 3 h", "há 2 dias"
+export function ago(ms) {
+  const s = Math.max(0, Math.round((Date.now() - ms) / 1000));
+  if (s < 10) return 'agora mesmo';
+  if (s < 60) return `há ${s} s`;
+  if (s < 3600) return `há ${Math.floor(s / 60)} min`;
+  if (s < 86400) return `há ${Math.floor(s / 3600)} h`;
+  const d = Math.floor(s / 86400);
+  return `há ${d} ${d === 1 ? 'dia' : 'dias'}`;
+}
+
+export const mediaUrl = (id, query = '') => `/api/audit/messages/${id}/media${query}`;
 
 export const TYPE_LABEL = { image: 'Foto', video: 'Vídeo', audio: 'Áudio', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contact: 'Contato' };
 

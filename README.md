@@ -42,6 +42,7 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
   | WhatsApps para cobranças | 1 | 1 | 3 |
   | Números para auditoria | 1 | 3 | 5 |
   | Modelos de contrato | 2 | 7 | 20 |
+  | Páginas de portfólio | 1 | 2 | 7 |
   | Responder pela auditoria | não | não | sim |
 
   Períodos: **mensal** (1 mensalidade, 30 dias), **semestral** (paga 5 mensalidades, 183 dias) e **anual** (paga 9 mensalidades, 365 dias). A tela de planos mostra o valor total de cada período lado a lado, sem destacar o desconto. Cada pagamento guarda o período e os dias que libera. O admin lista e exclui usuários, troca o plano e dá acesso mensal (+30 dias).
@@ -79,15 +80,22 @@ Se o PostgreSQL estiver no mesmo EasyPanel, use o nome interno do serviço no ho
 
 ## Auditoria de conversas
 
-Tela **Auditoria** (`client/src/pages/Audit.jsx`): o usuário conecta números (só para auditar, separados dos WhatsApps de cobrança) e acompanha **em tempo real** todas as conversas, incluindo grupos.
+Tela **Auditoria** (`client/src/pages/Audit.jsx`): o usuário conecta números (só para auditar, separados dos WhatsApps de cobrança) e acompanha **ao vivo** todas as conversas, incluindo grupos.
 
-- **Somente leitura.** Só o plano **Ouro** pode responder dentro da auditoria (`auditSend` em `server/plans.js`).
-- Etiquetas coloridas por usuário, **bloco de anotações** por conversa (salva sozinho) e **busca por palavra-chave** na conversa e em todas as conversas (ignora maiúsculas e acentos).
-- **Tempo real:** o navegador abre `GET /api/audit/stream` (Server-Sent Events). As mensagens chegam por webhook e são empurradas na hora. Para ver isso funcionar o sistema precisa estar publicado (`APP_URL` com `https`), porque a Evolution/Meta precisam alcançar `/api/webhooks/...`.
-- **QR Code (Evolution):** ao criar o número de auditoria o sistema já liga o webhook `POST /api/webhooks/evolution/:instancia?token=...` (o token é derivado da chave do sistema e vale só para aquela conexão). "Importar histórico" busca as conversas antigas que a Evolution já guarda (melhor esforço).
-- **API oficial da Meta:** a auditoria recebe só as mensagens novas, em `POST /api/webhooks/meta` (assinatura `X-Hub-Signature-256` com o **App Secret**, obrigatório na auditoria). No painel da Meta, use a URL e o token de verificação mostrados no botão **Webhook** da conexão e assine o campo `messages`.
-- O conteúdo das mídias não é guardado: só o texto/legenda e o tipo (foto, áudio...). Remover o número apaga as conversas, etiquetas e anotações dele.
-- Use apenas em números que o usuário tem autorização para acompanhar (LGPD).
+- **Somente leitura.** Só o plano **Ouro** pode responder dentro da auditoria (`auditSend` em `server/plans.js`). A conexão de auditoria é criada com `readMessages: false`, então nada é marcado como lido no celular.
+- **Ao vivo por três caminhos** (se um falhar, os outros cobrem):
+  1. **Webhook** da Evolution/Meta → empurrado para a tela por Server-Sent Events (`GET /api/audit/stream`).
+  2. **Consulta rápida** da tela a cada 4 s (`GET /api/audit/updates?after=`), que funciona mesmo se um proxy barrar o tempo real.
+  3. **Busca automática do servidor** na Evolution (`server/services/audit-sync.js`): a cada `AUDIT_SYNC_SECONDS` (padrão 15) com alguém na tela, a cada `AUDIT_SYNC_IDLE_SECONDS` (padrão 300) sem ninguém. A **primeira busca traz o histórico todo** (até 1000 conversas e 500 mensagens por conversa) sem clicar em nada; `AUDIT_SYNC_SECONDS=0` desliga.
+- **Requisitos da Evolution para o histórico e a busca automática:** ela precisa guardar os dados. No `.env` da Evolution: `DATABASE_ENABLED=true`, `DATABASE_SAVE_DATA_INSTANCE=true`, `DATABASE_SAVE_DATA_NEW_MESSAGE=true`, `DATABASE_SAVE_DATA_CONTACTS=true`, `DATABASE_SAVE_DATA_CHATS=true`. Sem isso `findChats/findMessages` voltam vazios. Para o histórico anterior à conexão, o número precisa ser conectado (QR) já com a auditoria ligada (`syncFullHistory`).
+- **Não lidas por mensagem:** uma mensagem recebida é "não lida" até o auditor abrir a conversa, o dono responder (pelo celular ou pela tela) ou o WhatsApp avisar que foi lida. O histórico importado entra como lido. O contador de cada conversa é recalculado, e o título da aba mostra quantas conversas têm não lidas.
+- **Filtros e busca:** Todas / Contatos / Grupos, por número, por etiqueta, "não lidas". A busca exige **todas as palavras** (no nome, número ou em qualquer mensagem), aceita frase entre aspas e ignora acentos e maiúsculas.
+- **Nomes:** nome do contato (`pushName`), assunto do grupo e nome de quem falou em cada grupo (`audit_contacts`), atualizados por eventos e pela busca automática.
+- **Mídia:** fotos, figurinhas, áudios, vídeos e documentos. O webhook é configurado com `base64: true` (o arquivo vem no evento); se não vier, fotos/áudios/figurinhas são baixados na hora via `getBase64FromMediaMessage` e vídeos/documentos quando alguém abre. Ficam em `audit_media` (máx. `AUDIT_MEDIA_MAX_MB`, padrão 20) porque o WhatsApp apaga os arquivos antigos. O endpoint `GET /api/audit/messages/:id/media` só serve ao dono, aceita Range (avançar em vídeo/áudio), serve SVG e documentos só como download e cai para a miniatura se o arquivo sumiu.
+- **Ordem:** a lista é pela mensagem mais recente; dentro da conversa, por horário real (mensagem que chega atrasada entra no lugar certo). Data no futuro (relógio errado) é limitada a "agora".
+- Etiquetas coloridas por usuário, **bloco de anotações** por conversa (salva sozinho) e mensagens editadas no WhatsApp atualizam o texto.
+- **API oficial da Meta:** recebe só as mensagens novas, em `POST /api/webhooks/meta` (assinatura `X-Hub-Signature-256` com o **App Secret**, obrigatório na auditoria). Use a URL e o token de verificação do botão **Webhook** da conexão e assine o campo `messages`. As mídias são baixadas com o token quando alguém abre.
+- Remover o número apaga as conversas, mídias, etiquetas e anotações dele. Use apenas em números que o usuário tem autorização para acompanhar (LGPD).
 
 ## WhatsApp: QR Code ou API oficial da Meta
 
@@ -97,3 +105,30 @@ Cada conexão (de **cobranças** ou de **auditoria**) pode usar **QR Code** (Evo
 - As cobranças automáticas saem por qualquer conexão de envio conectada (QR Code ou API oficial).
 - Regra da Meta: mensagem de texto livre só é aceita até 24 h depois da última mensagem do cliente; fora disso a Meta exige um modelo (template) aprovado, o que ainda não está implementado.
 - A versão da Graph API fica em `META_API_VERSION` (padrão `v21.0`).
+
+## Portfólio
+
+Tela **Portfólio** (menu, logo abaixo de Auditoria): o usuário cria páginas públicas com a própria marca e envia o link.
+
+- **Editor** (`client/src/pages/PortfolioEditor.jsx`, no mesmo estilo do de contratos): cor e fontes do tema, **banner**, **logo**, **imagem**, **galeria**, **vídeo** (YouTube, Vimeo ou arquivo `.mp4`/`.webm` por link https), **títulos e textos**, **botões com link** (site, WhatsApp, telefone ou e-mail), divisor e espaço. Arrastar para reordenar, desfazer/refazer, salvamento automático e visualização como no celular ou no computador. Começa em branco ou por um modelo pronto.
+- **Endereço:** `dominio/<nome completo ou razão social>` abre a **página principal**; as demais ficam em `dominio/<nome>/<página>`. O endereço do usuário é criado na primeira página, sem acento e em minúsculas (`Padaria São João Ltda.` vira `padaria-sao-joao-ltda`), e **não muda mais**, para os links já enviados não quebrarem. Se outro usuário já tiver o mesmo nome, vira `-2`, `-3`. Nomes de telas do sistema (`admin`, `contratos`, `portfolio`...) são reservados.
+- **Limite por plano:** Bronze 1 página, Prata 2, Ouro 7 (o admin tem o limite do Ouro).
+- **Compartilhar:** **Copiar link**, enviar por WhatsApp ou e-mail e o compartilhamento do aparelho. O link mostra título, descrição e imagem no WhatsApp e nas redes sociais.
+- **Publicar:** a página nasce como rascunho (só o dono vê). Publicada, qualquer pessoa abre sem login, **enquanto o dono tiver acesso ao sistema** (teste grátis ou plano pago).
+- **Segurança:** o servidor reconstrói o documento só com campos conhecidos. Links dos botões só `http`/`https`, vídeo só dos provedores acima e imagens PNG, JPG, WebP ou GIF (SVG é recusado).
+
+## Contratos com variáveis do cliente
+
+Nos textos do contrato (e no texto antes da data) o usuário pode usar variáveis, que viram os dados do cliente escolhido:
+
+- **Cliente:** `{{cliente.nome}}`, `{{cliente.documento}}` (CPF/CNPJ), `{{cliente.email}}`, `{{cliente.telefone}}`, `{{cliente.endereco}}` (montado com rua, número, complemento, bairro, cidade/UF e CEP), `{{cliente.cep}}`, `{{cliente.rua}}`, `{{cliente.numero}}`, `{{cliente.complemento}}`, `{{cliente.bairro}}`, `{{cliente.cidade}}`, `{{cliente.estado}}`, `{{cliente.observacoes}}`.
+- **Minha empresa** (dados do usuário logado): `{{empresa.nome}}`, `{{empresa.documento}}`, `{{empresa.email}}`, `{{empresa.telefone}}`.
+- **Data:** `{{data.hoje}}`, `{{data.hoje_curta}}`, `{{data.dia}}`, `{{data.mes}}`, `{{data.ano}}`.
+
+No editor: botão **Variável** (paleta) e a lista no painel de propriedades inserem a variável no cursor (ou numa nova caixa). **Ver com cliente** mostra o contrato preenchido e o **PDF / Imprimir** já sai com os dados dele; o que o cliente não tem cadastrado sai como `________` e é listado em um aviso. Na lista de contratos, **Gerar para cliente** abre o contrato já preenchido. O cadastro de cliente ganhou CPF/CNPJ e endereço (opcionais) para isso. Uma variável escrita errada (ex.: `{{cliente.xyz}}`) fica visível no texto.
+
+## Administração de usuários
+
+- A lista mostra o **telefone** (link para o WhatsApp) e a **última atividade**: a última vez que o usuário *alterou* algo (cadastrar, salvar, enviar, excluir...) e em que área. Só olhar telas ou atualizações automáticas não contam; a gravação é feita no máximo a cada 30 s.
+- **Dar acesso mensal** (+30 dias) e **Dar teste de 3 dias** (+3 dias de teste grátis) ficam registrados em `access_events`.
+- **Retroceder** desfaz a última liberação do administrador (uma por vez, da mais nova para a mais antiga). Se o usuário pagou depois, o pagamento é preservado: só saem os dias que o admin tinha dado.

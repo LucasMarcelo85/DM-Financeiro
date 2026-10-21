@@ -117,11 +117,15 @@ model Instance {
   metaAppSecret     String? @map("meta_app_secret")
   metaVerifyToken   String? @map("meta_verify_token")
   metaPhoneDisplay  String? @map("meta_phone_display")
+  // Auditoria: última sincronização completa feita pelo servidor e último evento recebido por webhook.
+  lastSyncAt  DateTime? @map("last_sync_at")
+  lastEventAt DateTime? @map("last_event_at")
   createdAt DateTime         @default(now()) @map("created_at")
 
-  user       User        @relation(fields: [userId], references: [id], onDelete: Cascade)
-  schedules  Schedule[]
-  auditChats AuditChat[]
+  user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules     Schedule[]
+  auditChats    AuditChat[]
+  auditContacts AuditContact[]
 
   @@index([userId, purpose])
   @@index([metaPhoneNumberId])
@@ -314,6 +318,7 @@ model AuditChat {
   jid           String
   isGroup       Boolean   @default(false) @map("is_group")
   name          String?
+  nameSearch    String    @default("") @map("name_search")
   phone         String    @default("")
   note          String    @default("")
   noteUpdatedAt DateTime? @map("note_updated_at")
@@ -340,18 +345,57 @@ model AuditMessage {
   externalId String   @map("external_id")
   fromMe     Boolean  @default(false) @map("from_me")
   sender     String?
+  senderJid  String?  @map("sender_jid")
   type       String   @default("text")
   body       String   @default("")
   search     String   @default("")
   status     String?
   ts         DateTime
+  // Lida = o auditor abriu a conversa, o dono respondeu depois, ou o WhatsApp avisou que foi lida. Só vale para mensagens recebidas.
+  seenAt     DateTime? @map("seen_at")
+  // Mídia (foto, áudio, vídeo...): o arquivo fica em audit_media; mediaRef = id da mídia na Meta.
+  hasMedia     Boolean @default(false) @map("has_media")
+  mediaMime    String? @map("media_mime")
+  mediaName    String? @map("media_name")
+  mediaSeconds Int?    @map("media_seconds")
+  mediaRef     String? @map("media_ref")
+  thumb        String?
   createdAt  DateTime @default(now()) @map("created_at")
 
-  chat AuditChat @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  chat  AuditChat   @relation(fields: [chatId], references: [id], onDelete: Cascade)
+  media AuditMedia?
 
   @@unique([chatId, externalId])
   @@index([chatId, ts])
+  @@index([chatId, fromMe, seenAt])
   @@map("audit_messages")
+}
+
+// Arquivo de uma mensagem com mídia (guardado depois do primeiro download; as mídias do WhatsApp expiram).
+model AuditMedia {
+  messageId Int      @id @map("message_id")
+  mime      String
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now()) @map("created_at")
+
+  message AuditMessage @relation(fields: [messageId], references: [id], onDelete: Cascade)
+
+  @@map("audit_media")
+}
+
+// Nome de cada pessoa que o WhatsApp mostra (contato ou participante de grupo), por conexão.
+model AuditContact {
+  id         Int      @id @default(autoincrement())
+  instanceId Int      @map("instance_id")
+  jid        String
+  name       String
+  updatedAt  DateTime @updatedAt @map("updated_at")
+
+  instance Instance @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+
+  @@unique([instanceId, jid])
+  @@map("audit_contacts")
 }
 
 // Etiqueta criada pelo usuário (ex.: "Cliente VIP") para marcar conversas.

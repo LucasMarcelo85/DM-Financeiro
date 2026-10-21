@@ -24,6 +24,7 @@ import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
+import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 
 try {
   new Intl.DateTimeFormat('en-US', { timeZone: config.timezone });
@@ -161,10 +162,12 @@ const server = app.listen(config.port, () => {
   if (!evolutionConfigured()) console.warn('[aviso] Evolution API não configurada (EVOLUTION_API_URL / EVOLUTION_API_KEY).');
   if (!infinitepayConfigured()) console.warn('[aviso] InfinitePay não configurada (INFINITEPAY_HANDLE).');
   startScheduler();
+  startAuditSync();
 });
 
 async function shutdown() {
   stopScheduler();
+  stopAuditSync();
   server.close();
   await prisma.$disconnect().catch(() => {});
   process.exit(0);

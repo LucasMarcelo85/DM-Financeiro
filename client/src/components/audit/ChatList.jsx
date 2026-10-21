@@ -1,12 +1,22 @@
 import { chatTitle, initials, listTime } from '../../lib/audit.js';
 
-export default function ChatList({ chats, selectedId, onSelect, filters, setFilters, instances, labels, loading, hasMore, onMore, live }) {
+const KINDS = [['all', 'Todas'], ['direct', 'Contatos'], ['groups', 'Grupos']];
+
+export default function ChatList({ chats, selectedId, onSelect, filters, setFilters, instances, labels, loading, hasMore, onMore, stats }) {
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
   const labelById = Object.fromEntries(labels.map((l) => [l.id, l]));
   return (
     <section className="au-list" aria-label="Conversas">
       <div className="au-search">
         <input className="input" type="search" placeholder="Buscar nome, número ou palavra-chave..." value={filters.q} onChange={set('q')} aria-label="Buscar em todas as conversas" />
+      </div>
+      <div className="au-kind" role="radiogroup" aria-label="Mostrar">
+        {KINDS.map(([id, label]) => (
+          <label key={id} className={filters.kind === id ? 'is-on' : ''}>
+            <input type="radio" name="au-kind" value={id} checked={filters.kind === id} onChange={() => setFilters((f) => ({ ...f, kind: id }))} />
+            {label}
+          </label>
+        ))}
       </div>
       <div className="au-filters">
         {instances.length > 1 && (
@@ -21,7 +31,7 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
             {labels.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
           </select>
         )}
-        <label className="au-check"><input type="checkbox" checked={filters.unread} onChange={(e) => setFilters((f) => ({ ...f, unread: e.target.checked }))} /> Não lidas</label>
+        <label className="au-check"><input type="checkbox" checked={filters.unread} onChange={(e) => setFilters((f) => ({ ...f, unread: e.target.checked }))} /> Não lidas{stats?.unreadChats ? <b className="au-badge">{stats.unreadChats > 99 ? '99+' : stats.unreadChats}</b> : null}</label>
       </div>
 
       <ul className="au-chats">
@@ -51,7 +61,7 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
         })}
       </ul>
       {!loading && chats.length === 0 && (
-        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId ? 'Nenhuma conversa encontrada com esses filtros.' : live ? 'Nenhuma conversa ainda. As mensagens aparecem aqui assim que chegarem.' : 'Nenhuma conversa ainda.'}</p>
+        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId || filters.kind !== 'all' ? 'Nenhuma conversa encontrada com esses filtros.' : 'Nenhuma conversa ainda. As conversas e mensagens aparecem aqui sozinhas assim que chegarem.'}</p>
       )}
       {loading && <p className="au-empty">Carregando...</p>}
       {hasMore && !loading && <button type="button" className="btn btn-ghost btn-sm au-more" onClick={onMore}>Carregar mais conversas</button>}

@@ -4,7 +4,7 @@ import { AppError, onlyDigits } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import * as wa from '../services/whatsapp.js';
 import { subscribe } from '../services/audit-hub.js';
-import { chatDTO, messageDTO, norm, recordMessage } from '../services/audit.js';
+import { chatDTO, ensureMedia, markChatSeen, messageDTO, recordMessage, searchTerms, senderNames } from '../services/audit.js';
 
 const router = Router();
 const HEX = /^#[0-9a-f]{6}$/i;
@@ -40,6 +40,8 @@ router.get('/stream', (req, res) => {
 });
 
 // ---------- Conversas ----------
+const INST_SELECT = { select: { id: true, name: true, label: true, metaPhoneDisplay: true } };
+
 router.get('/chats', async (req, res) => {
   const userId = req.user.id;
   const limit = clamp(int(req.query.limit) || 40, 1, 100);
@@ -47,38 +49,62 @@ router.get('/chats', async (req, res) => {
   if (int(req.query.instanceId)) where.instanceId = int(req.query.instanceId);
   if (int(req.query.labelId)) where.labels = { some: { labelId: int(req.query.labelId) } };
   if (req.query.unread === '1') where.unread = { gt: 0 };
+  if (req.query.kind === 'groups') where.isGroup = true;
+  if (req.query.kind === 'direct') where.isGroup = false;
   if (int(req.query.before)) where.lastMessageAt = { lt: new Date(int(req.query.before)) };
 
-  const q = norm(String(req.query.q || '').trim()).slice(0, 100);
-  if (q) {
-    const digits = onlyDigits(q);
-    where.OR = [
-      { name: { contains: q, mode: 'insensitive' } },
-      ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []),
-      { messages: { some: { search: { contains: q } } } },
-    ];
+  // Busca: cada palavra precisa aparecer no nome, no número ou em alguma mensagem da conversa (sem acento, sem maiúscula).
+  const terms = searchTerms(req.query.q);
+  if (terms.length) {
+    where.AND = terms.map((t) => {
+      const digits = onlyDigits(t);
+      return { OR: [{ nameSearch: { contains: t } }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []), { messages: { some: { search: { contains: t } } } }] };
+    });
   }
 
   const rows = await prisma.auditChat.findMany({
     where, orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }], take: limit + 1,
-    include: { labels: { select: { labelId: true } }, instance: { select: { id: true, name: true, label: true, metaPhoneDisplay: true } } },
+    include: { labels: { select: { labelId: true } }, instance: INST_SELECT },
   });
   const more = rows.length > limit;
   const page = rows.slice(0, limit);
 
   // Com busca: mostra o trecho da última mensagem que contém a palavra.
   let snippets = new Map();
-  if (q && page.length) {
+  if (terms.length && page.length) {
     const hits = await prisma.auditMessage.findMany({
-      where: { chatId: { in: page.map((c) => c.id) }, search: { contains: q } },
+      where: { chatId: { in: page.map((c) => c.id) }, search: { contains: terms[0] } },
       orderBy: { ts: 'desc' }, distinct: ['chatId'], select: { chatId: true, body: true },
     });
     snippets = new Map(hits.map((h) => [h.chatId, h.body.replace(/\s+/g, ' ').slice(0, 160)]));
   }
 
+  const [unread, newest] = await Promise.all([
+    prisma.auditChat.aggregate({ where: { userId }, _sum: { unread: true }, _count: { _all: true } }),
+    prisma.auditMessage.aggregate({ where: { chat: { userId } }, _max: { id: true } }),
+  ]);
+  const unreadChats = await prisma.auditChat.count({ where: { userId, unread: { gt: 0 } } });
   res.json({
     chats: page.map((c) => listDTO(c, snippets.has(c.id) ? { match: snippets.get(c.id) } : {})),
     nextBefore: more ? page.at(-1).lastMessageAt.getTime() : null,
+    unreadTotal: unread._sum.unread || 0, unreadChats, totalChats: unread._count._all,
+    cursor: newest._max.id || 0, // ponto de partida do canal de atualização de segurança (/updates)
+  });
+});
+
+// Canal de segurança do "ao vivo": tudo que chegou depois de `after`. A tela pergunta a cada poucos segundos,
+// então mesmo que o tempo real (SSE) seja barrado por um proxy, nada deixa de aparecer.
+router.get('/updates', async (req, res) => {
+  const after = int(req.query.after) || 0;
+  const rows = await prisma.auditMessage.findMany({
+    where: { id: { gt: after }, chat: { userId: req.user.id } }, orderBy: { id: 'asc' }, take: 200,
+    include: { chat: { include: { labels: { select: { labelId: true } }, instance: INST_SELECT } } },
+  });
+  const chats = new Map(rows.map((r) => [r.chatId, r.chat]));
+  res.json({
+    messages: rows.map((r) => ({ chatId: r.chatId, ...messageDTO(r) })),
+    chats: [...chats.values()].map((c) => listDTO(c)),
+    cursor: rows.length ? rows.at(-1).id : after, more: rows.length === 200,
   });
 });
 
@@ -98,43 +124,75 @@ router.get('/chats/:id/messages', async (req, res) => {
     const half = 25;
     const older = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'lt') }, orderBy: order, take: half + 1 });
     const newer = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'gt') }, orderBy: [{ ts: 'asc' }, { id: 'asc' }], take: half + 1 });
-    return res.json({
-      messages: [...older.slice(0, half).reverse(), target, ...newer.slice(0, half)].map(messageDTO),
-      hasOlder: older.length > half, hasNewer: newer.length > half,
-    });
+    const around = [...older.slice(0, half).reverse(), target, ...newer.slice(0, half)];
+    const names = await senderNames(chat.instanceId, around);
+    return res.json({ messages: around.map((m) => messageDTO(m, names.get(m.senderJid))), hasOlder: older.length > half, hasNewer: newer.length > half });
   }
 
   let where = { chatId: chat.id };
   const m = /^(\d+)_(\d+)$/.exec(String(req.query.before || ''));
   if (m) where = { chatId: chat.id, ...cursorWhere(new Date(Number(m[1])), Number(m[2]), 'lt') };
   const rows = await prisma.auditMessage.findMany({ where, orderBy: order, take: limit + 1 });
-  res.json({ messages: rows.slice(0, limit).reverse().map(messageDTO), hasOlder: rows.length > limit, hasNewer: false });
+  const shown = rows.slice(0, limit).reverse();
+  const names = await senderNames(chat.instanceId, shown);
+  res.json({ messages: shown.map((m) => messageDTO(m, names.get(m.senderJid))), hasOlder: rows.length > limit, hasNewer: false });
 });
 
-// Busca por palavra-chave dentro de UMA conversa (ignora maiúsculas e acentos).
+// Busca por palavra-chave dentro de UMA conversa: mensagens que têm TODAS as palavras (ignora maiúsculas e acentos).
 router.get('/chats/:id/search', async (req, res) => {
   const chat = await ownChat(req);
-  const q = norm(String(req.query.q || '').trim()).slice(0, 100);
-  if (q.length < 2) throw new AppError(400, 'Digite pelo menos 2 letras para buscar.');
-  const where = { chatId: chat.id, search: { contains: q } };
+  const terms = searchTerms(req.query.q);
+  if (!terms.length || terms.every((t) => t.length < 2)) throw new AppError(400, 'Digite pelo menos 2 letras para buscar.');
+  const where = { chatId: chat.id, AND: terms.map((t) => ({ search: { contains: t } })) };
   const [total, rows] = await Promise.all([
     prisma.auditMessage.count({ where }),
-    prisma.auditMessage.findMany({ where, orderBy: [{ ts: 'desc' }, { id: 'desc' }], take: 300, select: { id: true, ts: true, fromMe: true, body: true, search: true } }),
+    prisma.auditMessage.findMany({ where, orderBy: [{ ts: 'desc' }, { id: 'desc' }], take: 500, select: { id: true, ts: true, fromMe: true, body: true, search: true } }),
   ]);
   res.json({
     total,
     matches: rows.map((r) => {
-      const at = Math.max(0, r.search.indexOf(q));
+      const at = Math.max(0, r.search.indexOf(terms[0]));
       const from = Math.max(0, at - 40);
-      return { id: r.id, ts: r.ts.getTime(), fromMe: r.fromMe, snippet: `${from > 0 ? '…' : ''}${r.body.slice(from, at + q.length + 60).replace(/\s+/g, ' ')}` };
+      return { id: r.id, ts: r.ts.getTime(), fromMe: r.fromMe, snippet: `${from > 0 ? '…' : ''}${r.body.slice(from, at + terms[0].length + 60).replace(/\s+/g, ' ')}` };
     }),
   });
 });
 
+// Abrir a conversa marca tudo que foi recebido como lido (e avisa as outras abas).
 router.post('/chats/:id/read', async (req, res) => {
   const chat = await ownChat(req);
-  if (chat.unread) await prisma.auditChat.update({ where: { id: chat.id }, data: { unread: 0 } });
-  res.json({ ok: true });
+  const updated = await markChatSeen(chat);
+  res.json({ ok: true, unread: updated.unread });
+});
+
+// Foto, áudio, vídeo ou documento de uma mensagem. Baixa da Evolution/Meta na primeira vez e guarda.
+// Aceita "avançar" no vídeo/áudio (Range). ?thumb=1 devolve só a miniatura; ?download=1 força o download.
+router.get('/messages/:id/media', async (req, res) => {
+  const id = int(req.params.id);
+  const msg = id ? await prisma.auditMessage.findFirst({ where: { id, chat: { userId: req.user.id } }, select: { id: true, hasMedia: true, thumb: true, mediaName: true, type: true } }) : null;
+  if (!msg?.hasMedia) throw new AppError(404, 'Mídia não encontrada.');
+
+  let file = req.query.thumb ? null : await ensureMedia(msg.id);
+  if (!file && msg.thumb) file = { mime: 'image/jpeg', data: Buffer.from(msg.thumb, 'base64'), thumb: true };
+  if (!file) throw new AppError(404, 'Não foi possível baixar esta mídia agora. O WhatsApp pode ter apagado o arquivo.');
+
+  const data = Buffer.isBuffer(file.data) ? file.data : Buffer.from(file.data);
+  const inline = /^(image\/(?!svg)|video\/|audio\/)/i.test(file.mime) && !req.query.download;
+  const name = (msg.mediaName || `arquivo-${msg.id}`).replace(/[^\w.\- ]+/g, '_').slice(0, 120);
+  res.set({
+    'Content-Type': inline ? file.mime : 'application/octet-stream', 'Accept-Ranges': 'bytes', 'Cache-Control': 'private, max-age=86400',
+    'Content-Disposition': `${inline ? 'inline' : 'attachment'}; filename="${name}"`, 'Content-Security-Policy': "sandbox; default-src 'none'",
+  });
+  const range = /^bytes=(\d*)-(\d*)$/.exec(req.get('range') || '');
+  if (range && (range[1] || range[2])) {
+    const start = range[1] ? Number(range[1]) : Math.max(0, data.length - Number(range[2]));
+    const end = range[1] && range[2] ? Math.min(Number(range[2]), data.length - 1) : data.length - 1;
+    if (start > end || start >= data.length) return res.status(416).set('Content-Range', `bytes */${data.length}`).end();
+    res.status(206).set({ 'Content-Range': `bytes ${start}-${end}/${data.length}`, 'Content-Length': end - start + 1 });
+    return res.end(data.subarray(start, end + 1));
+  }
+  res.set('Content-Length', data.length);
+  return res.end(data);
 });
 
 // Bloco de anotações da conversa (um texto livre por conversa).

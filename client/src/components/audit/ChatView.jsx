@@ -3,21 +3,52 @@ import { Link } from 'react-router-dom';
 import { api } from '../../api.js';
 import { useToast } from '../Toast.jsx';
 import EIcon from '../contract/EIcon.jsx';
-import { TYPE_LABEL, chatTitle, clock, dayLabel, highlightParts, phoneLabel, sameDay } from '../../lib/audit.js';
+import { chatTitle, clock, dayLabel, highlightParts, insertSorted, mediaUrl, phoneLabel, sameDay } from '../../lib/audit.js';
 
 const TICKS = { sent: '✓', delivered: '✓✓', read: '✓✓', failed: '!' };
 
-function Body({ m, q }) {
-  const typeLabel = TYPE_LABEL[m.type];
+// Foto, figurinha, vídeo, áudio ou documento. Se o arquivo não puder ser baixado, mostra a miniatura (quando existe) e um aviso.
+function MediaBlock({ m, version, onOpen }) {
+  const [failed, setFailed] = useState(false);
+  useEffect(() => setFailed(false), [version]);
+  const q = version ? `?v=${version}` : '';
+  const src = mediaUrl(m.id, q);
+  const thumb = m.media.thumb ? mediaUrl(m.id, `?thumb=1${version ? `&v=${version}` : ''}`) : null;
+  const unavailable = <span className="au-media-off">Mídia indisponível (o WhatsApp pode ter apagado o arquivo)</span>;
+
+  if (m.type === 'image' || m.type === 'sticker') {
+    if (failed) return thumb ? <><img className="au-img is-thumb" src={thumb} alt="Miniatura" />{unavailable}</> : unavailable;
+    return <img className={`au-img ${m.type === 'sticker' ? 'is-sticker' : ''}`} src={src} alt={m.type === 'sticker' ? 'Figurinha' : 'Foto'} loading="lazy" onError={() => setFailed(true)} onClick={() => onOpen(src)} />;
+  }
+  if (m.type === 'video') {
+    if (failed) return thumb ? <><img className="au-img is-thumb" src={thumb} alt="Miniatura do vídeo" />{unavailable}</> : unavailable;
+    return <video className="au-video" controls preload="none" poster={thumb || undefined} src={src} onError={() => setFailed(true)} />;
+  }
+  if (m.type === 'audio') {
+    if (failed) return unavailable;
+    return (
+      <span className="au-audio">
+        <audio controls preload="none" src={src} onError={() => setFailed(true)} />
+        {m.media.seconds ? <small>{Math.floor(m.media.seconds / 60)}:{String(m.media.seconds % 60).padStart(2, '0')}</small> : null}
+      </span>
+    );
+  }
+  return <a className="au-doc" href={mediaUrl(m.id, '?download=1')} download>{m.media.name || m.body || 'Baixar arquivo'}</a>;
+}
+
+function Body({ m, q, version, onOpen }) {
+  const showText = m.body && !(m.type === 'document' && m.body === m.media?.name);
   return (
     <>
-      {typeLabel && <span className="au-media">{typeLabel}</span>}
-      {m.body && <span className="au-text">{highlightParts(m.body, q).map((p, i) => (p.hit ? <mark key={i}>{p.t}</mark> : <Fragment key={i}>{p.t}</Fragment>))}</span>}
+      {m.media && <MediaBlock m={m} version={version} onOpen={onOpen} />}
+      
+      {(m.type === 'location' || m.type === 'contact') && <span className="au-media">{m.type === 'location' ? 'Localização' : 'Contato'}</span>}
+      {showText && <span className="au-text">{highlightParts(m.body, q).map((p, i) => (p.hit ? <mark key={i}>{p.t}</mark> : <Fragment key={i}>{p.t}</Fragment>))}</span>}
     </>
   );
 }
 
-export default function ChatView({ chat, canSend, liveMsg, liveStatus, onBack, onRead, onSent, onSide }) {
+export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdit, liveMedia, onBack, onRead, onSent, onSide }) {
   const toast = useToast();
   const [messages, setMessages] = useState([]);
   const [hasOlder, setHasOlder] = useState(false);
@@ -27,6 +58,8 @@ export default function ChatView({ chat, canSend, liveMsg, liveStatus, onBack, o
   const [text, setText] = useState('');
   const [sending, setSending] = useState(false);
   const [fresh, setFresh] = useState(0); // mensagens novas chegaram enquanto você lia mais acima
+  const [versions, setVersions] = useState({}); // força recarregar a mídia que acabou de ser baixada
+  const [lightbox, setLightbox] = useState(null);
   const scroller = useRef(null);
   const stick = useRef(true); // true = está no fim da conversa (acompanha as mensagens novas)
   const keepFrom = useRef(null); // posição a manter ao carregar mensagens antigas
@@ -60,19 +93,28 @@ export default function ChatView({ chat, canSend, liveMsg, liveStatus, onBack, o
     api.post(`/audit/chats/${chatId}/read`).then(() => onRead(chatId)).catch(() => {});
   }, [chatId]); // eslint-disable-line react-hooks/exhaustive-deps
 
-  // Mensagem nova em tempo real.
+  // Mensagens novas (tempo real ou consulta rápida): entram na posição certa, mesmo as que chegam atrasadas.
   useEffect(() => {
-    if (!liveMsg || liveMsg.chat.id !== chatId) return;
-    if (hasNewer) { setFresh((n) => n + 1); return; }
-    setMessages((list) => (list.some((m) => m.id === liveMsg.message.id) ? list : [...list, liveMsg.message]));
-    if (stick.current) toBottom(); else setFresh((n) => n + 1);
-    if (!document.hidden && !liveMsg.message.fromMe) api.post(`/audit/chats/${chatId}/read`).then(() => onRead(chatId)).catch(() => {});
-  }, [liveMsg]); // eslint-disable-line react-hooks/exhaustive-deps
+    const mine = (liveItems || []).filter((it) => it.chat.id === chatId);
+    if (!mine.length) return;
+    if (hasNewer) { setFresh((n) => n + mine.length); return; }
+    setMessages((list) => mine.reduce((acc, it) => insertSorted(acc, it.message), list));
+    if (stick.current) toBottom(); else setFresh((n) => n + mine.length);
+    if (!document.hidden && mine.some((it) => !it.message.fromMe)) api.post(`/audit/chats/${chatId}/read`).then(() => onRead(chatId)).catch(() => {});
+  }, [liveItems]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // Atualiza os "vistos" das mensagens enviadas.
   useEffect(() => {
     if (liveStatus && liveStatus.chatId === chatId) setMessages((list) => list.map((m) => (m.id === liveStatus.messageId ? { ...m, status: liveStatus.status } : m)));
   }, [liveStatus]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (liveEdit && liveEdit.chatId === chatId) setMessages((list) => list.map((m) => (m.id === liveEdit.messageId ? { ...m, body: liveEdit.body } : m)));
+  }, [liveEdit]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  useEffect(() => {
+    if (liveMedia && liveMedia.chatId === chatId) setVersions((v) => ({ ...v, [liveMedia.messageId]: (v[liveMedia.messageId] || 0) + 1 }));
+  }, [liveMedia]); // eslint-disable-line react-hooks/exhaustive-deps
 
   async function loadOlder() {
     const first = messages[0];
@@ -191,8 +233,8 @@ export default function ChatView({ chat, canSend, liveMsg, liveStatus, onBack, o
           <Fragment key={m.id}>
             {(i === 0 || !sameDay(messages[i - 1].ts, m.ts)) && <div className="au-day"><span>{dayLabel(m.ts)}</span></div>}
             <div data-msg={m.id} className={`au-msg ${m.fromMe ? 'is-me' : 'is-them'} ${activeMatch === m.id ? 'is-focus' : ''}`}>
-              {chat.isGroup && !m.fromMe && m.sender && <b className="au-sender">{m.sender}</b>}
-              <Body m={m} q={search.open ? search.q : ''} />
+              {chat.isGroup && !m.fromMe && (m.sender || m.senderPhone) && <b className="au-sender" title={m.senderPhone ? phoneLabel(m.senderPhone) : undefined}>{m.sender || phoneLabel(m.senderPhone)}</b>}
+              <Body m={m} q={search.open ? search.q : ''} version={versions[m.id]} onOpen={setLightbox} />
               <span className="au-meta"><time>{clock(m.ts)}</time>{m.fromMe && m.status && <i className={`au-tick is-${m.status}`} aria-label={`Status: ${m.status}`}>{TICKS[m.status]}</i>}</span>
             </div>
           </Fragment>
@@ -211,6 +253,13 @@ export default function ChatView({ chat, canSend, liveMsg, liveStatus, onBack, o
         <div className="au-readonly">
           <span><strong>Somente leitura.</strong> Responder pela auditoria faz parte do plano Ouro.</span>
           <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>
+        </div>
+      )}
+      {lightbox && (
+        <div className="au-lightbox" role="dialog" aria-modal="true" aria-label="Foto ampliada" onClick={() => setLightbox(null)} onKeyDown={(e) => { if (e.key === 'Escape') setLightbox(null); }} tabIndex={-1} ref={(el) => el?.focus()}>
+          <img src={lightbox} alt="Foto ampliada" />
+          <a className="btn btn-ghost btn-sm" href={`${lightbox.split('?')[0]}?download=1`} download onClick={(e) => e.stopPropagation()}>Baixar</a>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLightbox(null)}>Fechar</button>
         </div>
       )}
     </section>
