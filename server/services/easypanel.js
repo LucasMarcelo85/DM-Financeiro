@@ -28,6 +28,18 @@ function responseError(payload) {
   return candidates.find((message) => typeof message === 'string' && message.trim())?.trim();
 }
 
+function responseData(payload) {
+  if (Array.isArray(payload)) return payload;
+  if (!payload || typeof payload !== 'object') return payload;
+  if (payload.result?.data && Object.hasOwn(payload.result.data, 'json')) return payload.result.data.json;
+  if (payload.result?.data) return payload.result.data;
+  if (payload.result) return payload.result;
+  if (payload.data && Object.hasOwn(payload.data, 'json')) return payload.data.json;
+  if (payload.data) return payload.data;
+  if (Object.hasOwn(payload, 'json')) return payload.json;
+  return payload;
+}
+
 async function callApi(procedure, input, method = 'POST') {
   const url = new URL(panelApiUrl(procedure));
   const options = {
@@ -57,14 +69,19 @@ async function callApi(procedure, input, method = 'POST') {
     throw new Error(`EasyPanel ${procedure} (HTTP ${response.status})${message ? `: ${message}` : '.'}`);
   }
 
-  return payload?.result?.data?.json;
+  return responseData(payload);
 }
 
 async function listServiceDomains() {
-  const domains = await callApi('domains.listDomains', {
+  const result = await callApi('domains.listDomains', {
     projectName: config.easypanel.projectName,
     serviceName: config.easypanel.serviceName,
   }, 'GET');
+  const domains = Array.isArray(result) ? result
+    : Array.isArray(result?.domains) ? result.domains
+      : Array.isArray(result?.items) ? result.items
+        : Array.isArray(result?.data) ? result.data
+          : null;
   if (!Array.isArray(domains)) throw new Error('A API do EasyPanel retornou uma lista de domínios inválida.');
   return domains;
 }
