@@ -67,6 +67,8 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 
 Se o PostgreSQL estiver no mesmo EasyPanel, use o nome interno do serviço no host da `DATABASE_URL`.
 
+Para cadastrar domínios personalizados automaticamente, configure também `EASYPANEL_API_URL`, `EASYPANEL_API_KEY`, `EASYPANEL_PROJECT_NAME` e `EASYPANEL_SERVICE_NAME`. Use a URL base do painel (com ou sem `/api`), um token da API e os nomes exatos do projeto e do serviço App que escuta na porta `3001`. Ao salvar ou verificar um domínio, o sistema o registra no EasyPanel e habilita HTTPS; ao removê-lo, também o remove do painel.
+
 ## Observações
 
 - O webhook da InfinitePay (`/api/webhooks/infinitepay`) só é informado quando `APP_URL` começa com `https`. Em ambiente local o pagamento é confirmado pela página de retorno.

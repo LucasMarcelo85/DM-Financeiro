@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { config } from '../config.js';
 import { limitsFor } from '../plans.js';
+import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
 import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { cleanPortfolioDoc, cleanPortfolioName, emptyPortfolioDoc } from '../utils/portfolio.js';
@@ -113,6 +114,14 @@ router.put('/domain', async (req, res) => {
   const old = req.user.customDomain;
 
   if (!raw) {
+    if (old) {
+      try {
+        await removeDomainFromEasypanel(old);
+      } catch (e) {
+        console.error(`[portfolio] não removeu ${old} do EasyPanel:`, e.message);
+        throw new AppError(502, `Não foi possível remover o domínio do EasyPanel: ${e.message}`, 'EASYPANEL_ERROR');
+      }
+    }
     await prisma.user.update({ where: { id: req.user.id }, data: { customDomain: null, customDomainVerifiedAt: null } });
     if (old) forgetDomain(old);
     return res.json({ domain: domainDTO({ customDomain: null }) });
@@ -125,6 +134,13 @@ router.put('/domain', async (req, res) => {
   await ensureUserSlug(req.user); // o domínio abre as páginas do endereço do usuário
   const dnsCheck = await checkDomainDns(domain);
   const data = { customDomain: domain, customDomainVerifiedAt: dnsCheck.ok ? new Date() : null };
+
+  try {
+    await addDomainToEasypanel(domain);
+  } catch (e) {
+    console.error(`[portfolio] não cadastrou ${domain} no EasyPanel:`, e.message);
+    throw new AppError(502, `Não foi possível cadastrar o domínio no EasyPanel: ${e.message}`, 'EASYPANEL_ERROR');
+  }
 
   let saved;
   for (let attempt = 0; attempt < 2 && !saved; attempt++) {
@@ -143,7 +159,16 @@ router.put('/domain', async (req, res) => {
   }
   if (!saved) throw new AppError(409, 'Esse domínio já está cadastrado em outra conta.');
   forgetDomain(domain);
-  if (old) forgetDomain(old);
+  if (old) {
+    forgetDomain(old);
+    if (old !== domain) {
+      try {
+        await removeDomainFromEasypanel(old);
+      } catch (e) {
+        console.warn(`[portfolio] não removeu o domínio antigo ${old} do EasyPanel:`, e.message);
+      }
+    }
+  }
   res.json({ domain: domainDTO(saved), dnsIps: dnsCheck.ips || [] });
 });
 
@@ -151,6 +176,12 @@ router.put('/domain', async (req, res) => {
 router.post('/domain/check', async (req, res) => {
   const domain = req.user.customDomain;
   if (!domain) throw new AppError(400, 'Cadastre um domínio primeiro.');
+  try {
+    await addDomainToEasypanel(domain);
+  } catch (e) {
+    console.error(`[portfolio] não cadastrou ${domain} no EasyPanel:`, e.message);
+    throw new AppError(502, `Não foi possível cadastrar o domínio no EasyPanel: ${e.message}`, 'EASYPANEL_ERROR');
+  }
   const dnsCheck = await checkDomainDns(domain);
   const saved = await prisma.user.update({
     where: { id: req.user.id },

@@ -1,50 +1,82 @@
-// server/services/easypanel.js
-import fetch from 'node-fetch';
+import { randomUUID } from 'node:crypto';
 import { config } from '../config.js';
 
+const API_PATH = '/api/trpc';
+
+function panelApiUrl(procedure) {
+  if (!config.easypanel.url || !config.easypanel.apiKey) {
+    throw new Error('Configure EASYPANEL_API_URL e EASYPANEL_API_KEY para automatizar domínios.');
+  }
+  const panelUrl = config.easypanel.url.replace(/\/api$/i, '');
+  return `${panelUrl}${API_PATH}/${procedure}`;
+}
+
+async function callApi(procedure, input, method = 'POST') {
+  const url = new URL(panelApiUrl(procedure));
+  const options = {
+    method,
+    headers: { Authorization: config.easypanel.apiKey },
+    signal: AbortSignal.timeout(15_000),
+  };
+
+  if (method === 'GET') {
+    url.searchParams.set('input', JSON.stringify({ json: input }));
+  } else {
+    options.headers['Content-Type'] = 'application/json';
+    options.body = JSON.stringify({ json: input });
+  }
+
+  const response = await fetch(url, options);
+  const text = await response.text();
+  let payload;
+  try {
+    payload = text ? JSON.parse(text) : null;
+  } catch {
+    throw new Error(`A API do EasyPanel retornou uma resposta inválida (HTTP ${response.status}).`);
+  }
+
+  if (!response.ok || payload?.error) {
+    const message = payload?.error?.json?.message || payload?.error?.message;
+    throw new Error(message || `A API do EasyPanel respondeu com HTTP ${response.status}.`);
+  }
+
+  return payload?.result?.data?.json;
+}
+
+async function listServiceDomains() {
+  const domains = await callApi('domains.listDomains', {
+    projectName: config.easypanel.projectName,
+    serviceName: config.easypanel.serviceName,
+  }, 'GET');
+  if (!Array.isArray(domains)) throw new Error('A API do EasyPanel retornou uma lista de domínios inválida.');
+  return domains;
+}
+
 export async function addDomainToEasypanel(domain) {
-    if (!config.easypanel.url || !config.easypanel.apiKey) {
-        console.warn('[easypanel] API não configurada. Domínio não adicionado automaticamente.');
-        return;
-    }
+  const domains = await listServiceDomains();
+  if (domains.some((item) => String(item.host || '').toLowerCase() === domain.toLowerCase())) return;
 
-    try {
-        const response = await fetch(`${config.easypanel.url}/projects/${config.easypanel.projectName}/services/${config.easypanel.serviceName}/domains`, {
-            method: 'POST',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.easypanel.apiKey}`
-            },
-            body: JSON.stringify({ domain })
-        });
-
-        if (!response.ok) {
-            const errText = await response.text();
-            console.error(`[easypanel] Erro ao adicionar domínio (${domain}):`, errText);
-        }
-    } catch (error) {
-        console.error('[easypanel] Falha de conexão com a API:', error);
-    }
+  await callApi('domains.createDomain', {
+    id: randomUUID(),
+    https: true,
+    host: domain,
+    path: '/',
+    middlewares: [],
+    certificateResolver: 'letsencrypt',
+    wildcard: false,
+    destinationType: 'service',
+    serviceDestination: {
+      protocol: 'http',
+      port: 3001,
+      path: '/',
+      projectName: config.easypanel.projectName,
+      serviceName: config.easypanel.serviceName,
+    },
+  });
 }
 
 export async function removeDomainFromEasypanel(domain) {
-    if (!config.easypanel.url || !config.easypanel.apiKey) return;
-
-    try {
-        const response = await fetch(`${config.easypanel.url}/projects/${config.easypanel.projectName}/services/${config.easypanel.serviceName}/domains`, {
-            method: 'DELETE',
-            headers: {
-                'Content-Type': 'application/json',
-                'Authorization': `Bearer ${config.easypanel.apiKey}`
-            },
-            body: JSON.stringify({ domain })
-        });
-
-        if (!response.ok) {
-            const errText = await response.text();
-            console.error(`[easypanel] Erro ao remover domínio (${domain}):`, errText);
-        }
-    } catch (error) {
-        console.error('[easypanel] Falha de conexão com a API:', error);
-    }
+  const domains = await listServiceDomains();
+  const existing = domains.find((item) => String(item.host || '').toLowerCase() === domain.toLowerCase());
+  if (existing) await callApi('domains.deleteDomain', { id: existing.id });
 }
