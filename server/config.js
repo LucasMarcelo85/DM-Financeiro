@@ -74,7 +74,14 @@ export const config = {
     prata: positive(env.PLAN_PRATA_PRICE, 54.9),
     ouro: positive(env.PLAN_OURO_PRICE, 64.9),
   },
+  easypanel: {
+    url: trimSlash(env.EASYPANEL_API_URL),
+    apiKey: (env.EASYPANEL_API_KEY || '').trim(),
+    projectName: (env.EASYPANEL_PROJECT_NAME || 'ferramentas').trim(),
+    serviceName: (env.EASYPANEL_SERVICE_NAME || 'dmfinanceiro').trim(),
+  },
 };
 
 export const evolutionConfigured = () => Boolean(config.evolution.url && config.evolution.apiKey);
 export const infinitepayConfigured = () => Boolean(config.infinitepay.handle);
+export const easypanelConfigured = () => Boolean(config.easypanel.url && config.easypanel.apiKey);
