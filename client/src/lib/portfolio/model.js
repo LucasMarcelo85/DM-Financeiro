@@ -193,5 +193,6 @@ export function themeVars(t) {
   };
 }
 
-// Endereço público da página (o domínio vem de onde o usuário está acessando).
-export const pageUrl = (path) => `${window.location.origin}${path}`;
+// Endereço público da página. Com domínio próprio verificado vem pronto do servidor (customUrl);
+// senão o domínio é o de onde o usuário está acessando o sistema.
+export const pageUrl = (path, customUrl) => customUrl || `${window.location.origin}${path}`;

@@ -23,6 +23,7 @@ import portfolioRoutes from './routes/portfolios.js';
 import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/public-portfolio.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
+import { customDomainMiddleware } from './services/domains.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 
@@ -91,6 +92,8 @@ app.use(
     },
   })
 );
+// Domínio próprio de um portfólio (meusite.com.br): só as rotas públicas do portfólio respondem nele.
+app.use(customDomainMiddleware);
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
@@ -132,8 +135,19 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontra
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
-  app.use(express.static(dist));
   const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio (antes do express.static, que serviria o index.html puro em "/").
+  app.use(async (req, res, next) => {
+    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
+    try {
+      const meta = await portfolioShareMeta(req);
+      return res.status(meta ? 200 : 404).type('html').send(injectMeta(shell, meta, req.customDomain.slug));
+    } catch (e) {
+      console.error('[portfolio] domínio próprio:', e.message);
+      return next(e);
+    }
+  });
+  app.use(express.static(dist));
   app.use(async (req, res) => {
     // Endereço de uma página do portfólio: entrega o HTML já com título, descrição e imagem do link (WhatsApp, redes sociais).
     if (req.method === 'GET') {

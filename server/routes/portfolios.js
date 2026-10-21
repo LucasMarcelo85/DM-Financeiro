@@ -1,7 +1,10 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
+import { config } from '../config.js';
 import { limitsFor } from '../plans.js';
+import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
+import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { cleanPortfolioDoc, cleanPortfolioName, emptyPortfolioDoc } from '../utils/portfolio.js';
 import { isValidSlug, pickSlug, slugify } from '../utils/slug.js';
 
@@ -11,11 +14,23 @@ const router = Router();
 
 const ms = (d) => (d ? d.getTime() : null);
 const pagePath = (userSlug, p) => (p.isMain ? `/${userSlug}` : `/${userSlug}/${p.slug}`);
-const summaryDTO = (p, userSlug) => ({
-  id: p.id, name: p.name, slug: p.slug, published: p.published, isMain: p.isMain,
-  path: pagePath(userSlug, p), createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
+// Com domínio próprio verificado, o link da página é o do domínio do usuário (meusite.com.br e meusite.com.br/<página>).
+const customBase = (user) => (user.customDomain && user.customDomainVerifiedAt ? `https://${user.customDomain}` : '');
+const summaryDTO = (p, userSlug, user) => {
+  const base = user ? customBase(user) : '';
+  return {
+    id: p.id, name: p.name, slug: p.slug, published: p.published, isMain: p.isMain,
+    path: pagePath(userSlug, p), customUrl: base ? `${base}${p.isMain ? '' : `/${p.slug}`}` : null,
+    createdAt: ms(p.createdAt), updatedAt: ms(p.updatedAt),
+  };
+};
+const fullDTO = (p, userSlug, user) => ({ ...summaryDTO(p, userSlug, user), data: p.data });
+const domainDTO = (user) => ({
+  name: user.customDomain || '',
+  verified: Boolean(user.customDomain && user.customDomainVerifiedAt),
+  serverIp: config.serverIp,
+  appHost,
 });
-const fullDTO = (p, userSlug) => ({ ...summaryDTO(p, userSlug), data: p.data });
 const summarySelect = { id: true, name: true, slug: true, published: true, isMain: true, createdAt: true, updatedAt: true };
 
 async function owned(req, withData = false) {
@@ -87,12 +102,67 @@ async function createPage(user, { name, data, count, published = false }) {
 router.get('/', async (req, res) => {
   const rows = await prisma.portfolio.findMany({ where: { userId: req.user.id }, orderBy: [{ isMain: 'desc' }, { updatedAt: 'desc' }], select: summarySelect });
   const userSlug = req.user.portfolioSlug || (await suggestUserSlug(req.user));
-  res.json({ portfolios: rows.map((p) => summaryDTO(p, userSlug)), limit: limitsFor(req.user).portfolios, userSlug });
+  res.json({ portfolios: rows.map((p) => summaryDTO(p, userSlug, req.user)), limit: limitsFor(req.user).portfolios, userSlug, domain: domainDTO(req.user) });
+});
+
+// ---------- Domínio próprio ----------
+// O usuário aponta o domínio dele (registro A) para SERVER_IP e cadastra aqui. A partir daí meusite.com.br abre a página
+// principal e meusite.com.br/<página> abre as outras, no lugar de sistema.com.br/<usuário>. O link antigo continua funcionando.
+router.put('/domain', async (req, res) => {
+  const raw = String(req.body?.domain ?? '').trim();
+  const old = req.user.customDomain;
+
+  if (!raw) {
+    await prisma.user.update({ where: { id: req.user.id }, data: { customDomain: null, customDomainVerifiedAt: null } });
+    if (old) forgetDomain(old);
+    return res.json({ domain: domainDTO({ customDomain: null }) });
+  }
+
+  const domain = normalizeDomain(raw);
+  if (!isValidDomain(domain)) throw new AppError(400, 'Domínio inválido. Use algo como meusite.com.br (sem https:// e sem barra).');
+  if (domain === appHost || domain.endsWith(`.${appHost}`)) throw new AppError(400, 'Esse endereço é do próprio sistema. Use o seu domínio.');
+
+  await ensureUserSlug(req.user); // o domínio abre as páginas do endereço do usuário
+  const dnsCheck = await checkDomainDns(domain);
+  const data = { customDomain: domain, customDomainVerifiedAt: dnsCheck.ok ? new Date() : null };
+
+  let saved;
+  for (let attempt = 0; attempt < 2 && !saved; attempt++) {
+    try {
+      saved = await prisma.user.update({ where: { id: req.user.id }, data });
+    } catch (e) {
+      if (e?.code !== 'P2002') throw e;
+      // Outra conta já cadastrou esse domínio. Se ela nunca provou que o DNS é dela e o seu DNS está certo, o domínio é seu.
+      if (!dnsCheck.ok) throw new AppError(409, 'Esse domínio já está cadastrado em outra conta.');
+      const freed = await prisma.user.updateMany({
+        where: { customDomain: domain, customDomainVerifiedAt: null, id: { not: req.user.id } },
+        data: { customDomain: null },
+      });
+      if (!freed.count) throw new AppError(409, 'Esse domínio já está cadastrado em outra conta.');
+    }
+  }
+  if (!saved) throw new AppError(409, 'Esse domínio já está cadastrado em outra conta.');
+  forgetDomain(domain);
+  if (old) forgetDomain(old);
+  res.json({ domain: domainDTO(saved), dnsIps: dnsCheck.ips || [] });
+});
+
+// "Verificar de novo": depois de criar o registro no DNS (pode levar de minutos a horas para valer).
+router.post('/domain/check', async (req, res) => {
+  const domain = req.user.customDomain;
+  if (!domain) throw new AppError(400, 'Cadastre um domínio primeiro.');
+  const dnsCheck = await checkDomainDns(domain);
+  const saved = await prisma.user.update({
+    where: { id: req.user.id },
+    data: { customDomainVerifiedAt: dnsCheck.ok ? req.user.customDomainVerifiedAt || new Date() : null },
+  });
+  forgetDomain(domain);
+  res.json({ domain: domainDTO(saved), dnsIps: dnsCheck.ips || [] });
 });
 
 router.get('/:id', async (req, res) => {
   const p = await owned(req, true);
-  res.json({ portfolio: fullDTO(p, req.user.portfolioSlug) });
+  res.json({ portfolio: fullDTO(p, req.user.portfolioSlug, req.user) });
 });
 
 router.post('/', async (req, res) => {
@@ -100,7 +170,7 @@ router.post('/', async (req, res) => {
   const name = cleanPortfolioName(req.body?.name);
   const data = req.body?.data === undefined ? emptyPortfolioDoc() : cleanPortfolioDoc(req.body.data);
   const { page, userSlug } = await createPage(req.user, { name, data, count });
-  res.status(201).json({ portfolio: fullDTO(page, userSlug) });
+  res.status(201).json({ portfolio: fullDTO(page, userSlug, req.user) });
 });
 
 router.patch('/:id', async (req, res) => {
@@ -121,7 +191,7 @@ router.patch('/:id', async (req, res) => {
   if (!Object.keys(patch).length) throw new AppError(400, 'Nada para atualizar.');
   try {
     const p = await prisma.portfolio.update({ where: { id: current.id }, data: patch, select: summarySelect });
-    res.json({ portfolio: summaryDTO(p, req.user.portfolioSlug) });
+    res.json({ portfolio: summaryDTO(p, req.user.portfolioSlug, req.user) });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Você já tem outra página com esse endereço. Escolha outro.');
     throw e;
@@ -133,7 +203,7 @@ router.post('/:id/duplicate', async (req, res) => {
   const count = await assertCanCreate(req.user);
   const name = `${current.name} (cópia)`.slice(0, 120);
   const { page, userSlug } = await createPage(req.user, { name, data: current.data, count });
-  res.status(201).json({ portfolio: summaryDTO(page, userSlug) });
+  res.status(201).json({ portfolio: summaryDTO(page, userSlug, req.user) });
 });
 
 // A página principal abre direto em dominio/<usuário>.

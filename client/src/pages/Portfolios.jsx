@@ -35,6 +35,67 @@ function NewPageModal({ onClose, onCreate, busy }) {
   );
 }
 
+// Domínio próprio: o usuário aponta o domínio dele (registro A) para o IP do servidor e o site passa a abrir em meusite.com.br.
+function DomainCard({ domain, onChange }) {
+  const toast = useToast();
+  const [value, setValue] = useState(domain.name);
+  const [busy, setBusy] = useState('');
+  useEffect(() => setValue(domain.name), [domain.name]);
+
+  const saved = Boolean(domain.name);
+  const changed = value.trim() !== domain.name;
+
+  async function run(kind, fn, okMsg) {
+    setBusy(kind);
+    try {
+      const r = await fn();
+      if (okMsg) toast(okMsg(r));
+      await onChange();
+    } catch (e) { toast(e.message, 'error'); } finally { setBusy(''); }
+  }
+
+  const save = () => run('save', () => api.put('/portfolios/domain', { domain: value }),
+    (r) => (r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Domínio salvo. Falta apontar o DNS (veja abaixo).'));
+  const remove = () => run('remove', () => api.put('/portfolios/domain', { domain: '' }), () => 'Domínio removido.');
+  const check = () => run('check', () => api.post('/portfolios/domain/check'),
+    (r) => (r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Ainda não encontrei o apontamento. O DNS pode levar de minutos a algumas horas.'));
+
+  return (
+    <section className="pl-domain">
+      <div className="pl-domain-head">
+        <span className="action-icon"><Icon name="link" size={22} /></span>
+        <div>
+          <strong>Domínio próprio</strong>
+          <span className="muted small">Use o endereço do seu site (ex.: <code>meusite.com.br</code>) em vez do endereço do sistema. A página principal abre direto nele e as outras ficam depois da barra.</span>
+        </div>
+        {saved && <span className={`pill ${domain.verified ? 'pill-sent' : 'pill-partial'}`}>{domain.verified ? 'Ativo' : 'Aguardando DNS'}</span>}
+      </div>
+
+      <div className="pl-domain-row">
+        <input className="input" value={value} onChange={(e) => setValue(e.target.value)} maxLength={253} placeholder="meusite.com.br" aria-label="Seu domínio" inputMode="url" autoCapitalize="none" spellCheck={false} />
+        <button className="btn btn-primary" onClick={save} disabled={!!busy || !value.trim() || !changed}>{busy === 'save' ? 'Salvando...' : 'Salvar domínio'}</button>
+        {saved && <button className="btn btn-ghost" onClick={remove} disabled={!!busy}>{busy === 'remove' ? 'Removendo...' : 'Remover'}</button>}
+      </div>
+
+      {saved && !domain.verified && (
+        <div className="banner banner-amber">
+          <div>
+            <strong>Falta apontar o domínio para o sistema.</strong>
+            <span>
+              No painel onde você registrou o domínio (Registro.br, GoDaddy, Hostinger...), abra o <b>DNS</b> e crie um registro
+              {' '}<b>tipo A</b>, nome <b>@</b>{domain.serverIp ? <>, apontando para <code>{domain.serverIp}</code></> : ' (o IP do servidor)'}. Se quiser o <b>www</b>, crie outro igual com nome <b>www</b>.
+              No Cloudflare, deixe a nuvem <b>cinza</b> (somente DNS).
+            </span>
+          </div>
+          <button className="btn btn-ghost btn-sm" onClick={check} disabled={!!busy}>{busy === 'check' ? 'Verificando...' : 'Verificar agora'}</button>
+        </div>
+      )}
+      {!saved && domain.serverIp && <p className="muted small">Depois de salvar, aponte o DNS do seu domínio (registro <b>tipo A</b>) para o IP <code>{domain.serverIp}</code>.</p>}
+      {saved && domain.verified && <p className="muted small">Seu site abre em <strong>{domain.name}</strong>. O endereço antigo do sistema continua funcionando.</p>}
+    </section>
+  );
+}
+
 export default function Portfolios() {
   const toast = useToast();
   const nav = useNavigate();
@@ -64,7 +125,7 @@ export default function Portfolios() {
   }
 
   async function copy(p) {
-    if (await copyText(pageUrl(p.path))) toast('Link copiado!'); else setSharing(p);
+    if (await copyText(pageUrl(p.path, p.customUrl))) toast('Link copiado!'); else setSharing(p);
   }
 
   async function duplicate(p) {
@@ -123,6 +184,8 @@ export default function Portfolios() {
         </div>
       )}
 
+      {data && <DomainCard domain={data.domain} onChange={load} />}
+
       {data === null ? <p className="muted">Carregando...</p> : count === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="globe" size={32} /></span>
@@ -141,7 +204,7 @@ export default function Portfolios() {
                   <span className={`pill ${p.published ? 'pill-sent' : 'pill-partial'}`}>{p.published ? 'Publicada' : 'Rascunho'}</span>
                   {p.isMain && <span className="tag tag-monthly">Principal</span>}
                 </span>
-                <span className="pl-url" title={pageUrl(p.path)}><Icon name="link" size={14} /><span>{pageUrl(p.path).replace(/^https?:\/\//, '')}</span></span>
+                <span className="pl-url" title={pageUrl(p.path, p.customUrl)}><Icon name="link" size={14} /><span>{pageUrl(p.path, p.customUrl).replace(/^https?:\/\//, '')}</span></span>
                 <span className="muted small">editada em {dateBR(p.updatedAt)}</span>
               </Link>
               <div className="ct-actions">
@@ -151,7 +214,7 @@ export default function Portfolios() {
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={18} /></button>
               </div>
               <div className="pl-more">
-                {p.published && <a className="link-btn" href={pageUrl(p.path)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
+                {p.published && <a className="link-btn" href={pageUrl(p.path, p.customUrl)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
                 <button className="link-btn" onClick={() => duplicate(p)} disabled={full}>Duplicar</button>
                 {!p.isMain && <button className="link-btn" onClick={() => makeMain(p)}>Tornar principal</button>}
               </div>
@@ -161,12 +224,12 @@ export default function Portfolios() {
       )}
 
       {newOpen && <NewPageModal busy={busy === 'create'} onClose={() => setNewOpen(false)} onCreate={create} />}
-      {sharing && <ShareModal name={sharing.name} path={sharing.path} published={sharing.published} busy={publishing} onPublish={() => publish(sharing)} onClose={() => setSharing(null)} />}
+      {sharing && <ShareModal name={sharing.name} path={sharing.path} customUrl={sharing.customUrl} published={sharing.published} busy={publishing} onPublish={() => publish(sharing)} onClose={() => setSharing(null)} />}
 
       {confirmDel && (
         <Modal title="Excluir esta página?" onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
-          <p><strong>{confirmDel.name}</strong> será apagada e o link <strong>{pageUrl(confirmDel.path).replace(/^https?:\/\//, '')}</strong> deixa de funcionar. Não dá para desfazer.</p>
+          <p><strong>{confirmDel.name}</strong> será apagada e o link <strong>{pageUrl(confirmDel.path, confirmDel.customUrl).replace(/^https?:\/\//, '')}</strong> deixa de funcionar. Não dá para desfazer.</p>
         </Modal>
       )}
     </>
