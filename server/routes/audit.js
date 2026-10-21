@@ -1,6 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
-import { AppError, onlyDigits } from '../utils/helpers.js';
+import { AppError, DAY, onlyDigits } from '../utils/helpers.js';
+import { config } from '../config.js';
 import { limitsFor } from '../plans.js';
 import * as wa from '../services/whatsapp.js';
 import { subscribe } from '../services/audit-hub.js';
@@ -14,6 +15,14 @@ const MAX_SEND = 4000;
 
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 const int = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
+
+// Filtro de período da auditoria: 7, 30 ou 60 dias (60 = tudo que fica guardado; o que passa disso é apagado sozinho).
+const RANGES = [7, 30, 60];
+const sinceOf = (v) => {
+  const n = int(v);
+  const days = RANGES.includes(n) ? n : config.auditRetentionDays;
+  return new Date(Date.now() - days * DAY);
+};
 
 async function ownChat(req, id = req.params.id) {
   const n = int(id);
@@ -45,20 +54,21 @@ const INST_SELECT = { select: { id: true, name: true, label: true, metaPhoneDisp
 router.get('/chats', async (req, res) => {
   const userId = req.user.id;
   const limit = clamp(int(req.query.limit) || 40, 1, 100);
-  const where = { userId };
+  const since = sinceOf(req.query.days);
+  const where = { userId, lastMessageAt: { gte: since } };
   if (int(req.query.instanceId)) where.instanceId = int(req.query.instanceId);
   if (int(req.query.labelId)) where.labels = { some: { labelId: int(req.query.labelId) } };
   if (req.query.unread === '1') where.unread = { gt: 0 };
   if (req.query.kind === 'groups') where.isGroup = true;
   if (req.query.kind === 'direct') where.isGroup = false;
-  if (int(req.query.before)) where.lastMessageAt = { lt: new Date(int(req.query.before)) };
+  if (int(req.query.before)) where.lastMessageAt = { gte: since, lt: new Date(int(req.query.before)) };
 
   // Busca: cada palavra precisa aparecer no nome, no número ou em alguma mensagem da conversa (sem acento, sem maiúscula).
   const terms = searchTerms(req.query.q);
   if (terms.length) {
     where.AND = terms.map((t) => {
       const digits = onlyDigits(t);
-      return { OR: [{ nameSearch: { contains: t } }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []), { messages: { some: { search: { contains: t } } } }] };
+      return { OR: [{ nameSearch: { contains: t } }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []), { messages: { some: { search: { contains: t }, ts: { gte: since } } } }] };
     });
   }
 
@@ -73,7 +83,7 @@ router.get('/chats', async (req, res) => {
   let snippets = new Map();
   if (terms.length && page.length) {
     const hits = await prisma.auditMessage.findMany({
-      where: { chatId: { in: page.map((c) => c.id) }, search: { contains: terms[0] } },
+      where: { chatId: { in: page.map((c) => c.id) }, search: { contains: terms[0] }, ts: { gte: since } },
       orderBy: { ts: 'desc' }, distinct: ['chatId'], select: { chatId: true, body: true },
     });
     snippets = new Map(hits.map((h) => [h.chatId, h.body.replace(/\s+/g, ' ').slice(0, 160)]));
@@ -117,21 +127,22 @@ router.get('/chats/:id/messages', async (req, res) => {
   const chat = await ownChat(req);
   const limit = clamp(int(req.query.limit) || 50, 1, 100);
   const order = [{ ts: 'desc' }, { id: 'desc' }];
+  const since = sinceOf(req.query.days);
 
   if (int(req.query.around)) {
-    const target = await prisma.auditMessage.findFirst({ where: { id: int(req.query.around), chatId: chat.id } });
+    const target = await prisma.auditMessage.findFirst({ where: { id: int(req.query.around), chatId: chat.id, ts: { gte: since } } });
     if (!target) throw new AppError(404, 'Mensagem não encontrada.');
     const half = 25;
-    const older = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'lt') }, orderBy: order, take: half + 1 });
+    const older = await prisma.auditMessage.findMany({ where: { chatId: chat.id, AND: [cursorWhere(target.ts, target.id, 'lt'), { ts: { gte: since } }] }, orderBy: order, take: half + 1 });
     const newer = await prisma.auditMessage.findMany({ where: { chatId: chat.id, ...cursorWhere(target.ts, target.id, 'gt') }, orderBy: [{ ts: 'asc' }, { id: 'asc' }], take: half + 1 });
     const around = [...older.slice(0, half).reverse(), target, ...newer.slice(0, half)];
     const names = await senderNames(chat.instanceId, around);
     return res.json({ messages: around.map((m) => messageDTO(m, names.get(m.senderJid))), hasOlder: older.length > half, hasNewer: newer.length > half });
   }
 
-  let where = { chatId: chat.id };
+  let where = { chatId: chat.id, ts: { gte: since } };
   const m = /^(\d+)_(\d+)$/.exec(String(req.query.before || ''));
-  if (m) where = { chatId: chat.id, ...cursorWhere(new Date(Number(m[1])), Number(m[2]), 'lt') };
+  if (m) where = { chatId: chat.id, AND: [cursorWhere(new Date(Number(m[1])), Number(m[2]), 'lt'), { ts: { gte: since } }] };
   const rows = await prisma.auditMessage.findMany({ where, orderBy: order, take: limit + 1 });
   const shown = rows.slice(0, limit).reverse();
   const names = await senderNames(chat.instanceId, shown);
@@ -143,7 +154,7 @@ router.get('/chats/:id/search', async (req, res) => {
   const chat = await ownChat(req);
   const terms = searchTerms(req.query.q);
   if (!terms.length || terms.every((t) => t.length < 2)) throw new AppError(400, 'Digite pelo menos 2 letras para buscar.');
-  const where = { chatId: chat.id, AND: terms.map((t) => ({ search: { contains: t } })) };
+  const where = { chatId: chat.id, ts: { gte: sinceOf(req.query.days) }, AND: terms.map((t) => ({ search: { contains: t } })) };
   const [total, rows] = await Promise.all([
     prisma.auditMessage.count({ where }),
     prisma.auditMessage.findMany({ where, orderBy: [{ ts: 'desc' }, { id: 'desc' }], take: 500, select: { id: true, ts: true, fromMe: true, body: true, search: true } }),

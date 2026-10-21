@@ -33,6 +33,8 @@ export function publicUser(user) {
     createdAt: ms(user.createdAt),
     access: computeAccess(user),
     limits: limitsFor(user),
+    // Só diz SE existe PIN e quais abas ele protege (o hash nunca sai do servidor).
+    pin: { enabled: Boolean(user.pinHash), tabs: user.pinHash ? user.pinTabs || [] : [] },
     timezone: config.timezone,
   };
 }

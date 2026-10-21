@@ -740,10 +740,10 @@ try {
 
   // --- importar histórico (botão "Sincronizar agora") e primeira busca = tudo lido
   const OLD = '5585911112222@s.whatsapp.net';
-  fake.chats.push({ remoteJid: OLD, name: 'Histórico Hugo', updatedAt: '2023-11-14T22:13:20.000Z' });
+  fake.chats.push({ remoteJid: OLD, name: 'Histórico Hugo', updatedAt: new Date(Date.now() - 30 * 86400000).toISOString() }); // 30 dias atrás: ainda dentro dos 60 dias guardados
   fake.messages[OLD] = [
-    { key: { remoteJid: OLD, fromMe: false, id: 'HIST1' }, pushName: 'Histórico Hugo', message: { conversation: 'mensagem antiga 1' }, messageTimestamp: 1700000000 },
-    { key: { remoteJid: OLD, fromMe: true, id: 'HIST2' }, message: { conversation: 'mensagem antiga 2' }, messageTimestamp: 1700000100 },
+    { key: { remoteJid: OLD, fromMe: false, id: 'HIST1' }, pushName: 'Histórico Hugo', message: { conversation: 'mensagem antiga 1' }, messageTimestamp: nowS() - 30 * 86400 },
+    { key: { remoteJid: OLD, fromMe: true, id: 'HIST2' }, message: { conversation: 'mensagem antiga 2' }, messageTimestamp: nowS() - 30 * 86400 + 100 },
   ];
   r = await u('POST', `/audit/instances/${aud1.id}/sync`); assert.equal(r.status, 200); assert.equal(r.body.started || r.body.running, true);
   const hugo = await eventually(async () => (await chatsOf('&q=Hugo')).chats.find((c) => c.instanceId === aud1.id), 'histórico importado');
@@ -751,6 +751,81 @@ try {
   r = await u('GET', '/audit/instances'); const ai = r.body.instances.find((i) => i.id === aud1.id); assert.ok(ai.lastSyncAt > Date.now() - 60_000); assert.ok('sync' in ai);
   ok('"Sincronizar agora" importa o histórico em segundo plano (histórico entra como lido) e a conexão mostra a última sincronização');
   fake.chats = []; fake.messages = {}; fake.groups = [];
+
+  // ===== auditoria: filtro de 7, 30 e 60 dias e limpeza automática de mensagens com mais de 60 dias =====
+  const DAYS = 86400;
+  const mariaId = (await db.query("SELECT id FROM users WHERE email = 'maria@t.com'")).rows[0].id;
+  const utcAgo = (d) => `((now() AT TIME ZONE 'UTC') - interval '${d} days')`;
+
+  // histórico com mais de 60 dias NÃO é importado (nem cria conversa), nem pela busca automática nem pelo webhook
+  const ANCIENT = '5585900009999@s.whatsapp.net';
+  fake.chats.push({ remoteJid: ANCIENT, name: 'Muito Antigo', updatedAt: new Date(Date.now() - 90 * DAYS * 1000).toISOString() });
+  fake.messages[ANCIENT] = [{ key: { remoteJid: ANCIENT, fromMe: false, id: 'ANC1' }, pushName: 'Muito Antigo', message: { conversation: 'faz muito tempo' }, messageTimestamp: nowS() - 90 * DAYS }];
+  r = await u('POST', `/audit/instances/${aud1.id}/sync`); assert.equal(r.status, 200);
+  await eventually(async () => { const x = (await u('GET', '/audit/instances')).body.instances.find((i) => i.id === aud1.id); return x?.sync && !x.sync.running; }, 'sincronização terminar');
+  assert.equal((await chatsOf('&q=Antigo&days=60')).chats.length, 0);
+  assert.equal((await hook('messages.upsert', { key: { remoteJid: '5585900008888@s.whatsapp.net', fromMe: false, id: 'ANC2' }, pushName: 'Webhook Antigo', message: { conversation: 'mensagem velha' }, messageTimestamp: nowS() - 70 * DAYS })).status, 200);
+  assert.equal((await db.query("SELECT count(*)::int n FROM audit_chats WHERE name = 'Webhook Antigo'")).rows[0].n, 0);
+  assert.equal((await hook('messages.upsert', { key: { remoteJid: '5585900008888@s.whatsapp.net', fromMe: false, id: 'ANC3' }, pushName: 'Webhook Novo', message: { conversation: 'mensagem de agora' }, messageTimestamp: nowS() })).status, 200);
+  assert.equal((await chatsOf('&q=Webhook Novo')).chats.length, 1);
+  fake.chats = []; fake.messages = {};
+  ok('mensagens com mais de 60 dias não são guardadas (nem pelo histórico, nem pelo webhook); as de agora entram normalmente');
+
+  // conversas em datas diferentes (3, 20, 45 e 70 dias atrás) para testar o filtro e a limpeza
+  const seeded = [];
+  const mkChat = async (n, name, { created = '0 minutes', note = '', unread = 0, msgs }) => {
+    const last = Math.min(...msgs.map((m) => m.d));
+    const c = (await db.query(`INSERT INTO audit_chats (user_id, instance_id, jid, is_group, name, name_search, phone, note, last_message_at, last_text, unread, created_at) VALUES ($1, $2, $3, false, $4, $5, '', $6, ${utcAgo(last)}, '', $7, (now() AT TIME ZONE 'UTC') - $8::interval) RETURNING id`, [mariaId, aud1.id, `55859000${n}@s.whatsapp.net`, name, name.toLowerCase(), note, unread, created])).rows[0].id;
+    seeded.push(c);
+    const ids = [];
+    for (const [i, m] of msgs.entries()) ids.push((await db.query(`INSERT INTO audit_messages (chat_id, external_id, from_me, type, body, search, ts) VALUES ($1, $2, $3, 'text', $4, $5, ${utcAgo(m.d)}) RETURNING id`, [c, `RET-${n}-${i}`, Boolean(m.me), m.body, m.body.toLowerCase()])).rows[0].id);
+    return { id: c, msgIds: ids };
+  };
+  const c3 = await mkChat('1001', 'Ret Três dias', { msgs: [{ d: 3, body: 'Tres dias atras' }] });
+  const c20 = await mkChat('1002', 'Ret Vinte dias', { msgs: [{ d: 20, body: 'Vinte dias atras' }] });
+  const c45 = await mkChat('1003', 'Ret Quarenta dias', { msgs: [{ d: 45, body: 'Quarenta e cinco dias atras' }] });
+  const c70 = await mkChat('1004', 'Ret Setenta dias', { created: '5 hours', msgs: [{ d: 70, body: 'Setenta dias atras' }] });
+  const mix = await mkChat('1005', 'Ret Mista', { unread: 2, msgs: [{ d: 70, body: 'Mista 70 dias' }, { d: 45, body: 'Mista 45 dias', me: true }, { d: 20, body: 'Mista 20 dias', me: true }, { d: 3, body: 'Mista 3 dias' }] });
+  const oldNote = await mkChat('1006', 'Ret Velha com nota', { created: '5 hours', note: 'cliente importante', msgs: [{ d: 80, body: 'Nota 80 dias' }] });
+  const oldNone = await mkChat('1007', 'Ret Velha sem nada', { created: '5 hours', msgs: [{ d: 80, body: 'Nada 80 dias' }] });
+  await db.query('INSERT INTO audit_media (message_id, mime, size, data) VALUES ($1, $2, 3, $3)', [c70.msgIds[0], 'image/jpeg', Buffer.from([1, 2, 3])]);
+
+  const names = async (qs) => (await chatsOf(qs)).chats.map((c) => c.name);
+  let nm = await names('&days=7'); assert.ok(nm.includes('Ret Três dias') && nm.includes('Ret Mista') && !nm.includes('Ret Vinte dias') && !nm.includes('Ret Quarenta dias'));
+  nm = await names('&days=30'); assert.ok(nm.includes('Ret Vinte dias') && !nm.includes('Ret Quarenta dias'));
+  nm = await names('&days=60'); assert.ok(nm.includes('Ret Quarenta dias') && !nm.includes('Ret Setenta dias') && !nm.includes('Ret Velha com nota'));
+  for (const bad of ['', '&days=999', '&days=abc', '&days=0']) { nm = await names(bad); assert.ok(nm.includes('Ret Quarenta dias') && !nm.includes('Ret Setenta dias'), `days inválido ${bad}`); } // valor inválido = 60 dias
+  ok('lista de conversas filtra por 7, 30 e 60 dias (padrão e valores inválidos = 60); o que passou de 60 dias já nem aparece');
+
+  const bodies = async (id, qs = '') => (await u('GET', `/audit/chats/${id}/messages?limit=100${qs}`)).body.messages.map((m) => m.body);
+  assert.deepEqual(await bodies(mix.id), ['Mista 45 dias', 'Mista 20 dias', 'Mista 3 dias']);
+  assert.deepEqual(await bodies(mix.id, '&days=30'), ['Mista 20 dias', 'Mista 3 dias']);
+  assert.deepEqual(await bodies(mix.id, '&days=7'), ['Mista 3 dias']);
+  r = await u('GET', `/audit/chats/${mix.id}/messages?limit=100&days=30&before=${Date.now()}_999999`); assert.deepEqual(r.body.messages.map((m) => m.body), ['Mista 20 dias', 'Mista 3 dias']); assert.equal(r.body.hasOlder, false);
+  r = await u('GET', `/audit/chats/${mix.id}/messages?around=${mix.msgIds[1]}&days=30`); assert.equal(r.status, 404); // a mensagem de 45 dias está fora do filtro de 30
+  r = await u('GET', `/audit/chats/${mix.id}/messages?around=${mix.msgIds[1]}&days=60`); assert.equal(r.status, 200); assert.deepEqual(r.body.messages.map((m) => m.body), ['Mista 45 dias', 'Mista 20 dias', 'Mista 3 dias']);
+  assert.equal((await u('GET', `/audit/chats/${mix.id}/search?q=mista&days=7`)).body.total, 1);
+  assert.equal((await u('GET', `/audit/chats/${mix.id}/search?q=mista&days=30`)).body.total, 2);
+  assert.equal((await u('GET', `/audit/chats/${mix.id}/search?q=mista`)).body.total, 3);
+  assert.ok(!(await names('&q=Mista 45&days=7')).includes('Ret Mista')); assert.ok((await names('&q=Mista 45&days=60')).includes('Ret Mista'));
+  ok('mensagens, rolagem para cima, "ir até a mensagem" e busca respeitam o filtro de 7, 30 e 60 dias');
+
+  // limpeza automática (a mesma rotina que o servidor roda de hora em hora)
+  (await import('../server/config.js')).config.databaseUrl = dbUrl.toString(); // este processo usa o banco temporário do teste
+  const { purgeOldAuditMessages } = await import('../server/services/maintenance.js');
+  const testPrisma = (await import('../server/prisma.js')).prisma;
+  await purgeOldAuditMessages();
+  assert.equal((await db.query("SELECT count(*)::int n FROM audit_messages WHERE ts < (now() AT TIME ZONE 'UTC') - interval '60 days'")).rows[0].n, 0);
+  assert.deepEqual((await db.query('SELECT body FROM audit_messages WHERE chat_id = $1 ORDER BY ts', [mix.id])).rows.map((x) => x.body), ['Mista 45 dias', 'Mista 20 dias', 'Mista 3 dias']);
+  assert.equal((await db.query('SELECT unread FROM audit_chats WHERE id = $1', [mix.id])).rows[0].unread, 1); // a mensagem não lida de 70 dias saiu, sobra a de 3 dias
+  assert.equal((await db.query('SELECT count(*)::int n FROM audit_media WHERE message_id = $1', [c70.msgIds[0]])).rows[0].n, 0); // a mídia sai junto
+  const alive = (await db.query('SELECT name FROM audit_chats WHERE id = ANY($1)', [seeded])).rows.map((x) => x.name).sort();
+  assert.deepEqual(alive, ['Ret Mista', 'Ret Quarenta dias', 'Ret Três dias', 'Ret Velha com nota', 'Ret Vinte dias']); // vazias sem anotação/etiqueta saem; com anotação ficam
+  assert.equal((await db.query('SELECT count(*)::int n FROM audit_messages WHERE chat_id = $1', [oldNote.id])).rows[0].n, 0);
+  await testPrisma.$disconnect();
+  await db.query('DELETE FROM audit_chats WHERE id = ANY($1)', [seeded]); // limpa o cenário deste teste
+  void [c3, c20, c45, oldNone];
+  ok('limpeza automática: apaga mensagens com mais de 60 dias (e as mídias), acerta as não lidas e remove conversas vazias sem anotação');
 
   // ===== API oficial da Meta =====
   const meta = { phoneNumberId: '100200300400', businessId: '555666777', accessToken: GOOD, appSecret: 'segredo-do-app-meta-1234' };
@@ -823,6 +898,168 @@ try {
   const adm = (await a('GET', '/admin/users')).body.users.find((x) => x.role === 'admin');
   r = await a('POST', `/admin/users/${adm.id}/grant`); assert.equal(r.status, 400); r = await a('POST', `/admin/users/${adm.id}/undo-access`); assert.equal(r.status, 400);
   ok('histórico das liberações; só o admin usa; administrador não recebe liberação');
+
+  // ===== admin: planos editáveis (valores e limites vêm do banco, não do .env) =====
+  r = await u('GET', '/admin/plans'); assert.equal(r.status, 403); r = await u('PUT', '/admin/plans/bronze', {}); assert.equal(r.status, 403);
+  r = await a('GET', '/admin/plans'); assert.equal(r.status, 200); assert.deepEqual(r.body.plans.map((x) => x.id), ['bronze', 'prata', 'ouro']);
+  assert.equal(r.body.plans[0].priceCents, 3490); assert.equal(r.body.plans[0].prices.semestral, 17450); assert.equal(r.body.plans[2].auditSend, true); assert.ok(r.body.plans.every((x) => Number.isInteger(x.userCount)));
+  assert.equal((await db.query('SELECT count(*)::int n FROM plan_settings')).rows[0].n, 3); // criados no banco na primeira execução
+  assert.equal((await other('GET', '/contracts')).body.limit, 2);
+  const planBody = { priceCents: 4990, instances: 2, auditInstances: 2, contracts: 5, portfolios: 3, auditSend: true };
+  r = await a('PUT', '/admin/plans/bronze', planBody); assert.equal(r.status, 200, JSON.stringify(r.body));
+  const b2 = r.body.plans.find((x) => x.id === 'bronze'); assert.equal(b2.priceCents, 4990); assert.deepEqual(b2.prices, { mensal: 4990, semestral: 24950, anual: 44910 }); assert.deepEqual([b2.instances, b2.auditInstances, b2.contracts, b2.portfolios, b2.auditSend], [2, 2, 5, 3, true]);
+  assert.equal((await db.query("SELECT price_cents, contracts FROM plan_settings WHERE plan = 'bronze'")).rows[0].contracts, 5);
+  r = await client('anon')('GET', '/plans'); assert.equal(r.body.plans.find((x) => x.id === 'bronze').prices.mensal, 4990); // a tela de planos já mostra o novo valor
+  assert.equal((await other('GET', '/contracts')).body.limit, 5); // o limite vale na hora
+  r = await other('GET', '/auth/me'); assert.deepEqual([r.body.user.limits.instances, r.body.user.limits.auditInstances, r.body.user.limits.portfolios, r.body.user.limits.auditSend], [2, 2, 3, true]);
+  r = await other('POST', '/billing/checkout', { plan: 'bronze', period: 'anual' }); assert.equal(orders[decodeURIComponent(r.body.url.split('o=')[1])], 44910); // o pagamento cobra o valor novo (9 mensalidades)
+  for (const bad of [{ priceCents: 50 }, { priceCents: 'abc' }, { priceCents: 49.9 }, { contracts: -1 }, { instances: 5000 }, { portfolios: '1.5' }, { auditSend: 'sim' }]) {
+    r = await a('PUT', '/admin/plans/bronze', { ...planBody, ...bad }); assert.equal(r.status, 400, JSON.stringify(bad));
+  }
+  r = await a('PUT', '/admin/plans/diamante', planBody); assert.equal(r.status, 404);
+  r = await a('PUT', '/admin/plans/bronze', { priceCents: 3490, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, auditSend: false }); assert.equal(r.status, 200); // volta ao padrão
+  assert.equal((await other('GET', '/contracts')).body.limit, 2);
+  ok('admin vê e altera valor e limites de cada plano; vale na hora para limites, tela de planos e pagamento; entradas inválidas são recusadas');
+
+  // ===== perfil, código PIN e recuperação pelo WhatsApp do admin =====
+  // (cliente com vários cookies, porque o PIN usa um cookie à parte)
+  const mclient = () => {
+    const jarMap = new Map();
+    return async (method, url, body) => {
+      const res = await fetch(`http://localhost:${port}/api${url}`, { method, headers: { 'Content-Type': 'application/json', Cookie: [...jarMap].map(([k, v]) => `${k}=${v}`).join('; ') }, body: body ? JSON.stringify(body) : undefined });
+      for (const c of res.headers.getSetCookie()) { const kv = c.split(';')[0]; const i = kv.indexOf('='); const k = kv.slice(0, i); const v = kv.slice(i + 1); if (!v) jarMap.delete(k); else jarMap.set(k, v); }
+      return { status: res.status, body: await res.json().catch(() => ({})) };
+    };
+  };
+  const login = async (who, identifier, password) => { const x = await who('POST', '/auth/login', { identifier, password }); assert.equal(x.status, 200, JSON.stringify(x.body)); return x; };
+  const prevEvo = evoState;
+  const p = mclient(); const p2 = mclient(); const anon2 = mclient();
+  await login(p, 'maria@t.com', 'senha12345'); await login(p2, 'maria@t.com', 'senha12345');
+
+  // --- perfil
+  r = await p('GET', '/auth/me'); assert.equal(r.body.user.pin.enabled, false); assert.equal(r.body.pinUnlockedUntil, null);
+  r = await p('PATCH', '/auth/profile', { name: 'Maria T. Souza' }); assert.equal(r.status, 200); assert.equal(r.body.user.name, 'Maria T. Souza');
+  r = await p('PATCH', '/auth/profile', {}); assert.equal(r.status, 400);
+  r = await p('PATCH', '/auth/profile', { name: 'Ma' }); assert.equal(r.status, 400);
+  r = await p('PATCH', '/auth/profile', { email: 'maria.nova@t.com' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'PASSWORD_WRONG'); // trocar e-mail pede a senha atual
+  r = await p('PATCH', '/auth/profile', { email: 'isso-nao-e-email', currentPassword: 'senha12345' }); assert.equal(r.status, 400);
+  r = await p('PATCH', '/auth/profile', { email: 'e@t.com', currentPassword: 'senha12345' }); assert.equal(r.status, 409); // e-mail de outra conta
+  r = await p('PATCH', '/auth/profile', { newPassword: 'curta', currentPassword: 'senha12345' }); assert.equal(r.status, 400);
+  r = await p('PATCH', '/auth/profile', { newPassword: 'novaSenha456', currentPassword: 'errada!!' }); assert.equal(r.status, 403);
+  r = await p('PATCH', '/auth/profile', { email: 'maria.nova@t.com', phone: '(85) 98888-0000', newPassword: 'novaSenha456', currentPassword: 'senha12345' }); assert.equal(r.status, 200);
+  assert.equal(r.body.user.email, 'maria.nova@t.com'); assert.equal(r.body.user.phone, '85988880000'); assert.equal(JSON.stringify(r.body).includes('passwordHash'), false);
+  assert.equal((await anon2('POST', '/auth/login', { identifier: 'maria@t.com', password: 'senha12345' })).status, 401); // e-mail e senha antigos não valem mais
+  await login(anon2, 'maria.nova@t.com', 'novaSenha456');
+  r = await p('PATCH', '/auth/profile', { email: 'maria@t.com', phone: '(85) 99999-1234', newPassword: 'senha12345', currentPassword: 'novaSenha456' }); assert.equal(r.status, 200); // volta ao original
+  ok('perfil: troca nome; e-mail, WhatsApp e senha pedem a senha atual; e-mail repetido é recusado');
+
+  // --- criar PIN e escolher as abas
+  r = await p('PUT', '/auth/pin', { pin: '12', tabs: ['auditoria'] }); assert.equal(r.status, 400);
+  r = await p('PUT', '/auth/pin', { pin: '12ab', tabs: ['auditoria'] }); assert.equal(r.status, 400);
+  r = await p('PUT', '/auth/pin', { pin: '1234', tabs: [] }); assert.equal(r.status, 400);
+  r = await p('PUT', '/auth/pin', { pin: '1234', tabs: ['nada'] }); assert.equal(r.status, 400);
+  r = await p('PUT', '/auth/pin', { tabs: ['auditoria'] }); assert.equal(r.status, 400); // sem PIN ainda: precisa digitar um
+  r = await p('PUT', '/auth/pin', { pin: '1234', tabs: ['auditoria', 'contratos', 'clientes'] }); assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.deepEqual(r.body.user.pin, { enabled: true, tabs: ['clientes', 'contratos', 'auditoria'] }); assert.ok(r.body.pinUnlockedUntil > Date.now());
+  assert.equal(/pin_?hash/i.test(JSON.stringify(r.body)), false); assert.equal(/pin_?hash/i.test(JSON.stringify((await p('GET', '/auth/me')).body)), false); // o hash do PIN nunca sai do servidor
+  assert.ok(/^\$2[aby]\$/.test((await db.query("SELECT pin_hash FROM users WHERE email = 'maria@t.com'")).rows[0].pin_hash)); // guardado com hash
+  ok('criar código PIN com as abas que serão protegidas (validado; o PIN é guardado só com hash)');
+
+  // --- outro navegador (sessão nova) começa travado: APIs exclusivas da aba respondem 423
+  r = await p2('GET', '/auth/me'); assert.equal(r.body.user.pin.enabled, true); assert.equal(r.body.pinUnlockedUntil, null);
+  r = await p2('GET', '/audit/chats'); assert.equal(r.status, 423); assert.equal(r.body.code, 'PIN_REQUIRED');
+  r = await p2('GET', '/audit/instances'); assert.equal(r.status, 423);
+  r = await p2('GET', '/contracts'); assert.equal(r.status, 423);
+  r = await p2('GET', '/portfolios'); assert.equal(r.status, 200); // aba sem PIN continua livre
+  r = await p2('GET', '/contacts'); assert.equal(r.status, 200); // "clientes" é protegida só na tela (a API também serve as cobranças)
+  r = await p('GET', '/audit/chats'); assert.equal(r.status, 200); // quem acabou de criar o PIN já está liberado
+  r = await p2('POST', '/auth/pin/verify', { pin: '0000' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'PIN_WRONG');
+  r = await p2('POST', '/auth/pin/verify', { pin: 'abcd' }); assert.equal(r.status, 403);
+  r = await p2('POST', '/auth/pin/verify', { pin: '1234' }); assert.equal(r.status, 200); assert.ok(r.body.pinUnlockedUntil > Date.now() + 25 * 60_000); // vale por 30 minutos
+  assert.equal((await p2('GET', '/audit/chats')).status, 200); assert.equal((await p2('GET', '/contracts')).status, 200);
+  assert.ok((await p2('GET', '/auth/me')).body.pinUnlockedUntil > Date.now());
+  r = await p2('POST', '/auth/pin/lock'); assert.equal(r.status, 200); assert.equal((await p2('GET', '/audit/chats')).status, 423); // "bloquear agora"
+  r = await login(p2, 'maria@t.com', 'senha12345'); assert.equal(r.body.user.pin.enabled, true); // entrar de novo não deixa nada destravado
+  await p2('POST', '/auth/pin/verify', { pin: '1234' }); assert.equal((await p2('GET', '/audit/chats')).status, 200);
+  await login(p2, 'maria@t.com', 'senha12345'); assert.equal((await p2('GET', '/audit/chats')).status, 423);
+  assert.equal((await client('anon')('GET', '/audit/chats')).status, 401);
+  ok('abas com PIN ficam travadas até digitar o código (no servidor também, onde a API é só daquela aba); vale 30 min; dá para travar de novo');
+
+  // --- alterar abas ou PIN pede o PIN atual; trocar o PIN invalida o desbloqueio anterior
+  r = await p('PUT', '/auth/pin', { tabs: ['auditoria'] }); assert.equal(r.status, 403); assert.equal(r.body.code, 'PIN_WRONG');
+  r = await p('PUT', '/auth/pin', { tabs: ['auditoria'], currentPin: '9999' }); assert.equal(r.status, 403);
+  r = await p('PUT', '/auth/pin', { tabs: ['auditoria'], currentPin: '1234' }); assert.equal(r.status, 200); assert.deepEqual(r.body.user.pin.tabs, ['auditoria']);
+  assert.equal((await p2('GET', '/contracts')).status, 200); // "contratos" deixou de ser protegida
+  await p2('POST', '/auth/pin/verify', { pin: '1234' }); assert.equal((await p2('GET', '/audit/chats')).status, 200);
+  r = await p('PUT', '/auth/pin', { pin: '5678', tabs: ['auditoria', 'portfolio'], currentPin: '1234' }); assert.equal(r.status, 200);
+  assert.equal((await p2('GET', '/audit/chats')).status, 423); // o PIN mudou: o desbloqueio antigo não vale
+  assert.equal((await p2('POST', '/auth/pin/verify', { pin: '1234' })).status, 403); assert.equal((await p2('POST', '/auth/pin/verify', { pin: '5678' })).status, 200);
+  assert.equal((await p2('GET', '/portfolios')).status, 200); await p2('POST', '/auth/pin/lock'); assert.equal((await p2('GET', '/portfolios')).status, 423);
+  ok('alterar abas/PIN exige o PIN atual; ao trocar o PIN, o desbloqueio antigo deixa de valer');
+
+  // --- 5 erros seguidos travam as tentativas (só "Esqueci o código PIN" destrava)
+  for (let i = 0; i < 5; i++) { r = await p2('POST', '/auth/pin/verify', { pin: '0001' }); assert.equal(r.status, 403); }
+  r = await p2('POST', '/auth/pin/verify', { pin: '5678' }); assert.equal(r.status, 429); assert.equal(r.body.code, 'PIN_LOCKED'); // até o PIN certo espera
+  ok('depois de 5 PINs errados as tentativas ficam bloqueadas por alguns minutos');
+
+  // --- esqueci o código PIN: confirma e-mail/CPF e recebe o código no WhatsApp pela conexão do admin
+  evoState = 'close';
+  r = await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 503); assert.equal(r.body.code, 'RECOVERY_UNAVAILABLE'); // admin sem WhatsApp conectado
+  evoState = 'open';
+  r = await a('POST', '/instances'); assert.equal(r.status, 201); const adminInst = r.body.instance; assert.equal(adminInst.name, 'admin');
+  const codeFrom = (msg) => /\*(\d{6})\*/.exec(msg.text)[1];
+  r = await p2('POST', '/auth/pin/forgot', { identifier: 'outra@pessoa.com' }); assert.equal(r.status, 400); // não confere com a conta
+  r = await p2('POST', '/auth/pin/forgot', {}); assert.equal(r.status, 400);
+  sent.length = 0;
+  r = await p2('POST', '/auth/pin/forgot', { identifier: '111.444.777-35' }); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.phoneHint, 'final 1234'); // pode usar o CPF
+  assert.equal(sent.length, 1); assert.equal(sent[0].number, '5585999991234'); assert.match(sent[0].text, /código PIN/); const pinCode = codeFrom(sent[0]);
+  assert.equal((await db.query("SELECT count(*)::int n FROM verification_codes WHERE code_hash = $1", [pinCode])).rows[0].n, 0); // só o hash fica no banco
+  r = await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 429); assert.equal(sent.length, 1); // 1 minuto entre códigos
+  r = await p2('POST', '/auth/pin/reset', { code: pinCode === '000000' ? '111111' : '000000', pin: '4321' }); assert.equal(r.status, 400); assert.equal(r.body.code, 'CODE_WRONG');
+  r = await p2('POST', '/auth/pin/reset', { code: pinCode, pin: '43' }); assert.equal(r.status, 400); // PIN novo inválido não gasta o código
+  r = await p2('POST', '/auth/pin/reset', { code: pinCode, pin: '4321' }); assert.equal(r.status, 200, JSON.stringify(r.body)); assert.equal(r.body.user.pin.enabled, true); assert.ok(r.body.pinUnlockedUntil > Date.now());
+  assert.deepEqual(r.body.user.pin.tabs, ['auditoria', 'portfolio']); // as abas continuam as mesmas
+  r = await p2('POST', '/auth/pin/reset', { code: pinCode, pin: '4321' }); assert.equal(r.status, 400); assert.equal(r.body.code, 'CODE_INVALID'); // cada código vale uma vez
+  await p2('POST', '/auth/pin/lock'); assert.equal((await p2('POST', '/auth/pin/verify', { pin: '5678' })).status, 403); assert.equal((await p2('POST', '/auth/pin/verify', { pin: '4321' })).status, 200); // PIN novo; e o bloqueio por tentativas foi zerado
+  // código vencido e excesso de tentativas
+  await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); await db.query("UPDATE verification_codes SET expires_at = now() - interval '1 minute'");
+  r = await p2('POST', '/auth/pin/reset', { code: codeFrom(sent.at(-1)) }); assert.equal(r.status, 400); assert.equal(r.body.code, 'CODE_INVALID');
+  await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); const c2 = codeFrom(sent.at(-1)); const wrong = c2 === '123456' ? '654321' : '123456';
+  for (let i = 0; i < 5; i++) { r = await p2('POST', '/auth/pin/reset', { code: wrong }); assert.equal(r.status, 400); }
+  r = await p2('POST', '/auth/pin/reset', { code: c2 }); assert.equal(r.status, 400); assert.equal(r.body.code, 'CODE_INVALID'); // depois de 5 erros nem o código certo vale
+  // sem informar PIN novo, remove o PIN
+  await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); r = await p2('POST', '/auth/pin/reset', { code: codeFrom(sent.at(-1)) });
+  assert.equal(r.status, 200); assert.deepEqual(r.body.user.pin, { enabled: false, tabs: [] }); assert.equal(r.body.pinUnlockedUntil, null);
+  assert.equal((await p2('GET', '/audit/chats')).status, 200);
+  r = await p2('POST', '/auth/pin/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 400); assert.equal(r.body.code, 'PIN_NOT_SET');
+  ok('esqueci o PIN: pede e-mail ou CPF/CNPJ, o admin envia o código pelo WhatsApp (só hash no banco), vale 1 vez, vence, limita tentativas e permite PIN novo ou remover');
+
+  // --- remover o PIN com o PIN atual
+  r = await p('PUT', '/auth/pin', { pin: '2468', tabs: ['auditoria'] }); assert.equal(r.status, 200);
+  r = await p('POST', '/auth/pin/disable', { currentPin: '0000' }); assert.equal(r.status, 403);
+  r = await p('POST', '/auth/pin/disable', { currentPin: '2468' }); assert.equal(r.status, 200); assert.deepEqual(r.body.user.pin, { enabled: false, tabs: [] });
+  assert.equal((await p2('GET', '/audit/chats')).status, 200);
+  ok('remover o PIN exige o PIN atual');
+
+  // --- esqueci a senha (tela de login): código pelo WhatsApp do admin
+  r = await anon2('POST', '/auth/forgot', { identifier: '' }); assert.equal(r.status, 400);
+  sent.length = 0;
+  r = await anon2('POST', '/auth/forgot', { identifier: 'naoexiste@x.com' }); assert.equal(r.status, 200); assert.deepEqual(r.body, { ok: true }); assert.equal(sent.length, 0); // mesma resposta, sem revelar quem tem conta
+  r = await anon2('POST', '/auth/forgot', { identifier: 'e@t.com' }); assert.equal(r.status, 200); assert.deepEqual(r.body, { ok: true }); assert.equal(sent.length, 0); // conta sem WhatsApp cadastrado: nada é enviado
+  r = await anon2('POST', '/auth/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 200); assert.deepEqual(r.body, { ok: true }); assert.equal(sent.length, 1); assert.equal(sent[0].number, '5585999991234'); assert.match(sent[0].text, /senha/);
+  const pwCode = codeFrom(sent[0]);
+  r = await anon2('POST', '/auth/reset', { identifier: 'maria@t.com', code: pwCode === '123456' ? '654321' : '123456', password: 'senhaNova789' }); assert.equal(r.status, 400);
+  r = await anon2('POST', '/auth/reset', { identifier: 'maria@t.com', code: pwCode, password: 'curta' }); assert.equal(r.status, 400); // senha fraca não gasta o código
+  r = await anon2('POST', '/auth/reset', { identifier: 'naoexiste@x.com', code: pwCode, password: 'senhaNova789' }); assert.equal(r.status, 400); assert.equal(r.body.code, 'CODE_INVALID');
+  r = await anon2('POST', '/auth/reset', { identifier: '111.444.777-35', code: pwCode, password: 'senhaNova789' }); assert.equal(r.status, 200); // vale também pelo CPF
+  assert.equal((await mclient()('POST', '/auth/login', { identifier: 'maria@t.com', password: 'senha12345' })).status, 401); await login(mclient(), 'maria@t.com', 'senhaNova789');
+  r = await anon2('POST', '/auth/reset', { identifier: 'maria@t.com', code: pwCode, password: 'outraSenha000' }); assert.equal(r.status, 400); // o código só vale uma vez
+  r = await p('PATCH', '/auth/profile', { newPassword: 'senha12345', currentPassword: 'senhaNova789' }); assert.equal(r.status, 200); // volta ao original
+  ok('esqueci a senha: não revela quem tem conta; o código vai pelo WhatsApp do admin; vale uma vez; troca a senha');
+
+  r = await a('DELETE', `/instances/${adminInst.id}`); assert.equal(r.status, 200); evoState = prevEvo;
+  evoState = 'close'; r = await anon2('POST', '/auth/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 503); assert.equal(r.body.code, 'RECOVERY_UNAVAILABLE'); evoState = prevEvo;
+  ok('sem WhatsApp do admin conectado a recuperação avisa que está indisponível');
 
   // ===== clientes: dados para variáveis dos contratos =====
   r = await u('POST', '/contacts', { name: 'Cliente Contrato', phone: '85 98888-0001', document: '111.444.777-35', zip: '60000-000', street: ' Rua  das Flores ', number: '12', complement: 'Sala 3', district: 'Centro', city: 'Fortaleza', state: 'ce' });

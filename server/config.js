@@ -64,12 +64,19 @@ export const config = {
     idleMs: Math.max(1, Number(env.AUDIT_SYNC_IDLE_SECONDS ?? 300)) * 1000,
     mediaMaxBytes: Math.max(1, Number(env.AUDIT_MEDIA_MAX_MB ?? 20)) * 1024 * 1024,
   },
+  // Mensagens da auditoria com mais de 60 dias são apagadas sozinhas (para não encher o banco).
+  // A tela oferece os filtros de 7, 30 e 60 dias.
+  auditRetentionDays: 60,
+  // Por quanto tempo o código PIN fica "destravado" depois de digitado.
+  pinUnlockMinutes: 30,
   // API oficial do WhatsApp (Meta Cloud API).
   meta: {
     graphUrl: trimSlash(env.META_GRAPH_URL) || 'https://graph.facebook.com',
     apiVersion: (env.META_API_VERSION || 'v21.0').trim(),
   },
-  // Preço MENSAL de cada plano, em reais. Semestral (paga 5 de 6 meses) e anual (paga 9 de 12) saem daqui.
+  // Preço MENSAL INICIAL de cada plano, em reais: só é usado na primeira execução, para criar os planos no banco.
+  // Depois disso o administrador altera valores e limites na tela "Planos" do painel.
+  // Semestral (paga 5 de 6 meses) e anual (paga 9 de 12) saem do preço mensal.
   prices: {
     bronze: positive(env.PLAN_BRONZE_PRICE, 34.9),
     prata: positive(env.PLAN_PRATA_PRICE, 54.9),

@@ -65,7 +65,7 @@ export default function Login() {
           <input className="input" value={identifier} onChange={(e) => setIdentifier(e.target.value)} autoComplete="username" autoFocus required />
         </label>
         <label className="field">
-          <span>Senha</span>
+          <span className="field-line"><span>Senha</span><Link to="/esqueci-senha" className="field-link">Esqueci a senha</Link></span>
           <input className="input" type="password" value={password} onChange={(e) => setPassword(e.target.value)} autoComplete="current-password" required />
         </label>
         {error && <p className="form-error" role="alert">{error}</p>}

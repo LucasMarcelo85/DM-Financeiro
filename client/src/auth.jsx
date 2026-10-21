@@ -8,6 +8,7 @@ export const useAuth = () => useContext(AuthContext);
 export function AuthProvider({ children }) {
   const [user, setUser] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [pinUntil, setPinUntil] = useState(null); // até quando as abas com PIN ficam destravadas neste navegador (ms)
 
   // Mantém o fuso do sistema disponível para formatar datas e horários.
   useEffect(() => {
@@ -16,8 +17,9 @@ export function AuthProvider({ children }) {
 
   const refresh = useCallback(async () => {
     try {
-      const { user: u } = await api.get('/auth/me');
+      const { user: u, pinUnlockedUntil } = await api.get('/auth/me');
       setUser(u);
+      setPinUntil(pinUnlockedUntil || null);
       return u;
     } catch {
       setUser(null);
@@ -35,15 +37,46 @@ export function AuthProvider({ children }) {
     return () => window.removeEventListener('dm:payment-required', refresh);
   }, [refresh]);
 
+  // Trava de novo quando o tempo do PIN acaba ou quando o servidor avisa que a aba pede o PIN.
+  useEffect(() => {
+    if (!pinUntil) return undefined;
+    const t = setTimeout(() => setPinUntil(null), Math.max(0, pinUntil - Date.now()));
+    return () => clearTimeout(t);
+  }, [pinUntil]);
+  useEffect(() => {
+    const lock = () => setPinUntil(null);
+    window.addEventListener('dm:pin-required', lock);
+    return () => window.removeEventListener('dm:pin-required', lock);
+  }, []);
+
+  const pinUnlocked = Boolean(pinUntil && pinUntil > Date.now());
+
   const value = useMemo(
     () => ({
       user,
       loading,
       refresh,
       setUser,
+      pinUnlocked,
+      pinUntil,
+      // Digita o PIN: se estiver certo, as abas protegidas abrem por alguns minutos.
+      unlockPin: async (pin) => {
+        const r = await api.post('/auth/pin/verify', { pin });
+        setPinUntil(r.pinUnlockedUntil);
+      },
+      lockPin: async () => {
+        await api.post('/auth/pin/lock').catch(() => {});
+        setPinUntil(null);
+      },
+      // Aplica a resposta das telas de PIN/perfil (usuário atualizado e estado do desbloqueio).
+      applyPin: (r) => {
+        if (r.user) setUser(r.user);
+        if ('pinUnlockedUntil' in r) setPinUntil(r.pinUnlockedUntil || null);
+      },
       login: async (identifier, password) => {
         const { user: u } = await api.post('/auth/login', { identifier, password });
         setUser(u);
+        setPinUntil(null);
         return u;
       },
       register: async (payload) => {
@@ -54,9 +87,10 @@ export function AuthProvider({ children }) {
       logout: async () => {
         await api.post('/auth/logout').catch(() => {});
         setUser(null);
+        setPinUntil(null);
       },
     }),
-    [user, loading, refresh]
+    [user, loading, refresh, pinUnlocked, pinUntil]
   );
 
   return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;

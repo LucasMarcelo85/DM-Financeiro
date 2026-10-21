@@ -26,6 +26,7 @@ async function request(method, url, body) {
   }
   if (!res.ok) {
     if (res.status === 402 && data?.code === 'PAYMENT_REQUIRED') window.dispatchEvent(new Event('dm:payment-required'));
+    if (res.status === 423 && data?.code === 'PIN_REQUIRED') window.dispatchEvent(new Event('dm:pin-required')); // a aba foi travada de novo: a tela pede o PIN
     throw new ApiError(data?.error || 'Algo deu errado. Tente novamente.', res.status, data?.code);
   }
   return data;

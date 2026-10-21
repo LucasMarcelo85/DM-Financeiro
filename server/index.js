@@ -8,7 +8,8 @@ import path from 'node:path';
 import { config, ROOT, evolutionConfigured, infinitepayConfigured } from './config.js';
 import { prisma, connectWithRetry } from './prisma.js';
 import { AppError, DAY } from './utils/helpers.js';
-import { auth, requireAccess, requireAdmin } from './middleware/auth.js';
+import { auth, pinGuard, requireAccess, requireAdmin } from './middleware/auth.js';
+import { ensurePlans } from './plans.js';
 import authRoutes from './routes/auth.js';
 import instanceRoutes, { instanceRouter } from './routes/instances.js';
 import auditRoutes from './routes/audit.js';
@@ -26,6 +27,7 @@ import { billingRouter, webhookRouter } from './routes/billing.js';
 import { customDomainMiddleware } from './services/domains.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
+import { startMaintenance, stopMaintenance } from './services/maintenance.js';
 
 try {
   new Intl.DateTimeFormat('en-US', { timeZone: config.timezone });
@@ -65,6 +67,7 @@ async function seedAdmin() {
 }
 try {
   await seedAdmin();
+  await ensurePlans(); // valores e limites dos planos vêm do banco (o .env só define os iniciais)
 } catch (e) {
   console.error('[banco] falha ao preparar o banco. As tabelas existem? Rode: npm run db:deploy\n', e.message);
   process.exit(1);
@@ -92,7 +95,6 @@ app.use(
     },
   })
 );
-// Domínio próprio de um portfólio (meusite.com.br): só as rotas públicas do portfólio respondem nele.
 app.use(customDomainMiddleware);
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
@@ -105,6 +107,10 @@ const limiter = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeader
 app.use('/api', limiter(600, 60 * 1000));
 app.use('/api/auth/login', limiter(20, 15 * 60 * 1000));
 app.use('/api/auth/register', limiter(10, 60 * 60 * 1000));
+app.use('/api/auth/forgot', limiter(8, 15 * 60 * 1000)); // pedir código de recuperação
+app.use('/api/auth/reset', limiter(15, 15 * 60 * 1000)); // digitar o código e a nova senha
+app.use('/api/auth/pin', limiter(60, 15 * 60 * 1000)); // PIN: verificar, criar, esqueci
+app.use('/api/auth/profile', limiter(20, 15 * 60 * 1000)); // trocar e-mail/senha pede a senha atual
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -119,15 +125,15 @@ app.use('/api/webhooks', webhookRouter);
 app.use('/api/webhooks', auditWebhookRoutes);
 app.use('/api/billing', auth, billingRouter);
 app.use('/api/instances', auth, requireAccess, instanceRoutes);
-app.use('/api/audit/instances', auth, requireAccess, instanceRouter('auditoria'));
-app.use('/api/audit', auth, requireAccess, auditRoutes);
+app.use('/api/audit/instances', auth, requireAccess, pinGuard('auditoria'), instanceRouter('auditoria'));
+app.use('/api/audit', auth, requireAccess, pinGuard('auditoria'), auditRoutes);
 app.use('/api/contacts', auth, requireAccess, contactRoutes);
 app.use('/api/schedules', auth, requireAccess, scheduleRoutes);
 app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
-app.use('/api/contracts', auth, requireAccess, express.json({ limit: '12mb' }), contractRoutes);
-app.use('/api/portfolios', auth, requireAccess, express.json({ limit: '12mb' }), portfolioRoutes);
+app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
+app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '12mb' }), portfolioRoutes);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
@@ -135,6 +141,7 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontra
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
+  app.use(express.static(dist));
   const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio (antes do express.static, que serviria o index.html puro em "/").
   app.use(async (req, res, next) => {
@@ -177,11 +184,13 @@ const server = app.listen(config.port, () => {
   if (!infinitepayConfigured()) console.warn('[aviso] InfinitePay não configurada (INFINITEPAY_HANDLE).');
   startScheduler();
   startAuditSync();
+  startMaintenance();
 });
 
 async function shutdown() {
   stopScheduler();
   stopAuditSync();
+  stopMaintenance();
   server.close();
   await prisma.$disconnect().catch(() => {});
   process.exit(0);

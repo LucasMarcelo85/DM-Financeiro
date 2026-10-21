@@ -1,6 +1,7 @@
 import { chatTitle, initials, listTime } from '../../lib/audit.js';
 
 const KINDS = [['all', 'Todas'], ['direct', 'Contatos'], ['groups', 'Grupos']];
+const RANGES = [[7, '7 dias'], [30, '30 dias'], [60, '60 dias']];
 
 export default function ChatList({ chats, selectedId, onSelect, filters, setFilters, instances, labels, loading, hasMore, onMore, stats }) {
   const set = (k) => (e) => setFilters((f) => ({ ...f, [k]: e.target.value }));
@@ -14,6 +15,14 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
         {KINDS.map(([id, label]) => (
           <label key={id} className={filters.kind === id ? 'is-on' : ''}>
             <input type="radio" name="au-kind" value={id} checked={filters.kind === id} onChange={() => setFilters((f) => ({ ...f, kind: id }))} />
+            {label}
+          </label>
+        ))}
+      </div>
+      <div className="au-kind au-range" role="radiogroup" aria-label="Período das mensagens" title="Mensagens com mais de 60 dias são apagadas automaticamente">
+        {RANGES.map(([id, label]) => (
+          <label key={id} className={filters.days === id ? 'is-on' : ''}>
+            <input type="radio" name="au-range" value={id} checked={filters.days === id} onChange={() => setFilters((f) => ({ ...f, days: id }))} />
             {label}
           </label>
         ))}
@@ -61,7 +70,7 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
         })}
       </ul>
       {!loading && chats.length === 0 && (
-        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId || filters.kind !== 'all' ? 'Nenhuma conversa encontrada com esses filtros.' : 'Nenhuma conversa ainda. As conversas e mensagens aparecem aqui sozinhas assim que chegarem.'}</p>
+        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId || filters.kind !== 'all' || filters.days !== 60 ? 'Nenhuma conversa encontrada com esses filtros.' : 'Nenhuma conversa ainda. As conversas e mensagens aparecem aqui sozinhas assim que chegarem.'}</p>
       )}
       {loading && <p className="au-empty">Carregando...</p>}
       {hasMore && !loading && <button type="button" className="btn btn-ghost btn-sm au-more" onClick={onMore}>Carregar mais conversas</button>}

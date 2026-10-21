@@ -109,7 +109,7 @@ textarea.input { resize: vertical; line-height: 1.5; }
 .shell { display: grid; grid-template-columns: 16.5rem minmax(0, 1fr); min-height: 100dvh; }
 .sidebar { position: sticky; top: 0; height: 100dvh; display: flex; flex-direction: column; gap: 1.5rem; padding: 1.5rem 1rem; background: var(--ink); color: #fff; }
 .sidebar-top { display: flex; align-items: center; justify-content: space-between; padding: 0 0.5rem; }
-.topbar-logout { display: inline-flex; color: #fff; }
+.topbar-logout { display: none; color: #fff; }
 .nav { display: grid; gap: 0.25rem; align-content: start; flex: 1; }
 .nav-link { display: flex; align-items: center; gap: 0.75rem; padding: 0.7rem 0.75rem; border-radius: var(--r-sm); color: #c5d2e2; text-decoration: none; font-weight: 500; transition: background 0.15s, color 0.15s; }
 .nav-link:hover { background: rgba(255, 255, 255, 0.07); color: #fff; }
@@ -418,6 +418,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 @media (max-width: 52rem) {
   .shell { grid-template-columns: minmax(0, 1fr); }
   .sidebar { position: static; height: auto; padding: 0.75rem 1rem; gap: 0; }
+  .topbar-logout { display: inline-grid; }
   .sidebar-user { display: none; }
   .sidebar-top { padding: 0; }
   .nav {
@@ -880,12 +881,6 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pl-addr { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 1rem 1.25rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }
 .pl-addr > div { display: grid; gap: 0.15rem; min-width: 0; flex: 1 1 16rem; }
 .pl-addr code { font-size: 1.05rem; font-weight: 700; overflow-wrap: anywhere; }
-.pl-domain { display: grid; gap: 0.85rem; margin-top: 1rem; padding: 1rem 1.25rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }
-.pl-domain-head { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
-.pl-domain-head > div { display: grid; gap: 0.15rem; min-width: 0; flex: 1 1 16rem; }
-.pl-domain-row { display: flex; gap: 0.6rem; flex-wrap: wrap; }
-.pl-domain-row .input { flex: 1 1 14rem; min-width: 0; }
-.pl-domain code { overflow-wrap: anywhere; }
 .pl-badges { display: flex; flex-wrap: wrap; gap: 0.4rem; }
 .pl-url { display: flex; align-items: center; gap: 0.35rem; min-width: 0; font-size: 0.82rem; color: var(--muted); }
 .pl-url span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
@@ -918,3 +913,54 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .au-lightbox img { max-width: 94vw; max-height: 82vh; border-radius: 0.4rem; background: #fff; flex-basis: 100%; object-fit: contain; }
 .au-lightbox .btn { background: #fff; }
 .inst-health { display: block; margin-top: 0.15rem; font-size: 0.8rem; color: var(--muted); }
+
+/* ---------- Totais de usuários como filtro (Admin) ---------- */
+.stats button { display: grid; text-align: left; padding: 0.9rem 1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); font: inherit; color: inherit; cursor: pointer; transition: border-color 0.15s, box-shadow 0.15s, background 0.15s; }
+.stats button:hover { border-color: #b9c4d2; }
+.stats button:focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
+.stats button.is-on { border-color: var(--ink); box-shadow: inset 0 0 0 1px var(--ink); background: var(--amber-soft); }
+.stats button strong { font-family: var(--font-head); font-size: 1.7rem; }
+.stats button span { color: var(--muted); font-size: 0.875rem; }
+
+/* ---------- Esqueci a senha / links de texto ---------- */
+.field-link, .link-btn { color: var(--blue); font-size: 0.875rem; font-weight: 600; text-decoration: underline; background: none; border: 0; padding: 0; cursor: pointer; font-family: inherit; }
+.link-btn { justify-self: start; }
+.back-link { display: inline-flex; align-items: center; gap: 0.25rem; margin-bottom: 0.25rem; }
+
+/* ---------- Perfil e configurações ---------- */
+.profile-top { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; }
+.profile-avatar { display: grid; place-items: center; width: 3.2rem; height: 3.2rem; border-radius: 50%; background: var(--ink); color: #fff; font-family: var(--font-head); font-size: 1.4rem; font-weight: 700; flex: none; }
+.profile-name { display: grid; gap: 0.2rem; justify-items: start; flex: 1 1 12rem; min-width: 0; }
+.profile-name strong { font-size: 1.15rem; overflow-wrap: anywhere; }
+.profile-data { display: grid; grid-template-columns: repeat(auto-fit, minmax(13rem, 1fr)); gap: 1rem 1.5rem; margin: 1.25rem 0 0; }
+.profile-data dt { color: var(--muted); font-size: 0.825rem; }
+.profile-data dd { margin: 0.1rem 0 0; font-weight: 600; overflow-wrap: anywhere; }
+.profile-warn { margin-top: 1.25rem; }
+.settings-card { display: grid; gap: 0.9rem; max-width: 44rem; }
+.settings-card .card-title { margin: 0; }
+.btn-row { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; }
+.grid-2 { display: grid; grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr)); gap: 0.9rem; }
+.pin-input { letter-spacing: 0.35em; font-variant-numeric: tabular-nums; }
+.pin-tabs { display: flex; flex-wrap: wrap; gap: 0.5rem; }
+.pin-tab { position: relative; display: inline-flex; align-items: center; gap: 0.45rem; padding: 0.45rem 0.8rem; border: 1px solid var(--line); border-radius: 999px; background: var(--card); font-weight: 600; font-size: 0.9rem; cursor: pointer; }
+.pin-tab input { accent-color: var(--ink); }
+.pin-tab.is-on { background: var(--ink); color: #fff; border-color: var(--ink); }
+.pin-tab:focus-within { outline: 3px solid var(--blue); outline-offset: 2px; }
+.pin-tags { display: flex; flex-wrap: wrap; gap: 0.4rem; margin: 0; padding: 0; list-style: none; }
+.pin-tags li { padding: 0.25rem 0.7rem; border-radius: 999px; background: #e9eef5; font-size: 0.85rem; font-weight: 600; }
+
+/* ---------- Tela de PIN (aba protegida) ---------- */
+.pin-wrap { display: grid; place-items: center; min-height: 60vh; }
+.pin-card { display: grid; gap: 0.9rem; width: min(100%, 26rem); text-align: center; }
+.pin-card h1 { font-size: 1.5rem; }
+.pin-card .field { text-align: left; }
+.pin-card .link-btn { justify-self: center; }
+.pin-icon { display: grid; place-items: center; width: 3.4rem; height: 3.4rem; margin: 0 auto; border-radius: 50%; background: var(--amber-soft); color: var(--ink); }
+
+/* ---------- Gerir planos (Admin) ---------- */
+.plans-admin { display: grid; grid-template-columns: repeat(auto-fit, minmax(17rem, 1fr)); gap: 1rem; align-items: start; }
+.plan-editor { display: grid; gap: 0.9rem; }
+.plan-editor-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
+.plan-editor-head .card-title { margin: 0; }
+.check-line { display: flex; align-items: center; gap: 0.55rem; font-weight: 600; font-size: 0.925rem; cursor: pointer; }
+.check-line input { accent-color: var(--ink); width: 1.1rem; height: 1.1rem; }

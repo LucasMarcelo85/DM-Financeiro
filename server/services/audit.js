@@ -1,6 +1,6 @@
 import { prisma } from '../prisma.js';
 import { config } from '../config.js';
-import { onlyDigits } from '../utils/helpers.js';
+import { DAY, onlyDigits } from '../utils/helpers.js';
 import { computeAccess } from './access.js';
 import { publish } from './audit-hub.js';
 import * as evo from './evolution.js';
@@ -22,6 +22,10 @@ export function searchTerms(q) {
 const TYPE_PREVIEW = { image: 'Foto', video: 'Vídeo', audio: 'Áudio', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contact: 'Contato' };
 const preview = (type, body) => (body ? body.replace(/\s+/g, ' ').slice(0, 140) : TYPE_PREVIEW[type] || 'Mensagem');
 const FUTURE_SLACK = 60_000;
+
+// Mensagens com mais de AUDIT_RETENTION_DAYS (60 dias) não são guardadas: o banco não enche e a limpeza automática
+// (services/maintenance.js) não precisa apagar de novo o que o histórico da Evolution trouxer.
+export const retentionCutoff = (now = Date.now()) => now - config.auditRetentionDays * DAY;
 const LIVE_WINDOW = 15 * 60_000; // mensagem recebida há mais que isso por webhook é histórico (não conta como nova)
 
 export const chatDTO = (c, extra = {}) => ({
@@ -161,6 +165,7 @@ export async function recordMessage(inst, m, { live = true } = {}) {
 
   const now = Date.now();
   const tsMs = Number.isFinite(m.ts) && m.ts > 0 ? Math.min(m.ts, now + FUTURE_SLACK) : now; // relógio errado não "gruda" a conversa no topo
+  if (tsMs < retentionCutoff(now)) return null; // mais antiga que o prazo de retenção: ignora
   const ts = new Date(tsMs);
   const body = String(m.body || '').slice(0, 20000);
   const key = { instanceId_jid: { instanceId: inst.id, jid: m.jid } };
@@ -408,7 +413,10 @@ export async function syncInstance(inst, { deep = false } = {}) {
     }
 
     const local = new Map((await prisma.auditChat.findMany({ where: { instanceId: inst.id }, select: { jid: true, lastMessageAt: true } })).map((c) => [c.jid, c.lastMessageAt.getTime()]));
-    const todo = deep ? remote : remote.filter((c) => !local.has(c.jid) || c.updated > local.get(c.jid) + 500);
+    // Conversas que só têm mensagens além do prazo de retenção (e que nem existem aqui) não valem a busca.
+    const cutoffMs = retentionCutoff();
+    const recent = (c) => local.has(c.jid) || !c.updated || c.updated >= cutoffMs;
+    const todo = (deep ? remote : remote.filter((c) => !local.has(c.jid) || c.updated > local.get(c.jid) + 500)).filter(recent);
     state.total = todo.length;
     emit();
 

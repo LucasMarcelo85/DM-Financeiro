@@ -88,6 +88,9 @@ model User {
   // Domínio próprio do portfólio (ex.: usuario.com.br). Só atende depois de verificado (DNS apontando para o servidor).
   customDomain           String?   @unique @map("custom_domain")
   customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+  // Código PIN opcional (guardado com hash) e as abas do menu que ele protege (chaves em server/utils/pin.js).
+  pinHash        String?   @map("pin_hash")
+  pinTabs        String[]  @default([]) @map("pin_tabs")
 
   instances Instance[]
   payments  Payment[]
@@ -100,6 +103,7 @@ model User {
   auditChats      AuditChat[]
   auditLabels     AuditLabel[]
   accessEvents    AccessEvent[]
+  verificationCodes VerificationCode[]
 
   @@map("users")
 }
@@ -371,6 +375,7 @@ model AuditMessage {
   @@unique([chatId, externalId])
   @@index([chatId, ts])
   @@index([chatId, fromMe, seenAt])
+  @@index([ts])
   @@map("audit_messages")
 }
 
@@ -448,4 +453,37 @@ model AccessEvent {
 
   @@index([userId, createdAt])
   @@map("access_events")
+}
+
+// ---------- Planos (valores e limites editáveis pelo administrador) ----------
+// Uma linha por plano (bronze, prata, ouro). `priceCents` é o preço MENSAL; semestral e anual saem dele (ver server/plans.js).
+// Os valores iniciais vêm do .env (PLAN_*_PRICE) e dos limites padrão, só na primeira execução.
+model PlanSetting {
+  plan           Plan     @id
+  priceCents     Int      @map("price_cents")
+  instances      Int
+  auditInstances Int      @map("audit_instances")
+  contracts      Int
+  portfolios     Int
+  auditSend      Boolean  @default(false) @map("audit_send")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("plan_settings")
+}
+
+// Código de confirmação enviado pelo WhatsApp do administrador (recuperar senha ou código PIN).
+// Só o hash é guardado; vale por poucos minutos e tem limite de tentativas.
+model VerificationCode {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  purpose   String // 'reset_password' | 'reset_pin'
+  codeHash  String   @map("code_hash")
+  attempts  Int      @default(0)
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, purpose])
+  @@map("verification_codes")
 }

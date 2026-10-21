@@ -48,7 +48,7 @@ function Body({ m, q, version, onOpen }) {
   );
 }
 
-export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdit, liveMedia, onBack, onRead, onSent, onSide }) {
+export default function ChatView({ days = 60, chat, canSend, liveItems, liveStatus, liveEdit, liveMedia, onBack, onRead, onSent, onSide }) {
   const toast = useToast();
   const [messages, setMessages] = useState([]);
   const [hasOlder, setHasOlder] = useState(false);
@@ -71,7 +71,7 @@ export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdi
   const loadLatest = useCallback(async () => {
     setLoading(true);
     try {
-      const r = await api.get(`/audit/chats/${chatId}/messages`);
+      const r = await api.get(`/audit/chats/${chatId}/messages?days=${days}`);
       setMessages(r.messages);
       setHasOlder(r.hasOlder);
       setHasNewer(false);
@@ -122,7 +122,7 @@ export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdi
     const box = scroller.current;
     keepFrom.current = box ? box.scrollHeight - box.scrollTop : null;
     try {
-      const r = await api.get(`/audit/chats/${chatId}/messages?before=${first.ts}_${first.id}`);
+      const r = await api.get(`/audit/chats/${chatId}/messages?before=${first.ts}_${first.id}&days=${days}`);
       setMessages((list) => [...r.messages, ...list]);
       setHasOlder(r.hasOlder);
     } catch (e) { toast(e.message, 'error'); }
@@ -150,7 +150,7 @@ export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdi
     if (!search.open || q.length < 2) { setSearch((s) => (s.matches.length || s.total ? { ...s, matches: [], total: 0, idx: -1 } : s)); return undefined; }
     const t = setTimeout(async () => {
       try {
-        const r = await api.get(`/audit/chats/${chatId}/search?q=${encodeURIComponent(q)}`);
+        const r = await api.get(`/audit/chats/${chatId}/search?q=${encodeURIComponent(q)}&days=${days}`);
         setSearch((s) => (s.q.trim() === q ? { ...s, matches: r.matches, total: r.total, idx: r.matches.length ? 0 : -1 } : s));
         if (r.matches.length) jump(r.matches[0].id);
       } catch (e) { toast(e.message, 'error'); }
@@ -167,7 +167,7 @@ export default function ChatView({ chat, canSend, liveItems, liveStatus, liveEdi
       return;
     }
     try {
-      const r = await api.get(`/audit/chats/${chatId}/messages?around=${messageId}`);
+      const r = await api.get(`/audit/chats/${chatId}/messages?around=${messageId}&days=${days}`);
       stick.current = false;
       setMessages(r.messages);
       setHasOlder(r.hasOlder);

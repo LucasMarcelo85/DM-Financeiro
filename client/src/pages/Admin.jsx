@@ -29,6 +29,7 @@ export default function Admin() {
   const toast = useToast();
   const [users, setUsers] = useState(null);
   const [query, setQuery] = useState('');
+  const [statusFilter, setStatusFilter] = useState('all'); // all | paid | trial | expired (clique nos totais)
   const [busyId, setBusyId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmUndo, setConfirmUndo] = useState(null);
@@ -63,10 +64,12 @@ export default function Admin() {
 
   const filtered = useMemo(() => {
     const q = query.trim().toLowerCase();
-    if (!q) return users || [];
     const qd = digits(q);
-    return (users || []).filter((u) => u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || (qd && u.document.includes(qd)));
-  }, [users, query]);
+    return (users || []).filter((u) => {
+      if (statusFilter !== 'all' && u.access.status !== statusFilter) return false;
+      return !q || u.name.toLowerCase().includes(q) || u.email.toLowerCase().includes(q) || Boolean(qd && u.document.includes(qd));
+    });
+  }, [users, query, statusFilter]);
 
   const count = (s) => (users || []).filter((u) => u.access.status === s).length;
 
@@ -78,11 +81,12 @@ export default function Admin() {
       </header>
 
       {users && (
-        <div className="stats">
-          <div><strong>{users.length}</strong><span>Total</span></div>
-          <div><strong>{count('paid')}</strong><span>Pagos</span></div>
-          <div><strong>{count('trial')}</strong><span>Em teste</span></div>
-          <div><strong>{count('expired')}</strong><span>Expirados</span></div>
+        <div className="stats" role="group" aria-label="Filtrar usuários por situação">
+          {[['all', users.length, 'Total'], ['paid', count('paid'), 'Pagos'], ['trial', count('trial'), 'Em teste'], ['expired', count('expired'), 'Expirados']].map(([id, n, label]) => (
+            <button key={id} type="button" className={statusFilter === id ? 'is-on' : ''} aria-pressed={statusFilter === id} onClick={() => setStatusFilter(id)}>
+              <strong>{n}</strong><span>{label}</span>
+            </button>
+          ))}
         </div>
       )}
 
@@ -91,7 +95,7 @@ export default function Admin() {
       {users === null ? (
         <p className="muted">Carregando...</p>
       ) : filtered.length === 0 ? (
-        <p className="empty">Nenhum usuário encontrado.</p>
+        <p className="empty">{statusFilter !== 'all' && !query.trim() ? 'Nenhum usuário nesta situação.' : 'Nenhum usuário encontrado.'}</p>
       ) : (
         <ul className="user-list">
           {filtered.map((u) => {

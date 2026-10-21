@@ -1,10 +1,11 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { isPlan } from '../plans.js';
+import { isPlan, listPlans, listPeriods, planName, savePlan } from '../plans.js';
 import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/access.js';
 import * as evo from '../services/evolution.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
+
 
 const router = Router();
 
@@ -81,16 +82,49 @@ router.delete('/users/:id', async (req, res) => {
   // Remove as instâncias na Evolution (se falhar, não impede a exclusão da conta).
   const instances = await prisma.instance.findMany({ where: { userId: user.id, provider: 'evolution' }, select: { name: true } });
   await Promise.all(instances.map((i) => evo.deleteInstance(i.name).catch((e) => console.warn(`[admin] não removeu ${i.name} na Evolution: ${e.message}`))));
-
-  // Remove o domínio personalizado do Easypanel, caso ele possua um
+   // Remove o domínio personalizado do Easypanel, caso ele possua um
   if (user.customDomain) {
       await removeDomainFromEasypanel(user.customDomain).catch((e) => 
           console.warn(`[admin] não removeu o domínio ${user.customDomain} do Easypanel: ${e.message}`)
       );
   }
-
   await prisma.user.delete({ where: { id: user.id } }); // apaga em cascata clientes, agendamentos e histórico
   res.json({ ok: true });
+});
+
+// ---------- Planos: valores e limites de cada plano (ficam no banco, não no .env) ----------
+const intIn = (v, min, max, label) => {
+  const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '').trim()) ? Number(v) : NaN;
+  if (!Number.isInteger(n) || n < min || n > max) throw new AppError(400, `${label}: informe um número inteiro de ${min} a ${max}.`);
+  return n;
+};
+
+async function plansView() {
+  const counts = await prisma.user.groupBy({ by: ['plan'], where: { role: 'usuario' }, _count: { _all: true } });
+  const byPlan = new Map(counts.map((c) => [c.plan, c._count._all]));
+  return { plans: listPlans().map((p) => ({ ...p, userCount: byPlan.get(p.id) || 0 })), periods: listPeriods() };
+}
+
+router.get('/plans', async (_req, res) => {
+  res.json(await plansView());
+});
+
+// Altera o preço MENSAL e os limites de um plano. Vale na hora para novos pagamentos e para os limites de uso.
+// Quem já passou do novo limite mantém o que criou; só não consegue adicionar mais.
+router.put('/plans/:id', async (req, res) => {
+  const id = String(req.params.id);
+  if (!isPlan(id)) throw new AppError(404, 'Plano não encontrado.');
+  const b = req.body || {};
+  if (typeof b.auditSend !== 'boolean') throw new AppError(400, 'Informe se o plano pode responder conversas pela auditoria (sim ou não).');
+  await savePlan(id, {
+    priceCents: intIn(b.priceCents, 100, 10_000_000, 'Preço mensal (em centavos)'),
+    instances: intIn(b.instances, 0, 1000, 'WhatsApps para cobranças e lembretes'),
+    auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
+    contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
+    portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
+    auditSend: b.auditSend,
+  });
+  res.json({ ...(await plansView()), saved: planName(id) });
 });
 
 export default router;

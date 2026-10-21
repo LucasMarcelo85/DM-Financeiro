@@ -3,6 +3,8 @@ import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import Icon from './Icon.jsx';
 import PlanBadge from './PlanBadge.jsx';
+import PinPrompt from './PinPrompt.jsx';
+import { isTabLocked, tabOfPath } from '../lib/pin.js';
 
 const NAV = [
   { to: '/', label: 'Início', icon: 'home', end: true },
@@ -14,6 +16,7 @@ const NAV = [
   { to: '/auditoria', label: 'Auditoria', icon: 'eye' },
   { to: '/portfolio', label: 'Portfólio', icon: 'globe' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
+  { to: '/perfil', label: 'Perfil', icon: 'gear', always: true },
 ];
 
 export function Brand({ light }) {
@@ -26,9 +29,14 @@ export function Brand({ light }) {
 }
 
 export default function Layout() {
-  const { user, logout } = useAuth();
+  const { user, logout, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
-  const items = user.role === 'admin' ? [...NAV, { to: '/admin', label: 'Usuários', icon: 'users', always: true }] : NAV;
+  const items = user.role === 'admin'
+    ? [...NAV, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
+    : NAV;
+  // Aba protegida por código PIN e ainda não destravada: mostra o pedido do PIN no lugar da página.
+  const tab = tabOfPath(pathname);
+  const locked = isTabLocked(user, pinUnlocked, tab);
   const blocked = !user.access.hasAccess;
 
   // No celular a barra de baixo rola: mantém o item da página atual à vista.
@@ -41,8 +49,8 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <Brand light />
-          <button className="btn btn-ghost-light btn-sm topbar-logout" onClick={logout}>
-            <Icon name="logout" size={16} /> Sair
+          <button className="icon-btn topbar-logout" onClick={logout} aria-label="Sair">
+            <Icon name="logout" />
           </button>
         </div>
 
@@ -68,12 +76,15 @@ export default function Layout() {
             <strong title={user.name}>{user.name}</strong>
             {user.role === 'admin' ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} />}
           </div>
+          <button className="btn btn-ghost-light btn-sm" onClick={logout}>
+            <Icon name="logout" size={16} /> Sair
+          </button>
         </div>
       </aside>
 
       <main className="main">
         <div className={`page ${pathname.startsWith('/auditoria') ? 'page-wide' : ''}`}>
-          <Outlet />
+          {locked ? <PinPrompt tab={tab} /> : <Outlet />}
         </div>
       </main>
     </div>

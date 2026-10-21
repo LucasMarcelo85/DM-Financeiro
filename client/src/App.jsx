@@ -17,8 +17,13 @@ import Portfolios from './pages/Portfolios.jsx';
 import PortfolioEditor from './pages/PortfolioEditor.jsx';
 import PortfolioPublic from './pages/PortfolioPublic.jsx';
 import Admin from './pages/Admin.jsx';
+import AdminPlans from './pages/AdminPlans.jsx';
+import Profile from './pages/Profile.jsx';
+import ForgotPassword from './pages/ForgotPassword.jsx';
+import PinPrompt from './components/PinPrompt.jsx';
+import { isTabLocked, tabOfPath } from './lib/pin.js';
 
-const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin'];
+const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin', '/admin/planos', '/perfil'];
 
 function Splash() {
   return (
@@ -29,12 +34,19 @@ function Splash() {
 }
 
 function Protected({ bare = false }) {
-  const { user, loading } = useAuth();
+  const { user, loading, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
   if (loading) return <Splash />;
   if (!user) return <Navigate to="/entrar" replace />;
   if (!user.access.hasAccess && !OPEN_WHEN_BLOCKED.includes(pathname)) return <Navigate to="/plano" replace />;
-  // `bare`: tela cheia, sem o menu lateral (editor de contratos).
+  // `bare`: tela cheia, sem o menu lateral (editor de contratos). Aba protegida por PIN: pede o código antes.
+  if (bare && isTabLocked(user, pinUnlocked, tabOfPath(pathname))) {
+    return (
+      <main className="main">
+        <div className="page"><PinPrompt tab={tabOfPath(pathname)} /></div>
+      </main>
+    );
+  }
   return bare ? <Outlet /> : <Layout />;
 }
 
@@ -56,6 +68,7 @@ export default function App() {
       <Route element={<GuestOnly />}>
         <Route path="/entrar" element={<Login />} />
         <Route path="/cadastro" element={<Register />} />
+        <Route path="/esqueci-senha" element={<ForgotPassword />} />
       </Route>
       <Route element={<Protected bare />}>
         <Route path="contratos/:id" element={<ContractEditor />} />
@@ -77,9 +90,11 @@ export default function App() {
         <Route path="auditoria" element={<Audit />} />
         <Route path="portfolio" element={<Portfolios />} />
         <Route path="plano" element={<Billing />} />
+        <Route path="perfil" element={<Profile />} />
         <Route path="pagamento/retorno" element={<PaymentReturn />} />
         <Route element={<AdminOnly />}>
           <Route path="admin" element={<Admin />} />
+          <Route path="admin/planos" element={<AdminPlans />} />
         </Route>
       </Route>
       {/* Páginas públicas do portfólio: dominio/<usuário> e dominio/<usuário>/<página> (sem login). As rotas fixas acima têm prioridade. */}

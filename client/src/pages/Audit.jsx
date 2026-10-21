@@ -9,7 +9,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
 import { plural } from '../lib/format.js';
 
-const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all' };
+const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 60 }; // days: 7, 30 ou 60 (as mensagens com mais de 60 dias são apagadas sozinhas)
 const POLL_MS = 4000; // canal de segurança: pergunta ao servidor o que chegou (funciona mesmo se o tempo real for barrado)
 const REFRESH_MS = 30000; // atualiza a lista inteira (nomes, não lidas, ordem) de tempos em tempos
 
@@ -95,6 +95,7 @@ export default function Audit() {
     if (f.labelId) params.set('labelId', f.labelId);
     if (f.unread) params.set('unread', '1');
     if (f.kind !== 'all') params.set('kind', f.kind);
+    params.set('days', f.days);
     for (const [k, v] of Object.entries(extra)) if (v != null) params.set(k, v);
     return params;
   };
@@ -268,7 +269,7 @@ export default function Audit() {
             loading={loading} hasMore={Boolean(nextBefore)} onMore={() => loadChats({ more: true, before: nextBefore })} stats={stats} />
           {view ? (
             <>
-              <ChatView key={view.id} chat={view} canSend={canSend} liveItems={liveItems} liveStatus={liveStatus} liveEdit={liveEdit} liveMedia={liveMedia}
+              <ChatView key={`${view.id}-${filters.days}`} days={filters.days} chat={view} canSend={canSend} liveItems={liveItems} liveStatus={liveStatus} liveEdit={liveEdit} liveMedia={liveMedia}
                 onBack={back} onRead={onRead} onSent={() => {}} onSide={() => setSide(true)} />
               <ChatSide chat={view} labels={labels} setLabels={setLabels} onLabelIds={onLabelIds} onClose={() => setSide(false)} />
             </>
