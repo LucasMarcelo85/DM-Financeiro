@@ -141,9 +141,8 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontra
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
-  app.use(express.static(dist));
   const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
-  // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio (antes do express.static, que serviria o index.html puro em "/").
+  // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio antes do index.html genérico.
   app.use(async (req, res, next) => {
     if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
     try {
