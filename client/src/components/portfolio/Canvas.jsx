@@ -1,7 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import './pv.css';
 import { DESIGN_W, boxOf, pageHeight } from '../../lib/portfolio/doc.js';
-import { ICONS } from '../../lib/portfolio/icons.js';
+import { ICON_COMPONENTS, ICONS } from '../../lib/portfolio/icons.js';
 import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
 import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/model.js';
 import { brl } from '../../lib/format.js';
@@ -69,6 +69,8 @@ function Outline({ shape, w, color, style }) {
 // ---------------------------------------------------------------- ícone
 export function IconSvg({ name, size = '1em', color = 'currentColor', sw = 2 }) {
   const ic = ICONS[name] || ICONS.star;
+  const IconComponent = ICON_COMPONENTS[name];
+  if (IconComponent) return <IconComponent size={size} color={color} aria-hidden="true" focusable="false" />;
   return (
     <svg viewBox="0 0 24 24" width={size} height={size} fill="none" stroke={color} strokeWidth={sw} strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
       {(ic.s || []).map((d, i) => <path key={`s${i}`} d={d} />)}
@@ -200,13 +202,20 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action }) {
       <div className="pv-card-body">
         <span className="pv-card-cat">{p.category}</span>
         <span className="pv-card-name">{p.name}</span>
-        {price && p.priceCents > 0 && <span className="pv-card-price">{p.images.length > 1 && p.images.some((i) => i.priceCents !== null) ? 'a partir de ' : ''}{brl(minPrice(p))}</span>}
+        {price && minPrice(p) > 0 && <span className="pv-card-price">{p.priceOptions.length > 0 || p.images.length > 1 && p.images.some((i) => i.priceCents !== null) ? 'a partir de ' : ''}{brl(minPrice(p))}</span>}
         {action}
       </div>
     </div>
   );
 }
-export const minPrice = (p) => Math.min(p.priceCents, ...p.images.filter((i) => i.priceCents !== null).map((i) => i.priceCents));
+export const minPrice = (p) => {
+  const values = [
+    ...(p.priceCents > 0 ? [p.priceCents] : []),
+    ...(p.images || []).filter((i) => i.priceCents !== null).map((i) => i.priceCents),
+    ...(p.priceOptions || []).map((option) => option.priceCents),
+  ];
+  return values.length ? Math.min(...values) : 0;
+};
 
 function ProductsView({ el, device, products, mode }) {
   const list = el.ids.map((id) => (products || []).find((p) => p.id === id)).filter(Boolean);

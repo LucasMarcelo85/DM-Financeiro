@@ -12,13 +12,13 @@ export function useCart(slug) {
   const key = `dm:cart:${slug}`;
   const [items, setItems] = useState(() => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } });
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(items)); } catch { /* sem armazenamento: o carrinho vale só nesta visita */ } }, [key, items]);
-  const idOf = (productId, imageId) => `${productId}:${imageId || 0}`;
+  const idOf = (productId, imageId, priceOptionId) => `${productId}:${imageId || 0}:${priceOptionId || 0}`;
   return {
     items,
-    add: (productId, imageId, qty = 1) => setItems((l) => {
-      const id = idOf(productId, imageId);
+    add: (productId, imageId, priceOptionId, qty = 1) => setItems((l) => {
+      const id = idOf(productId, imageId, priceOptionId);
       const f = l.find((x) => x.id === id);
-      return f ? l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, x.qty + qty) } : x)) : [...l, { id, productId, imageId: imageId || null, qty: Math.min(99, qty) }];
+      return f ? l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, x.qty + qty) } : x)) : [...l, { id, productId, imageId: imageId || null, priceOptionId: priceOptionId || null, qty: Math.min(99, qty) }];
     }),
     setQty: (id, qty) => setItems((l) => (qty < 1 ? l.filter((x) => x.id !== id) : l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, qty) } : x)))),
     remove: (id) => setItems((l) => l.filter((x) => x.id !== id)),
@@ -34,8 +34,10 @@ export function priced(items, products) {
     const p = byId.get(it.productId);
     if (!p) continue;
     const img = p.images.find((i) => i.id === it.imageId) || null;
-    const unit = img && img.priceCents !== null ? img.priceCents : p.priceCents;
-    lines.push({ ...it, p, img, unit, total: unit * it.qty });
+    const priceOption = p.priceOptions.find((option) => option.id === it.priceOptionId) || null;
+    const staleSelection = Boolean((it.imageId && !img) || (it.priceOptionId && !priceOption));
+    const unit = staleSelection ? 0 : priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+    lines.push({ ...it, p, img, priceOption, staleSelection, unit, total: unit * it.qty });
   }
   return { lines, subtotal: lines.reduce((s, l) => s + l.total, 0), count: lines.reduce((s, l) => s + l.qty, 0) };
 }
@@ -51,9 +53,11 @@ const Qty = ({ value, onChange, label }) => (
 // ---------------------------------------------------------------- início: busca, categorias e produtos
 function ProductModal({ p, addLabel, onAdd, onClose }) {
   const [idx, setIdx] = useState(0);
+  const [priceOptionId, setPriceOptionId] = useState(p.priceOptions[0]?.id || null);
   const [qty, setQty] = useState(1);
   const img = p.images[idx] || p.images[0];
-  const unit = img && img.priceCents !== null ? img.priceCents : p.priceCents;
+  const priceOption = p.priceOptions.find((option) => option.id === priceOptionId) || null;
+  const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -78,12 +82,20 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
               ))}
             </div>
           )}
+          {p.priceOptions.length > 0 && (
+            <label className="cat-price-options">
+              <span>Forma de preço</span>
+              <select value={priceOptionId || ''} onChange={(e) => setPriceOptionId(Number(e.target.value))}>
+                {p.priceOptions.map((option) => <option key={option.id} value={option.id}>{option.label} — {brl(option.priceCents)}</option>)}
+              </select>
+            </label>
+          )}
           {p.description && <p className="cat-desc">{p.description}</p>}
           <div className="cat-buy">
             <strong className="cat-price">{unit > 0 ? brl(unit) : 'Sob consulta'}</strong>
             <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(99, n)))} label="Quantidade" />
           </div>
-          <button type="button" className="cat-btn" onClick={() => { onAdd(p, img, qty); onClose(); }}>{addLabel}</button>
+          <button type="button" className="cat-btn" onClick={() => { onAdd(p, img, priceOption, qty); onClose(); }}>{addLabel}</button>
         </div>
       </div>
     </div>
@@ -111,9 +123,10 @@ export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
   }, [shown, cfg.display]);
 
   const { count, subtotal } = priced(cart.items, products);
-  const add = (p, img, qty) => {
-    cart.add(p.id, p.images.length > 1 ? img?.id : null, qty);
-    if (pixelOn) track('AddToCart', { value: ((img && img.priceCents !== null ? img.priceCents : p.priceCents) * qty) / 100, name: p.name, id: p.id });
+  const add = (p, img, priceOption, qty) => {
+    cart.add(p.id, p.images.length > 1 ? img?.id : null, priceOption?.id, qty);
+    const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+    if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
   const cols = cfg.columns;
@@ -223,7 +236,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     try {
       const delivery = type === 'excursao' ? { type, ...exc } : type === 'motoboy' ? { type, ...addr } : { type, zip: addr.zip, number: addr.number, complement: addr.complement, serviceId };
       const r = await api.post(`/webhooks/orders/${encodeURIComponent(slug)}`, {
-        customer: { name, phone }, delivery, notes, items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, qty: l.qty })),
+        customer: { name, phone }, delivery, notes, items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, priceOptionId: l.priceOptionId, qty: l.qty })),
       });
       if (pixelOn) track('Purchase', { value: r.order.totalCents / 100, transaction: r.order.code });
       cart.clear();
@@ -255,7 +268,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             {lines.map((l) => (
               <li key={l.id}>
                 <span className="cat-line-img">{(l.img || l.p.images[0]) && <img src={(l.img || l.p.images[0]).url} alt="" />}</span>
-                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}<small>{l.unit > 0 ? brl(l.unit) : 'Sob consulta'}</small></span>
+                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? brl(l.unit) : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>
                 <button type="button" className="cat-line-x" onClick={() => cart.remove(l.id)} aria-label={`Remover ${l.p.name}`}>×</button>
@@ -338,7 +351,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>
           </div>
           {error && <p className="cat-error" role="alert">{error}</p>}
-          <button className="cat-btn" disabled={busy || !enabled.length}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>
+          <button className="cat-btn" disabled={busy || !enabled.length || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>
         </form>
       )}
     </section>

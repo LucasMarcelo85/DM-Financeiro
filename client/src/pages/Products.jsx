@@ -101,7 +101,12 @@ export default function Products() {
               <div className="pr-body">
                 <span className="pr-cat">{p.category}<em>{p.kind === 'servico' ? 'Serviço' : 'Produto'}</em></span>
                 <strong title={p.name}>{p.name}</strong>
-                <span className="pr-price">{p.priceCents ? brl(p.priceCents) : 'Sob consulta'}</span>
+                <span className="pr-price">
+                  {p.priceOptions.length
+                    ? `A partir de ${brl(Math.min(...p.priceOptions.map((option) => option.priceCents)))}`
+                    : p.priceCents ? brl(p.priceCents) : 'Sob consulta'}
+                </span>
+                {p.priceOptions.length > 0 && <small className="muted">{p.priceOptions.length} formas de preço</small>}
               </div>
               <div className="pr-actions">
                 <label className="pr-switch" title={p.active ? 'Visível no catálogo' : 'Escondido do catálogo'}>
@@ -135,6 +140,12 @@ function ProductForm({ product, categories, onClose, onSaved }) {
   const [category, setCategory] = useState(product?.category || '');
   const [description, setDescription] = useState(product?.description || '');
   const [price, setPrice] = useState(product ? centsToMasked(product.priceCents) : '');
+  const [priceOptions, setPriceOptions] = useState(() => (product?.priceOptions || []).map((option) => ({
+    id: option.id,
+    key: `price-${option.id}`,
+    label: option.label,
+    price: centsToMasked(option.priceCents),
+  })));
   const [active, setActive] = useState(product ? product.active : true);
   const [varied, setVaried] = useState((product?.images.length || 0) > 1);
   const [images, setImages] = useState(() => (product?.images || []).map((i) => ({ key: `i${i.id}`, id: i.id, url: i.url, label: i.label, price: i.priceCents === null ? '' : centsToMasked(i.priceCents) })));
@@ -148,14 +159,16 @@ function ProductForm({ product, categories, onClose, onSaved }) {
 
   async function onFile(file) {
     if (!file) return;
+    const imageIndex = target.current;
+    const allowMultiple = varied;
+    target.current = null;
     setUploading(true); setError('');
     try {
       const { src } = await prepareProductImage(file);
       setImages((list) => {
-        const i = target.current;
         const item = { key: `n${Date.now()}${Math.random()}`, data: src, url: src, label: '', price: '' };
-        if (i !== null && list[i]) return list.map((x, n) => (n === i ? { ...x, id: undefined, data: src, url: src } : x));
-        return [...list, item].slice(0, varied ? MAX_IMAGES : 1);
+        if (imageIndex !== null && list[imageIndex]) return list.map((x, n) => (n === imageIndex ? { ...x, id: undefined, data: src, url: src } : x));
+        return [...list, item].slice(0, allowMultiple ? MAX_IMAGES : 1);
       });
     } catch (e) { setError(e.message); } finally { setUploading(false); }
   }
@@ -169,8 +182,10 @@ function ProductForm({ product, categories, onClose, onSaved }) {
     if (!visible.length) return setError('Adicione pelo menos uma imagem.');
     if (varied && visible.length < 2) return setError('Com variações, coloque pelo menos 2 imagens (ou desmarque “Tem variações”).');
     if (varied && visible.some((i) => !i.label.trim())) return setError('Dê um nome a cada variação (ex.: cor ou tamanho).');
+    if (priceOptions.some((option) => !option.label.trim() || option.price === '')) return setError('Preencha o nome e o preço de cada forma de preço ou remova a linha vazia.');
     const body = {
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
+      priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: moneyToCents(option.price) })),
       images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? i.label.trim() : '', priceCents: varied && i.price !== '' ? moneyToCents(i.price) : null })),
     };
     setBusy(true);
@@ -198,6 +213,18 @@ function ProductForm({ product, categories, onClose, onSaved }) {
           </label>
           <label className="field"><span>Preço (R$)</span><input className="input" inputMode="numeric" value={price} onChange={(e) => setPrice(maskMoney(e.target.value))} placeholder="0,00" /><small>Deixe em branco para “sob consulta”.</small></label>
         </div>
+        <fieldset className="field pr-price-options">
+          <legend>Formas de preço (opcional)</legend>
+          <small>Cadastre opções como varejo, atacado, mensal, semestral ou anual. O cliente escolhe uma no catálogo.</small>
+          {priceOptions.map((option, index) => (
+            <div className="pr-price-option" key={option.key}>
+              <input className="input" value={option.label} maxLength={40} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, label: e.target.value } : item)))} placeholder="Ex.: Varejo, Mensal" aria-label={`Nome da forma de preço ${index + 1}`} />
+              <label className="pr-option-price"><span>R$</span><input className="input" inputMode="numeric" value={option.price} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, price: maskMoney(e.target.value) } : item)))} placeholder="0,00" aria-label={`Preço da forma ${index + 1}`} /></label>
+              <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceOptions((list) => list.filter((_, n) => n !== index))} aria-label={`Remover forma de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
+            </div>
+          ))}
+          {priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPriceOptions((list) => [...list, { key: `price-new-${Date.now()}-${Math.random()}`, label: '', price: '' }])}><Icon name="plus" size={16} /> Adicionar forma de preço</button>}
+        </fieldset>
         <label className="field"><span>Descrição</span><textarea className="input" rows={3} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
 
         <fieldset className="field pr-images">
@@ -206,7 +233,7 @@ function ProductForm({ product, categories, onClose, onSaved }) {
           <div className="pr-slots">
             {visible.map((im, i) => (
               <div key={im.key} className="pr-slot">
-                <button type="button" className="pr-slot-img" onClick={() => pick(i)} aria-label={`Trocar a imagem ${i + 1}`} title="Trocar imagem"><img src={im.url} alt="" /></button>
+                <button type="button" className="pr-slot-img" onClick={() => pick(i)} disabled={uploading} aria-label={`Trocar a imagem ${i + 1}`} title="Trocar imagem"><img src={im.url} alt="" /></button>
                 {varied && (
                   <>
                     <input className="input input-sm" placeholder="Nome da variação" value={im.label} maxLength={40} onChange={(e) => setImg(i, { label: e.target.value })} aria-label={`Nome da variação ${i + 1}`} />

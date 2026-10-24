@@ -49,14 +49,22 @@ export async function domainOwner(host) {
 }
 
 // Em domínios próprios só as rotas públicas do portfólio ficam abertas (nada de login, painel ou webhooks).
-const OPEN_API = new Set(['/api/public/portfolio', '/api/public/portfolio/image']);
+const OPEN_API = new Set(['/api/public/portfolio', '/api/public/portfolio/image', '/api/public/domain-check']);
+const OPEN_API_ROUTES = [
+  /^\/api\/public\/product-image\/\d+$/,
+  /^\/api\/public\/cep\/\d{8}$/,
+  /^\/api\/public\/catalog\/shipping\/quote$/,
+  /^\/api\/webhooks\/orders\/[a-z0-9-]+$/,
+];
 
 export async function customDomainMiddleware(req, res, next) {
   try {
     const owner = await domainOwner(hostKey(req.headers.host));
     if (!owner) return next();
     req.customDomain = { host: hostKey(req.headers.host), slug: owner.portfolioSlug };
-    if (req.path.startsWith('/api') && !OPEN_API.has(req.path)) return res.status(404).json({ error: 'Rota não encontrada.' });
+    if (req.path.startsWith('/api') && !OPEN_API.has(req.path) && !OPEN_API_ROUTES.some((route) => route.test(req.path))) {
+      return res.status(404).json({ error: 'Rota não encontrada.' });
+    }
     return next();
   } catch (e) {
     return next(e);

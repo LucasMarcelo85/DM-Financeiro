@@ -6,6 +6,7 @@ import { decodeImage, portfolioCover, portfolioDescription } from '../utils/port
 import { isReservedSlug, isValidSlug } from '../utils/slug.js';
 import { publicCatalogConfig, publicProduct } from '../utils/catalog.js';
 import { loadCatalogOwner } from '../services/orders.js';
+import { hostKey } from '../utils/domain.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
 // Só aparece se a página estiver publicada e o dono ainda tiver acesso ao sistema (teste grátis ou plano pago).
@@ -33,16 +34,17 @@ router.get('/portfolio', async (req, res) => {
   const doc = page.data || {};
   const out = {};
   const imgs = { select: { id: true, position: true, label: true, priceCents: true } };
+  const priceOptions = { select: { id: true, position: true, label: true, priceCents: true } };
   if (doc.v === 2 && page.kind === 'catalog') {
     // Catálogo digital: todos os produtos ativos + as formas de entrega (sem token e sem endereço de saída). Sem plano com catálogo = 404.
     const ctx = await loadCatalogOwner(owner.portfolioSlug);
-    const products = await prisma.product.findMany({ where: { userId: owner.id, active: true }, include: { images: imgs }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
+    const products = await prisma.product.findMany({ where: { userId: owner.id, active: true }, include: { images: imgs, priceOptions }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
     out.products = products.map(publicProduct);
     out.store = publicCatalogConfig(ctx.cfg);
   } else if (doc.v === 2) {
     // Página livre com cartões de produtos escolhidos.
     const ids = [...new Set((doc.elements || []).filter((e) => e.t === 'products').flatMap((e) => e.ids || []))].slice(0, 60);
-    if (ids.length) out.products = (await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: imgs } })).map(publicProduct);
+    if (ids.length) out.products = (await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: imgs, priceOptions } })).map(publicProduct);
   }
   res.set('Cache-Control', 'no-cache'); // o navegador confere (ETag) antes de reusar: edições aparecem logo
   res.json({
@@ -61,21 +63,42 @@ router.get('/portfolio/image', async (req, res) => {
   res.send(img.buffer);
 });
 
+router.get('/domain-check', async (req, res) => {
+  const domain = hostKey(req.query.domain);
+  const row = domain ? await prisma.user.findFirst({
+    where: { customDomain: domain, customDomainVerifiedAt: { not: null } },
+    select: { id: true },
+  }) : null;
+  res.status(row ? 200 : 404).end();
+});
+
 // ---------- Pré-visualização do link (meta tags Open Graph) ----------
 // Quem recebe o link no WhatsApp não executa JavaScript: o título, a descrição e a imagem precisam vir no HTML.
 const PATH_RE = /^\/([a-z0-9-]{1,60})(?:\/([a-z0-9-]{1,60}))?\/?$/;
+const CUSTOM_PATH_RE = /^\/(?:([a-z0-9-]{1,60}))?\/?$/;
 const esc = (s) => String(s ?? '').replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
 
 // Se o endereço pedido é de uma página publicada, devolve os dados da pré-visualização; senão, null.
 export async function portfolioShareMeta(req) {
-  const m = PATH_RE.exec(req.path);
-  if (!m || isReservedSlug(m[1])) return null;
-  const found = await findPublicPage(m[1], m[2]);
+  let userSlug;
+  let pageSlug;
+  if (req.customDomain) {
+    const match = CUSTOM_PATH_RE.exec(req.path);
+    if (!match) return null;
+    userSlug = req.customDomain.slug;
+    pageSlug = match[1];
+  } else {
+    const match = PATH_RE.exec(req.path);
+    if (!match || isReservedSlug(match[1])) return null;
+    userSlug = match[1];
+    pageSlug = match[2];
+  }
+  const found = await findPublicPage(userSlug, pageSlug);
   if (!found) return null;
   const { owner, page } = found;
   const origin = `${req.protocol}://${req.get('host')}`;
   const doc = page.data || {};
-  const q = `u=${encodeURIComponent(owner.portfolioSlug)}${m[2] ? `&p=${encodeURIComponent(m[2])}` : ''}`;
+  const q = `u=${encodeURIComponent(owner.portfolioSlug)}${pageSlug ? `&p=${encodeURIComponent(pageSlug)}` : ''}`;
   return {
     title: doc.seo?.title || page.name || owner.name,
     description: portfolioDescription(doc),
@@ -86,8 +109,8 @@ export async function portfolioShareMeta(req) {
   };
 }
 
-export function injectMeta(html, meta) {
-  const tags = [
+export function injectMeta(html, meta, pfUser = '') {
+  const tags = meta ? [
     `<meta name="description" content="${esc(meta.description)}" />`,
     '<meta property="og:type" content="website" />',
     `<meta property="og:site_name" content="${esc(meta.siteName)}" />`,
@@ -96,11 +119,12 @@ export function injectMeta(html, meta) {
     `<meta property="og:url" content="${esc(meta.url)}" />`,
     meta.image ? `<meta property="og:image" content="${esc(meta.image)}" />` : '',
     `<meta name="twitter:card" content="${meta.image ? 'summary_large_image' : 'summary'}" />`,
-  ].filter(Boolean).join('\n    ');
+  ].filter(Boolean) : [];
+  if (pfUser) tags.push(`<meta name="pf-user" content="${esc(pfUser)}" />`);
   // Funções no replace: o título pode ter "$&" ou "$1" e não pode ser interpretado como padrão.
   return html
-    .replace(/<title>[^<]*<\/title>/, () => `<title>${esc(meta.title)}</title>`)
-    .replace('</head>', () => `    ${tags}\n  </head>`);
+    .replace(/<title>[^<]*<\/title>/, () => meta ? `<title>${esc(meta.title)}</title>` : '<title>Portfólio</title>')
+    .replace('</head>', () => `    ${tags.join('\n    ')}\n  </head>`);
 }
 
 export default router;

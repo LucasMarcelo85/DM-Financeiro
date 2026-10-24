@@ -104,4 +104,4 @@ export function themeVars(t) {
 }
 
 // Endereço público da página (o domínio vem de onde o usuário está acessando).
-export const pageUrl = (path) => `${window.location.origin}${path}`;
+export const pageUrl = (path, customUrl) => customUrl || `${window.location.origin}${path}`;

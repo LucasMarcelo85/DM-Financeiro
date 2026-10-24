@@ -29,6 +29,7 @@ const encryptionSeed = (env.ENCRYPTION_KEY || '').trim() || jwtSecret;
 export const config = {
   port: positive(env.PORT, 3001),
   appUrl: trimSlash(env.APP_URL) || 'http://localhost:5173',
+  serverIp: (env.SERVER_IP || '').trim(),
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true' ? 1 : 0,
   jwtSecret,
   secretKey: crypto.createHash('sha256').update(`dm-financeiro:${encryptionSeed}`).digest(),

@@ -1,6 +1,16 @@
-// Biblioteca de ícones do portfólio (redes sociais, contato, comércio e geral). Desenhados em 24x24.
-// Cada ícone: { s: [traços], f: [preenchidos] } com caminhos SVG. Os logotipos das redes são versões simplificadas
-// em traço: para o logotipo oficial exato, o usuário pode usar uma imagem e colocar link nela.
+import {
+  FiArrowRight, FiArrowUpRight, FiAward, FiBell, FiBook, FiBriefcase, FiCalendar, FiCamera, FiCheck,
+  FiCheckCircle, FiChevronDown, FiClock, FiCoffee, FiCreditCard, FiDollarSign, FiDownload, FiExternalLink,
+  FiGift, FiGlobe, FiHeart, FiHome, FiLink, FiMail, FiMapPin, FiMessageCircle, FiMoon, FiMusic, FiPercent,
+  FiPhone, FiPlay, FiPlus, FiSearch, FiShield, FiShoppingBag, FiShoppingCart, FiSmile, FiStar, FiSun,
+  FiTag, FiThumbsUp, FiTool, FiTruck, FiUser, FiUsers, FiX, FiZap,
+} from 'react-icons/fi';
+import { FaLinkedinIn } from 'react-icons/fa6';
+import {
+  SiFacebook, SiInstagram, SiPinterest, SiSpotify, SiTelegram, SiThreads, SiTiktok, SiWhatsapp, SiX, SiYoutube,
+} from 'react-icons/si';
+
+// Chaves, rótulos e grupos dos ícones selecionáveis; os desenhos são renderizados pela biblioteca react-icons.
 
 const circle = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
 const rect = (x, y, w, h, r = 0) => (r
@@ -70,4 +80,17 @@ export const ICONS = {
   tool: { g: 'general', label: 'Ferramenta', s: ['M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'] },
   plus: { g: 'general', label: 'Mais', s: ['M12 5v14', 'M5 12h14'] },
   x: { g: 'general', label: 'Fechar', s: ['M18 6L6 18', 'M6 6l12 12'] },
+};
+
+export const ICON_COMPONENTS = {
+  whatsapp: SiWhatsapp, instagram: SiInstagram, facebook: SiFacebook, youtube: SiYoutube, tiktok: SiTiktok,
+  linkedin: FaLinkedinIn, 'x-twitter': SiX, telegram: SiTelegram, pinterest: SiPinterest, spotify: SiSpotify, threads: SiThreads,
+  phone: FiPhone, mail: FiMail, message: FiMessageCircle, 'map-pin': FiMapPin, globe: FiGlobe, link: FiLink,
+  calendar: FiCalendar, clock: FiClock, cart: FiShoppingCart, bag: FiShoppingBag, tag: FiTag, percent: FiPercent,
+  gift: FiGift, truck: FiTruck, card: FiCreditCard, dollar: FiDollarSign, store: FiHome, coffee: FiCoffee,
+  star: FiStar, heart: FiHeart, check: FiCheck, 'check-circle': FiCheckCircle, 'arrow-right': FiArrowRight,
+  'arrow-up-right': FiArrowUpRight, 'chevron-down': FiChevronDown, play: FiPlay, download: FiDownload, search: FiSearch,
+  user: FiUser, users: FiUsers, home: FiHome, award: FiAward, shield: FiShield, thumbs: FiThumbsUp, zap: FiZap,
+  sun: FiSun, moon: FiMoon, camera: FiCamera, music: FiMusic, smile: FiSmile, briefcase: FiBriefcase, book: FiBook,
+  bell: FiBell, tool: FiTool, plus: FiPlus, x: FiX,
 };

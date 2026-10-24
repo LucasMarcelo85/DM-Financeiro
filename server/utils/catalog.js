@@ -4,6 +4,7 @@ import { AppError, normalizePhone, onlyDigits } from './helpers.js';
 
 export const PRODUCT_KINDS = new Set(['produto', 'servico']);
 export const MAX_PRODUCT_IMAGES = 4;
+export const MAX_PRODUCT_PRICE_OPTIONS = 12;
 export const MAX_PRODUCT_IMAGE_BYTES = 900 * 1024;
 const MAX_PRICE = 10_000_000; // R$ 100.000,00
 
@@ -44,6 +45,15 @@ export function cleanProduct(b = {}) {
   if (!category) throw new AppError(400, 'Informe a categoria.');
   const description = typeof b.description === 'string' ? b.description.replace(/\r/g, '').trim().slice(0, 2000) : '';
   const priceCents = intIn(b.priceCents ?? 0, 0, MAX_PRICE, 'Preço');
+  const rawPriceOptions = Array.isArray(b.priceOptions) ? b.priceOptions : [];
+  if (rawPriceOptions.length > MAX_PRODUCT_PRICE_OPTIONS) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_PRICE_OPTIONS} formas de preço.`);
+  const priceOptions = rawPriceOptions.map((option) => {
+    if (!option || typeof option !== 'object') throw new AppError(400, 'Forma de preço inválida.');
+    if (option.id !== undefined && (!Number.isInteger(option.id) || option.id < 1)) throw new AppError(400, 'Identificador de forma de preço inválido.');
+    const label = line(option.label, 40);
+    if (!label) throw new AppError(400, 'Informe o nome de cada forma de preço.');
+    return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents: intIn(option.priceCents, 0, MAX_PRICE, `Preço de ${label}`) };
+  });
   const rawImages = Array.isArray(b.images) ? b.images : [];
   if (rawImages.length < 1) throw new AppError(400, 'Adicione pelo menos uma imagem.');
   if (rawImages.length > MAX_PRODUCT_IMAGES) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens (uma por variação).`);
@@ -59,7 +69,7 @@ export function cleanProduct(b = {}) {
     else throw new AppError(400, 'Imagem inválida.');
     return out;
   });
-  return { kind, name, category, description, priceCents, active: b.active === undefined ? true : Boolean(b.active), images };
+  return { kind, name, category, description, priceCents, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
 }
 
 // ---------- Configuração do catálogo (entregas e frete) ----------
@@ -140,4 +150,5 @@ export function publicCatalogConfig(cfg) {
 export const publicProduct = (p) => ({
   id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
   images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, priceCents: i.priceCents, url: `/api/public/product-image/${i.id}` })),
+  priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents })),
 });

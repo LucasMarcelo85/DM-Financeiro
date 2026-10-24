@@ -380,7 +380,7 @@ function AddressSection({ meta, onSaveSlug, onCopy }) {
   const [slug, setSlug] = useState(meta.slug);
   const [busy, setBusy] = useState(false);
   useEffect(() => setSlug(meta.slug), [meta.slug]);
-  const url = pageUrl(meta.path);
+  const url = pageUrl(meta.path, meta.customUrl);
   const changed = slug.trim() !== meta.slug && slug.trim() !== '';
   return (
     <Section title="Endereço da página">

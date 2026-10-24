@@ -71,7 +71,7 @@ export async function createOrder(userSlug, body = {}) {
   const rawItems = Array.isArray(body.items) ? body.items.slice(0, 60) : [];
   if (!rawItems.length) throw new AppError(400, 'O carrinho está vazio.');
   const ids = [...new Set(rawItems.map((i) => Number(i?.productId)).filter(Number.isInteger))];
-  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: true } });
+  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: true, priceOptions: true } });
   const byId = new Map(products.map((p) => [p.id, p]));
   const items = [];
   for (const it of rawItems) {
@@ -80,8 +80,11 @@ export async function createOrder(userSlug, body = {}) {
     if (!p || !Number.isInteger(qty) || qty < 1 || qty > 99) throw new AppError(400, 'Um dos itens do carrinho não está mais disponível. Atualize a página.');
     const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : null;
     if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
-    const unit = img && img.priceCents !== null ? img.priceCents : p.priceCents;
-    items.push({ productId: p.id, name: p.name, variation: img?.label || '', qty, unitCents: unit, totalCents: unit * qty });
+    const priceOption = it.priceOptionId ? p.priceOptions.find((x) => x.id === Number(it.priceOptionId)) : null;
+    if (it.priceOptionId && !priceOption) throw new AppError(400, 'Uma forma de preço escolhida não existe mais. Atualize a página.');
+    const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+    const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
+    items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
   }
   const subtotalCents = items.reduce((s, i) => s + i.totalCents, 0);
 

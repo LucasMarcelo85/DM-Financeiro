@@ -30,6 +30,7 @@ import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 import { startMaintenance, stopMaintenance } from './services/maintenance.js';
+import { customDomainMiddleware } from './services/domains.js';
 
 try {
   new Intl.DateTimeFormat('en-US', { timeZone: config.timezone });
@@ -91,6 +92,7 @@ const PIXEL_CSP = [
 const app = express();
 app.disable('x-powered-by');
 app.set('trust proxy', config.trustProxy);
+app.use(customDomainMiddleware);
 app.use(
   helmet({
     contentSecurityPolicy: {
@@ -165,8 +167,19 @@ app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontra
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
-  app.use(express.static(dist));
   const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
+  app.use(async (req, res, next) => {
+    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
+    try {
+      const meta = await portfolioShareMeta(req);
+      if (meta?.pixel) res.set('Content-Security-Policy', PIXEL_CSP);
+      return res.status(meta ? 200 : 404).type('html').send(injectMeta(shell, meta, req.customDomain.slug));
+    } catch (e) {
+      console.error('[portfolio] domínio próprio:', e.message);
+      return next(e);
+    }
+  });
+  app.use(express.static(dist));
   app.use(async (req, res) => {
     // Endereço de uma página do portfólio: entrega o HTML já com título, descrição e imagem do link (WhatsApp, redes sociais).
     if (req.method === 'GET') {

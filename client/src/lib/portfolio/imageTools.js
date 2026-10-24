@@ -186,7 +186,7 @@ export async function prepareProductImage(file, { maxDim = 1000, maxBytes = 800 
 }
 
 function hasAlpha(ctx, c) {
-  const d = ctx.getImageData(0, 0, Math.min(c.width, 200), Math.min(c.height, 200)).data;
+  const d = ctx.getImageData(0, 0, c.width, c.height).data;
   for (let i = 3; i < d.length; i += 4) if (d[i] < 250) return true;
   return false;
 }

@@ -4,6 +4,8 @@ import { AppError } from '../utils/helpers.js';
 import { PLAN_ID_RE, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan } from '../plans.js';
 import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/access.js';
 import * as evo from '../services/evolution.js';
+import { removeDomainFromEasypanel } from '../services/easypanel.js';
+import { forgetDomain } from '../services/domains.js';
 
 const router = Router();
 
@@ -80,6 +82,10 @@ router.delete('/users/:id', async (req, res) => {
   // Remove as instâncias na Evolution (se falhar, não impede a exclusão da conta).
   const instances = await prisma.instance.findMany({ where: { userId: user.id, provider: 'evolution' }, select: { name: true } });
   await Promise.all(instances.map((i) => evo.deleteInstance(i.name).catch((e) => console.warn(`[admin] não removeu ${i.name} na Evolution: ${e.message}`))));
+  if (user.customDomain) {
+    await removeDomainFromEasypanel(user.customDomain).catch((e) => console.warn(`[admin] não removeu o domínio ${user.customDomain} do EasyPanel: ${e.message}`));
+    forgetDomain(user.customDomain);
+  }
 
   await prisma.user.delete({ where: { id: user.id } }); // apaga em cascata clientes, agendamentos e histórico
   res.json({ ok: true });

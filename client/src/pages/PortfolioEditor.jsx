@@ -200,7 +200,7 @@ export default function PortfolioEditor() {
   }
 
   async function copyLink() {
-    if (await copyText(pageUrl(meta.path))) toast('Link copiado!'); else setShare(true);
+    if (await copyText(pageUrl(meta.path, meta.customUrl))) toast('Link copiado!'); else setShare(true);
   }
 
   // ---------------------------------------------------------------- elementos
