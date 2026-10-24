@@ -1,0 +1,165 @@
+import { config } from '../config.js';
+import { AppError, onlyDigits, sleep } from '../utils/helpers.js';
+
+// Endereço, distância e frete do catálogo.
+//  - CEP -> endereço: ViaCEP (gratuito, sem chave).
+//  - Endereço -> coordenadas: Nominatim/OpenStreetMap. Rota por estrada (km): OSRM. Se a rota falhar, usa a distância em linha reta x 1,3.
+//  - Frete dos Correios: SuperFrete (o token é de cada usuário, guardado no banco, nunca no .env).
+// Serviços públicos gratuitos têm limite de uso: os resultados ficam em cache por algumas horas.
+
+const TIMEOUT_MS = 9000;
+const UA = 'DM-Financeiro/1.0 (catalogo digital)';
+
+const cache = new Map();
+async function cached(key, ttlMs, fn) {
+  const hit = cache.get(key);
+  if (hit && hit.exp > Date.now()) return hit.value;
+  const value = await fn();
+  cache.set(key, { value, exp: Date.now() + ttlMs });
+  if (cache.size > 2000) for (const k of cache.keys()) { cache.delete(k); if (cache.size <= 1500) break; }
+  return value;
+}
+
+async function getJson(url, { headers = {}, label }) {
+  let res;
+  try {
+    res = await fetch(url, { headers: { Accept: 'application/json', 'User-Agent': UA, ...headers }, signal: AbortSignal.timeout(TIMEOUT_MS) });
+  } catch {
+    throw new AppError(502, `${label} não respondeu agora. Tente novamente em instantes.`, 'GEO_UNAVAILABLE');
+  }
+  if (!res.ok) throw new AppError(res.status === 404 ? 404 : 502, `${label} não conseguiu atender esse pedido.`, 'GEO_UNAVAILABLE');
+  return res.json().catch(() => { throw new AppError(502, `${label} respondeu algo inesperado.`, 'GEO_UNAVAILABLE'); });
+}
+
+// ---------- CEP ----------
+export async function lookupCep(cep) {
+  const zip = onlyDigits(cep);
+  if (zip.length !== 8) throw new AppError(400, 'CEP inválido. Use os 8 números.');
+  return cached(`cep:${zip}`, 24 * 3600_000, async () => {
+    const d = await getJson(`${config.geo.viacep}/ws/${zip}/json/`, { label: 'A consulta de CEP' });
+    if (!d || d.erro) throw new AppError(404, 'CEP não encontrado. Confira os números.');
+    return { zip, street: d.logradouro || '', district: d.bairro || '', city: d.localidade || '', state: d.uf || '', complement: d.complemento || '' };
+  });
+}
+
+// ---------- Coordenadas ----------
+let lastNominatim = 0;
+async function nominatim(q) {
+  // A política do OpenStreetMap pede no máximo 1 consulta por segundo no servidor público.
+  if (config.geo.nominatim === 'https://nominatim.openstreetmap.org') {
+    const wait = lastNominatim + 1100 - Date.now();
+    lastNominatim = Date.now() + Math.max(0, wait);
+    if (wait > 0) await sleep(wait);
+  }
+  const rows = await getJson(`${config.geo.nominatim}/search?format=jsonv2&limit=1&countrycodes=br&q=${encodeURIComponent(q)}`, { label: 'O mapa' });
+  const r = Array.isArray(rows) ? rows[0] : null;
+  const lat = Number(r?.lat);
+  const lon = Number(r?.lon);
+  return Number.isFinite(lat) && Number.isFinite(lon) ? { lat, lon } : null;
+}
+
+// Tenta do mais exato (rua + número) ao mais amplo (cidade). Devolve { lat, lon, precision }.
+export async function geocode(a) {
+  const addr = { ...a };
+  if (addr.zip && (!addr.street || !addr.city)) {
+    const found = await lookupCep(addr.zip).catch(() => null);
+    if (found) Object.assign(addr, { street: addr.street || found.street, district: addr.district || found.district, city: addr.city || found.city, state: addr.state || found.state });
+  }
+  const tries = [];
+  if (addr.street && addr.city) tries.push(['address', [`${addr.street}${addr.number ? `, ${addr.number}` : ''}`, addr.district, addr.city, addr.state, 'Brasil']]);
+  if (addr.street && addr.city && addr.number) tries.push(['street', [addr.street, addr.city, addr.state, 'Brasil']]);
+  if (addr.city) tries.push(['city', [addr.city, addr.state, 'Brasil']]);
+  for (const [precision, parts] of tries) {
+    const q = parts.filter(Boolean).join(', ');
+    const hit = await cached(`geo:${q.toLowerCase()}`, 12 * 3600_000, () => nominatim(q));
+    if (hit) return { ...hit, precision };
+  }
+  throw new AppError(422, 'Não encontrei esse endereço no mapa. Confira o CEP ou preencha rua e cidade.', 'ADDRESS_NOT_FOUND');
+}
+
+// ---------- Distância ----------
+export function haversineKm(a, b) {
+  const R = 6371;
+  const rad = (x) => (x * Math.PI) / 180;
+  const dLat = rad(b.lat - a.lat);
+  const dLon = rad(b.lon - a.lon);
+  const h = Math.sin(dLat / 2) ** 2 + Math.cos(rad(a.lat)) * Math.cos(rad(b.lat)) * Math.sin(dLon / 2) ** 2;
+  return 2 * R * Math.asin(Math.sqrt(h));
+}
+
+export async function drivingKm(a, b) {
+  const key = `route:${a.lat.toFixed(4)},${a.lon.toFixed(4)};${b.lat.toFixed(4)},${b.lon.toFixed(4)}`;
+  return cached(key, 6 * 3600_000, async () => {
+    try {
+      const d = await getJson(`${config.geo.osrm}/route/v1/driving/${a.lon},${a.lat};${b.lon},${b.lat}?overview=false`, { label: 'O cálculo de rota' });
+      const m = d?.routes?.[0]?.distance;
+      if (d?.code === 'Ok' && Number.isFinite(m)) return { km: Math.round((m / 1000) * 10) / 10, approx: false };
+    } catch { /* cai na distância em linha reta */ }
+    return { km: Math.round(haversineKm(a, b) * 1.3 * 10) / 10, approx: true };
+  });
+}
+
+// ---------- Motoboy ----------
+// `dest`: { zip, street, number, district, city, state } (CEP ou endereço). Devolve { priceCents, km?, approx? }.
+export async function quoteMotoboy(cfg, dest) {
+  const m = cfg.motoboy;
+  if (m.mode !== 'km') return { priceCents: m.fixedCents, km: null, approx: false };
+  const [from, to] = await Promise.all([
+    geocode({ zip: m.originZip, street: m.originStreet, number: m.originNumber, district: m.originDistrict, city: m.originCity, state: m.originState }),
+    geocode(dest),
+  ]);
+  const { km, approx } = await drivingKm(from, to);
+  if (m.maxKm > 0 && km > m.maxKm) throw new AppError(422, `Fora da área de entrega: a loja entrega até ${m.maxKm} km e o seu endereço fica a cerca de ${km} km.`, 'OUT_OF_RANGE');
+  return { priceCents: Math.max(m.minCents, Math.round(km * m.perKmCents)), km, approx: approx || to.precision === 'city' };
+}
+
+// ---------- Correios pelo SuperFrete ----------
+// Serviços: 1 = PAC, 2 = SEDEX, 17 = Mini Envios. Os nomes e prazos mostrados vêm da resposta da API.
+const toMoneyCents = (v) => {
+  let n = v;
+  if (typeof v === 'string') n = v.includes(',') ? Number(v.replace(/\./g, '').replace(',', '.')) : Number(v); // "1.234,56" ou "22.5"
+  return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
+};
+
+export async function quoteCorreios({ token, sandbox = false, correios, toZip, insuranceCents = 0 }) {
+  const to = onlyDigits(toZip);
+  if (to.length !== 8) throw new AppError(400, 'Informe o CEP de destino com 8 números.');
+  // Mínimos aceitos pelos Correios: 16 x 11 x 2 cm.
+  const pkg = {
+    height: Math.max(2, correios.heightCm), width: Math.max(11, correios.widthCm), length: Math.max(16, correios.lengthCm),
+    weight: Math.max(0.01, Math.round(correios.weightG) / 1000), // em kg
+  };
+  let res;
+  try {
+    res = await fetch(`${sandbox ? config.geo.superfreteSandbox : config.geo.superfrete}/api/v0/calculator`, {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}`, 'User-Agent': UA },
+      body: JSON.stringify({
+        from: { postal_code: correios.originZip }, to: { postal_code: to }, services: '1,2,17', package: pkg,
+        options: { own_hand: false, receipt: false, insurance_value: insuranceCents / 100, use_insurance_value: insuranceCents > 0 },
+      }),
+      signal: AbortSignal.timeout(TIMEOUT_MS + 3000),
+    });
+  } catch {
+    throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
+  }
+  if (res.status === 401 || res.status === 403) throw new AppError(502, 'O token do SuperFrete foi recusado. O dono da loja precisa conferir o token nas configurações.', 'SHIPPING_TOKEN');
+  const data = await res.json().catch(() => null);
+  if (!res.ok || !Array.isArray(data)) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, 'Não foi possível simular o frete para esse CEP. Confira o CEP de destino.', 'SHIPPING_UNAVAILABLE');
+  const options = data
+    .filter((o) => o && !o.error && o.id !== undefined)
+    .map((o) => {
+      const cents = toMoneyCents(o.custom_price ?? o.price);
+      const max = Number(o.custom_delivery_time ?? o.delivery_time ?? o.delivery_range?.max);
+      const min = Number(o.delivery_range?.min ?? max);
+      return cents === null ? null : {
+        id: String(o.id), name: String(o.name || 'Correios').slice(0, 40), priceCents: cents,
+        days: Number.isFinite(max) ? { min: Number.isFinite(min) ? min : max, max } : null,
+        company: String(o.company?.name || 'Correios').slice(0, 40),
+      };
+    })
+    .filter(Boolean)
+    .sort((a, b) => a.priceCents - b.priceCents);
+  if (!options.length) throw new AppError(422, 'Nenhum serviço dos Correios atende esse CEP com as medidas do pacote.', 'SHIPPING_UNAVAILABLE');
+  return options;
+}

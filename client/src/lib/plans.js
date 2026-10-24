@@ -8,12 +8,14 @@ export function planFeatureRows(p) {
     { ok: true, ...n(p.auditInstances, 'número para auditoria', 'números para auditoria') },
     { ok: true, ...n(p.contracts, 'modelo de contrato', 'modelos de contrato') },
     { ok: true, ...n(p.portfolios, 'página de portfólio', 'páginas de portfólio') },
+    p.catalogProducts > 0 ? { ok: true, ...n(p.catalogProducts, 'produto/serviço no catálogo digital', 'produtos/serviços no catálogo digital') } : { ok: false, label: 'Catálogo digital com carrinho e pedidos' },
     { ok: true, label: 'Cobranças e lembretes automáticos' },
     { ok: true, label: 'Conexão por QR Code ou API oficial da Meta' },
     { ok: true, label: 'Auditoria das conversas em tempo real' },
     { ok: true, label: 'Etiquetas, anotações e busca por palavra-chave' },
     { ok: true, label: 'Editor de contratos com importação de arquivos' },
-    { ok: true, label: 'Portfólio: páginas personalizadas com link para compartilhar' },
+    { ok: true, label: 'Portfólio: editor livre (arraste e posicione) para computador, tablet e celular' },
+    { ok: p.catalogProducts > 0, label: 'Pedidos com entrega por excursão, motoboy ou Correios (frete simulado)' },
     { ok: Boolean(p.auditSend), label: 'Enviar mensagens pela auditoria' },
   ];
 }

@@ -1,11 +1,9 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { isPlan, listPlans, listPeriods, planName, savePlan } from '../plans.js';
+import { PLAN_ID_RE, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan } from '../plans.js';
 import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/access.js';
 import * as evo from '../services/evolution.js';
-import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
-
 
 const router = Router();
 
@@ -82,22 +80,37 @@ router.delete('/users/:id', async (req, res) => {
   // Remove as instâncias na Evolution (se falhar, não impede a exclusão da conta).
   const instances = await prisma.instance.findMany({ where: { userId: user.id, provider: 'evolution' }, select: { name: true } });
   await Promise.all(instances.map((i) => evo.deleteInstance(i.name).catch((e) => console.warn(`[admin] não removeu ${i.name} na Evolution: ${e.message}`))));
-   // Remove o domínio personalizado do Easypanel, caso ele possua um
-  if (user.customDomain) {
-      await removeDomainFromEasypanel(user.customDomain).catch((e) => 
-          console.warn(`[admin] não removeu o domínio ${user.customDomain} do Easypanel: ${e.message}`)
-      );
-  }
+
   await prisma.user.delete({ where: { id: user.id } }); // apaga em cascata clientes, agendamentos e histórico
   res.json({ ok: true });
 });
 
-// ---------- Planos: valores e limites de cada plano (ficam no banco, não no .env) ----------
+// ---------- Planos: criar, editar e excluir (ficam no banco, não no .env) ----------
 const intIn = (v, min, max, label) => {
   const n = typeof v === 'number' ? v : /^\d+$/.test(String(v ?? '').trim()) ? Number(v) : NaN;
   if (!Number.isInteger(n) || n < min || n > max) throw new AppError(400, `${label}: informe um número inteiro de ${min} a ${max}.`);
   return n;
 };
+
+// Campos de um plano vindos da tela (validados). `id` só vale na criação.
+function planFields(b) {
+  if (typeof b.auditSend !== 'boolean') throw new AppError(400, 'Informe se o plano pode responder conversas pela auditoria (sim ou não).');
+  const name = String(b.name ?? '').replace(/\s+/g, ' ').trim();
+  if (name.length < 2 || name.length > 40) throw new AppError(400, 'Dê um nome ao plano (de 2 a 40 letras).');
+  const color = b.color === '' || b.color == null ? '' : /^#[0-9a-fA-F]{6}$/.test(String(b.color)) ? String(b.color).toLowerCase() : null;
+  if (color === null) throw new AppError(400, 'Cor inválida. Use o formato #aabbcc.');
+  return {
+    name, color,
+    sortOrder: intIn(b.sortOrder ?? 0, 0, 1000, 'Ordem'),
+    priceCents: intIn(b.priceCents, 100, 10_000_000, 'Preço mensal (em centavos)'),
+    instances: intIn(b.instances, 0, 1000, 'WhatsApps para cobranças e lembretes'),
+    auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
+    contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
+    portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
+    catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos do catálogo (0 = sem catálogo digital)'),
+    auditSend: b.auditSend,
+  };
+}
 
 async function plansView() {
   const counts = await prisma.user.groupBy({ by: ['plan'], where: { role: 'usuario' }, _count: { _all: true } });
@@ -109,22 +122,40 @@ router.get('/plans', async (_req, res) => {
   res.json(await plansView());
 });
 
-// Altera o preço MENSAL e os limites de um plano. Vale na hora para novos pagamentos e para os limites de uso.
+// Cria um plano novo. O identificador (ex.: "diamante") vira o nome interno e não muda depois.
+router.post('/plans', async (req, res) => {
+  const b = req.body || {};
+  const id = String(b.id ?? '').trim().toLowerCase();
+  if (!PLAN_ID_RE.test(id) || RESERVED_PLAN_IDS.has(id)) throw new AppError(400, 'Identificador inválido. Use de 2 a 30 letras minúsculas, números ou hífen (ex.: diamante).');
+  if (isPlan(id)) throw new AppError(409, 'Já existe um plano com esse identificador.');
+  const fields = planFields({ ...b, sortOrder: b.sortOrder ?? listPlans().length + 1 });
+  await savePlan(id, fields);
+  res.status(201).json({ ...(await plansView()), saved: fields.name });
+});
+
+// Altera nome, cor, ordem, preço mensal e limites. Vale na hora para novos pagamentos e para os limites de uso.
 // Quem já passou do novo limite mantém o que criou; só não consegue adicionar mais.
 router.put('/plans/:id', async (req, res) => {
   const id = String(req.params.id);
   if (!isPlan(id)) throw new AppError(404, 'Plano não encontrado.');
-  const b = req.body || {};
-  if (typeof b.auditSend !== 'boolean') throw new AppError(400, 'Informe se o plano pode responder conversas pela auditoria (sim ou não).');
-  await savePlan(id, {
-    priceCents: intIn(b.priceCents, 100, 10_000_000, 'Preço mensal (em centavos)'),
-    instances: intIn(b.instances, 0, 1000, 'WhatsApps para cobranças e lembretes'),
-    auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
-    contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
-    portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
-    auditSend: b.auditSend,
-  });
-  res.json({ ...(await plansView()), saved: planName(id) });
+  const fields = planFields(req.body || {});
+  await savePlan(id, fields);
+  res.json({ ...(await plansView()), saved: fields.name });
+});
+
+// Exclui um plano. Se tiver usuários, `moveTo` diz para qual plano eles passam. Sempre deve sobrar pelo menos um plano.
+router.delete('/plans/:id', async (req, res) => {
+  const id = String(req.params.id);
+  if (!isPlan(id)) throw new AppError(404, 'Plano não encontrado.');
+  if (listPlans().length <= 1) throw new AppError(400, 'Não dá para excluir o único plano. Crie outro antes.');
+  const inPlan = await prisma.user.count({ where: { plan: id } });
+  const moveTo = req.body?.moveTo ? String(req.body.moveTo) : '';
+  if (inPlan > 0 && (!moveTo || moveTo === id || !isPlan(moveTo))) {
+    throw new AppError(409, `Este plano tem ${inPlan} ${inPlan === 1 ? 'usuário' : 'usuários'}. Escolha para qual plano eles vão antes de excluir.`, 'PLAN_IN_USE');
+  }
+  const name = planName(id);
+  await deletePlan(id, inPlan > 0 ? moveTo : '');
+  res.json({ ...(await plansView()), removed: name, moved: inPlan });
 });
 
 export default router;

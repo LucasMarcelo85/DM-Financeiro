@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { DAY } from '../utils/helpers.js';
-import { limitsFor } from '../plans.js';
+import { limitsFor, planColor, planName } from '../plans.js';
 
 const ms = (d) => (d ? d.getTime() : 0);
 
@@ -30,6 +30,8 @@ export function publicUser(user) {
     phone: user.phone,
     role: user.role,
     plan: user.plan,
+    planName: user.role === 'admin' ? 'Admin' : planName(user.plan),
+    planColor: user.role === 'admin' ? '' : planColor(user.plan),
     createdAt: ms(user.createdAt),
     access: computeAccess(user),
     limits: limitsFor(user),

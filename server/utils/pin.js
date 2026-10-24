@@ -5,7 +5,7 @@ import { config } from '../config.js';
 import { AppError } from './helpers.js';
 
 // Abas do menu que o usuário pode proteger com o código PIN (mesmas chaves usadas pela tela: client/src/lib/pin.js).
-export const PIN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'plano', 'admin'];
+export const PIN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'plano', 'admin'];
 export const PIN_RE = /^\d{4,8}$/;
 export const PIN_COOKIE = 'dm_pin';
 

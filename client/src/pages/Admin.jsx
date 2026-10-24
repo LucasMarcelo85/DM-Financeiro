@@ -28,6 +28,7 @@ export default function Admin() {
   const { user: me } = useAuth();
   const toast = useToast();
   const [users, setUsers] = useState(null);
+  const [plans, setPlans] = useState([]); // planos cadastrados (o admin cria, edita e exclui em "Gerir planos")
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | paid | trial | expired (clique nos totais)
   const [busyId, setBusyId] = useState(null);
@@ -38,6 +39,7 @@ export default function Admin() {
     api.get('/admin/users').then((r) => setUsers(r.users)).catch((e) => toast(e.message, 'error'));
   }, [toast]);
   useEffect(load, [load]);
+  useEffect(() => { api.get('/admin/plans').then((r) => setPlans(r.plans)).catch(() => {}); }, []);
 
   const replace = (u) => setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, ...u } : x)));
 
@@ -121,9 +123,7 @@ export default function Admin() {
                     <span className="badge plan-admin">Admin</span>
                   ) : (
                     <select className="input input-sm" value={u.plan} disabled={busyId === u.id} onChange={(e) => act(u.id, () => api.patch(`/admin/users/${u.id}/plan`, { plan: e.target.value }), 'Plano atualizado.')} aria-label={`Plano de ${u.name}`}>
-                      <option value="bronze">Bronze</option>
-                      <option value="prata">Prata</option>
-                      <option value="ouro">Ouro</option>
+                      {(plans.some((p) => p.id === u.plan) ? plans : [...plans, { id: u.plan, name: u.planName || u.plan }]).map((p) => <option key={p.id} value={p.id}>{p.name}</option>)}
                     </select>
                   )}
                 </div>

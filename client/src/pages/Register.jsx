@@ -15,7 +15,7 @@ export default function Register() {
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.get('/plans').then(setMeta).catch(() => {});
+    api.get('/plans').then((m) => { setMeta(m); setForm((f) => (m.plans.some((p) => p.id === f.plan) ? f : { ...f, plan: m.plans[0]?.id || '' })); }).catch(() => {});
   }, []);
 
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));

@@ -175,7 +175,7 @@ function cleanBlock(raw) {
   return b;
 }
 
-export function cleanPortfolioDoc(raw) {
+function cleanPortfolioDocV1(raw) {
   if (!isObj(raw) || !Array.isArray(raw.blocks)) throw new AppError(400, 'Documento da página inválido.');
   if (raw.blocks.length > MAX_BLOCKS) throw new AppError(400, `A página pode ter no máximo ${MAX_BLOCKS} blocos.`);
 
@@ -212,7 +212,6 @@ export function cleanPortfolioDoc(raw) {
   return doc;
 }
 
-export const emptyPortfolioDoc = () => cleanPortfolioDoc({ blocks: [] });
 
 export function cleanPortfolioName(v) {
   const name = String(v ?? '').replace(/\s+/g, ' ').trim();
@@ -223,6 +222,10 @@ export function cleanPortfolioName(v) {
 // ---------- Para compartilhar o link (pré-visualização no WhatsApp, redes sociais, Google) ----------
 // Primeira imagem da página (banner, logo, imagem ou galeria), para virar a miniatura do link.
 export function portfolioCover(doc) {
+  if (doc?.v === 2) {
+    for (const el of doc.elements || []) if (el.t === 'image' && el.src) return el.src;
+    return '';
+  }
   for (const b of doc?.blocks || []) {
     const src = b.t === 'banner' ? b.image : b.t === 'logo' || b.t === 'image' ? b.src : b.t === 'gallery' ? b.items?.[0]?.src : '';
     if (src) return src;
@@ -232,6 +235,10 @@ export function portfolioCover(doc) {
 
 export function portfolioDescription(doc) {
   if (doc?.seo?.description) return doc.seo.description;
+  if (doc?.v === 2) {
+    for (const el of doc.elements || []) if (el.t === 'text' && el.text?.trim()) return el.text.replace(/\s+/g, ' ').trim().slice(0, 200);
+    return '';
+  }
   for (const b of doc?.blocks || []) {
     const t = b.t === 'banner' ? b.subtitle : b.t === 'text' ? b.text : '';
     if (t && t.trim()) return t.replace(/\s+/g, ' ').trim().slice(0, 200);
@@ -243,3 +250,201 @@ export function decodeImage(src) {
   const m = /^data:(image\/(?:png|jpeg|webp|gif));base64,([A-Za-z0-9+/]+={0,2})$/.exec(src || '');
   return m ? { mime: m[1], buffer: Buffer.from(m[2], 'base64') } : null;
 }
+
+// =====================================================================================================
+// Formato 2 (editor livre): cada elemento tem posição e tamanho próprios para desktop, tablet e celular.
+// { v: 2, kind: 'site' | 'catalog', theme, seo, pixel, heights, elements: [elemento], catalog? }
+// Elementos: text, image, icon, button, shape, video, products. A ordem do vetor é a ordem das camadas (o último fica por cima).
+// Manter em sincronia com client/src/lib/portfolio/model.js (listas de opções, padrões e limites).
+// =====================================================================================================
+export const MAX_ELEMENTS = 200;
+export const DEVICES = ['desktop', 'tablet', 'mobile'];
+export const KINDS = new Set(['site', 'catalog']);
+
+const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products']);
+const ENTER = new Set(['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce', 'rotate', 'blur', 'drop']);
+const LOOP = new Set(['none', 'float', 'pulse', 'shake', 'spin', 'wiggle', 'glow', 'swing', 'heartbeat', 'rubber', 'bounce', 'tada', 'flash', 'hue']);
+const HOVER = new Set(['none', 'grow', 'shrink', 'lift', 'glow', 'rotate', 'tilt', 'shake', 'brighten', 'pulse']);
+const FILL_TYPE = new Set(['solid', 'gradient']);
+const FILL_ANIM = new Set(['none', 'flow', 'hue', 'shimmer']);
+const BTN_STYLES = new Set(['solid', 'outline', 'soft', 'gradient', 'flow', 'glass', 'neon', 'threed', 'lift', 'underline', 'retro', 'shine', 'ghost', 'dashed']);
+const SHAPES = new Set(['rect', 'circle', 'triangle', 'diamond', 'pentagon', 'hexagon', 'octagon', 'star', 'heart', 'arrow', 'cross', 'blob', 'ring', 'line', 'parallelogram', 'trapezoid']);
+const MASKS = new Set(['none', 'circle', 'rounded', 'hexagon', 'diamond', 'triangle', 'star', 'heart', 'blob']);
+const SHADOWS = new Set(['none', 'soft', 'medium', 'strong', 'glow', 'hard']);
+const TEXT_SHADOWS = new Set(['none', 'soft', 'hard', 'neon']);
+const FIT = new Set(['cover', 'contain', 'fill']);
+const ALIGN2 = new Set(['left', 'center', 'right', 'justify']);
+const VALIGN = new Set(['top', 'middle', 'bottom']);
+const WEIGHTS = new Set([300, 400, 500, 600, 700, 800, 900]);
+const BORDER_STYLE = new Set(['solid', 'dashed', 'dotted']);
+const ICON_BG = new Set(['none', 'circle', 'rounded', 'square']);
+const CAT_DISPLAY = new Set(['category', 'mixed', 'only']);
+const CARD_STYLE = new Set(['soft', 'flat', 'outline']);
+const ICON_NAME = /^[a-z0-9-]{1,30}$/;
+const META_ID = /^\d{8,20}$/;
+const GOOGLE_ID = /^(G|AW|GT|DC)-[A-Za-z0-9-]{4,30}$/;
+const TIKTOK_ID = /^[A-Z0-9]{8,30}$/;
+
+function cleanFill(raw, d) {
+  const f = isObj(raw) ? raw : {};
+  return {
+    type: pick(f.type, FILL_TYPE, d.type), c1: color(f.c1, d.c1), c2: color(f.c2, d.c2),
+    angle: num(f.angle, 0, 360, d.angle), animate: pick(f.animate, FILL_ANIM, d.animate),
+  };
+}
+const FILL_DEFAULT = { type: 'solid', c1: '#f2a33a', c2: '#d6336c', angle: 135, animate: 'none' };
+
+function cleanBox(raw, fallback, withFont) {
+  const b = isObj(raw) ? raw : {};
+  const f = fallback || { x: 40, y: 40, w: 200, h: 80, r: 0, hide: false, fs: 18 };
+  const out = {
+    x: num(b.x, -1000, 4000, f.x), y: num(b.y, -200, 30000, f.y), w: num(b.w, 4, 4000, f.w), h: num(b.h, 4, 8000, f.h),
+    r: num(b.r, -360, 360, f.r ?? 0), hide: bool(b.hide, f.hide ?? false),
+  };
+  if (withFont) out.fs = num(b.fs, 6, 400, f.fs ?? 18);
+  return out;
+}
+
+function cleanAnim(raw) {
+  const a = isObj(raw) ? raw : {};
+  return {
+    enter: pick(a.enter, ENTER, 'none'), loop: pick(a.loop, LOOP, 'none'), hover: pick(a.hover, HOVER, 'none'),
+    delay: num(a.delay, 0, 5000, 0), duration: num(a.duration, 100, 4000, 700),
+  };
+}
+
+function cleanElement(raw) {
+  if (!isObj(raw) || !EL_TYPES.has(raw.t)) return null;
+  const withFont = raw.t === 'text' || raw.t === 'button';
+  const el = { id: typeof raw.id === 'string' && ID.test(raw.id) ? raw.id : newId(), t: raw.t, name: line(raw.name, 60), locked: bool(raw.locked, false) };
+  const boxes = isObj(raw.box) ? raw.box : {};
+  const desktop = cleanBox(boxes.desktop, null, withFont);
+  el.box = { desktop, tablet: cleanBox(boxes.tablet, desktop, withFont), mobile: cleanBox(boxes.mobile, desktop, withFont) };
+  el.anim = cleanAnim(raw.anim);
+
+  switch (raw.t) {
+    case 'text':
+      Object.assign(el, {
+        text: str(raw.text, 4000), font: FONT_KEYS.has(raw.font) ? raw.font : 'inter', weight: WEIGHTS.has(raw.weight) ? raw.weight : 400,
+        italic: bool(raw.italic, false), underline: bool(raw.underline, false), upper: bool(raw.upper, false),
+        align: pick(raw.align, ALIGN2, 'left'), valign: pick(raw.valign, VALIGN, 'top'), color: color(raw.color, '#14202e'),
+        lineHeight: num(raw.lineHeight, 0.8, 3, 1.3), spacing: num(raw.spacing, -5, 30, 0),
+        fill: cleanFill(raw.fill, FILL_DEFAULT), useFill: bool(raw.useFill, false),
+        shadow: pick(raw.shadow, TEXT_SHADOWS, 'none'), shadowColor: color(raw.shadowColor, '#000000'), link: cleanLink(raw.link),
+      });
+      break;
+    case 'image': {
+      const f = isObj(raw.filters) ? raw.filters : {};
+      Object.assign(el, {
+        src: image(raw.src), alt: line(raw.alt, 160), fit: pick(raw.fit, FIT, 'cover'),
+        zoom: num(raw.zoom, 1, 5, 1), px: num(raw.px, 0, 100, 50), py: num(raw.py, 0, 100, 50),
+        flipX: bool(raw.flipX, false), flipY: bool(raw.flipY, false), radius: num(raw.radius, 0, 500, 0), mask: pick(raw.mask, MASKS, 'none'),
+        borderW: num(raw.borderW, 0, 40, 0), borderColor: color(raw.borderColor, '#ffffff'), shadow: pick(raw.shadow, SHADOWS, 'none'),
+        opacity: num(raw.opacity, 5, 100, 100),
+        filters: {
+          brightness: num(f.brightness, 0, 200, 100), contrast: num(f.contrast, 0, 200, 100), saturate: num(f.saturate, 0, 300, 100),
+          grayscale: num(f.grayscale, 0, 100, 0), blur: num(f.blur, 0, 20, 0), hue: num(f.hue, 0, 360, 0), sepia: num(f.sepia, 0, 100, 0),
+        },
+        link: cleanLink(raw.link),
+      });
+      break;
+    }
+    case 'icon':
+      Object.assign(el, {
+        name: typeof raw.name === 'string' && ICON_NAME.test(raw.name) ? raw.name : 'star', color: color(raw.color, '#14202e'),
+        bg: pick(raw.bg, ICON_BG, 'none'), bgColor: color(raw.bgColor, '#f2a33a'), borderW: num(raw.borderW, 0, 20, 0), borderColor: color(raw.borderColor, '#14202e'),
+        shadow: pick(raw.shadow, SHADOWS, 'none'), link: cleanLink(raw.link),
+      });
+      break;
+    case 'button':
+      Object.assign(el, {
+        label: line(raw.label, 120), style: pick(raw.style, BTN_STYLES, 'solid'), color: color(raw.color, '#f2a33a'), color2: color(raw.color2, '#d6336c'),
+        textColor: color(raw.textColor, '#14202e'), font: FONT_KEYS.has(raw.font) ? raw.font : 'inter', weight: WEIGHTS.has(raw.weight) ? raw.weight : 700,
+        radius: num(raw.radius, 0, 200, 12), icon: typeof raw.icon === 'string' && ICON_NAME.test(raw.icon) ? raw.icon : '', iconPos: raw.iconPos === 'right' ? 'right' : 'left',
+        link: cleanLink(raw.link),
+      });
+      break;
+    case 'shape':
+      Object.assign(el, {
+        shape: pick(raw.shape, SHAPES, 'rect'), fill: cleanFill(raw.fill, FILL_DEFAULT), borderW: num(raw.borderW, 0, 40, 0),
+        borderColor: color(raw.borderColor, '#14202e'), borderStyle: pick(raw.borderStyle, BORDER_STYLE, 'solid'), shadow: pick(raw.shadow, SHADOWS, 'none'),
+        radius: num(raw.radius, 0, 500, 0), opacity: num(raw.opacity, 5, 100, 100), link: cleanLink(raw.link),
+      });
+      break;
+    case 'video':
+      Object.assign(el, { url: videoUrl(raw.url), radius: num(raw.radius, 0, 200, 12) });
+      break;
+    case 'products': {
+      const c = isObj(raw.cols) ? raw.cols : {};
+      Object.assign(el, {
+        ids: [...new Set((Array.isArray(raw.ids) ? raw.ids : []).filter((n) => Number.isInteger(n) && n > 0))].slice(0, 24),
+        cols: { desktop: Math.round(num(c.desktop, 1, 6, 4)), tablet: Math.round(num(c.tablet, 1, 6, 3)), mobile: Math.round(num(c.mobile, 1, 4, 2)) },
+        whatsapp: raw.whatsapp ? normalizePhone(raw.whatsapp) || '' : '', buttonLabel: line(raw.buttonLabel, 40) || 'Pedir no WhatsApp', showPrice: bool(raw.showPrice, true),
+        cardStyle: pick(raw.cardStyle, CARD_STYLE, 'soft'),
+      });
+      break;
+    }
+    default:
+      return null;
+  }
+  return el;
+}
+
+function cleanDocV2(raw, kindHint) {
+  if (!Array.isArray(raw.elements)) throw new AppError(400, 'Documento da página inválido.');
+  if (raw.elements.length > MAX_ELEMENTS) throw new AppError(400, `A página pode ter no máximo ${MAX_ELEMENTS} elementos.`);
+  const t = isObj(raw.theme) ? raw.theme : {};
+  const seo = isObj(raw.seo) ? raw.seo : {};
+  const px = isObj(raw.pixel) ? raw.pixel : {};
+  const h = isObj(raw.heights) ? raw.heights : {};
+  const kind = KINDS.has(kindHint) ? kindHint : KINDS.has(raw.kind) ? raw.kind : 'site';
+  const doc = {
+    v: 2, kind,
+    theme: {
+      primary: color(t.primary, DEFAULT_THEME.primary), bg: color(t.bg, DEFAULT_THEME.bg), text: color(t.text, DEFAULT_THEME.text),
+      headingFont: FONT_KEYS.has(t.headingFont) ? t.headingFont : DEFAULT_THEME.headingFont,
+      bodyFont: FONT_KEYS.has(t.bodyFont) ? t.bodyFont : DEFAULT_THEME.bodyFont,
+      radius: pick(t.radius, RADIUS, DEFAULT_THEME.radius),
+      bgType: pick(t.bgType, FILL_TYPE, 'solid'), bgColor2: color(t.bgColor2, '#e9eef5'), bgAngle: num(t.bgAngle, 0, 360, 135), bgAnimate: pick(t.bgAnimate, FILL_ANIM, 'none'),
+    },
+    seo: { title: line(seo.title, 120), description: str(seo.description, 300).replace(/[\r\n]+/g, ' ') },
+    // Pixel de acompanhamento para tráfego pago (só os identificadores; os scripts oficiais são carregados na página pública).
+    pixel: {
+      meta: typeof px.meta === 'string' && META_ID.test(px.meta.trim()) ? px.meta.trim() : '',
+      google: typeof px.google === 'string' && GOOGLE_ID.test(px.google.trim()) ? px.google.trim() : '',
+      tiktok: typeof px.tiktok === 'string' && TIKTOK_ID.test(px.tiktok.trim()) ? px.tiktok.trim() : '',
+    },
+    heights: { desktop: num(h.desktop, 200, 30000, 700), tablet: num(h.tablet, 200, 30000, 700), mobile: num(h.mobile, 200, 30000, 700) },
+    elements: [],
+  };
+  if (kind === 'catalog') {
+    const c = isObj(raw.catalog) ? raw.catalog : {};
+    const cols = isObj(c.columns) ? c.columns : {};
+    doc.catalog = {
+      display: pick(c.display, CAT_DISPLAY, 'category'), onlyCategory: line(c.onlyCategory, 60),
+      columns: { desktop: Math.round(num(cols.desktop, 1, 6, 4)), tablet: Math.round(num(cols.tablet, 1, 6, 3)), mobile: Math.round(num(cols.mobile, 1, 3, 2)) },
+      showSearch: bool(c.showSearch, true), showCategories: bool(c.showCategories, true), cardStyle: pick(c.cardStyle, CARD_STYLE, 'soft'),
+      addLabel: line(c.addLabel, 30) || 'Adicionar', cartTitle: line(c.cartTitle, 60) || 'Seu carrinho', checkoutNote: str(c.checkoutNote, 300),
+    };
+  }
+  const seen = new Set();
+  for (const rawEl of raw.elements) {
+    const el = cleanElement(rawEl);
+    if (!el) continue;
+    while (seen.has(el.id)) el.id = newId();
+    seen.add(el.id);
+    doc.elements.push(el);
+  }
+  if (Buffer.byteLength(JSON.stringify(doc)) > MAX_DOC_BYTES) {
+    throw new AppError(413, 'A página ficou grande demais para salvar. Use imagens menores ou menos imagens.');
+  }
+  return doc;
+}
+
+// Aceita o formato novo (v2) e o antigo (blocos empilhados), para não quebrar páginas já salvas.
+export function cleanPortfolioDoc(raw, kind) {
+  if (isObj(raw) && raw.v === 2) return cleanDocV2(raw, kind);
+  return cleanPortfolioDocV1(raw);
+}
+
+export const emptyPortfolioDoc = (kind = 'site') => cleanDocV2({ elements: [] }, kind);

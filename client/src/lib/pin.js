@@ -8,6 +8,8 @@ export const PIN_TABS = [
   { key: 'contratos', label: 'Contratos' },
   { key: 'auditoria', label: 'Auditoria' },
   { key: 'portfolio', label: 'Portfólio' },
+  { key: 'produtos', label: 'Produtos/Serviços' },
+  { key: 'pedidos', label: 'Pedidos' },
   { key: 'plano', label: 'Plano' },
   { key: 'admin', label: 'Administração (usuários e planos)', adminOnly: true },
 ];

@@ -5,7 +5,7 @@ import { prisma } from '../prisma.js';
 import { AppError, DAY, isValidCNPJ, isValidCPF, normalizePhone, onlyDigits } from '../utils/helpers.js';
 import { auth, clearSession, setSession, touchActivity } from '../middleware/auth.js';
 import { publicUser } from '../services/access.js';
-import { isPlan, listPlans } from '../plans.js';
+import { defaultPlanId, isPlan, listPlans } from '../plans.js';
 import { assertPin, cleanPinTabs, clearPinCookie, clearPinFailures, hashPin, PIN_RE, pinUnlockedUntil, setPinCookie } from '../utils/pin.js';
 import { checkCode, pickAdminInstance, recoveryUnavailable, sendCode } from '../services/recovery.js';
 
@@ -26,7 +26,7 @@ router.post('/auth/register', async (req, res) => {
   const email = String(b.email || '').trim().toLowerCase();
   const phone = onlyDigits(b.phone);
   const password = String(b.password || '');
-  const plan = isPlan(b.plan) ? b.plan : 'bronze';
+  const plan = isPlan(b.plan) ? b.plan : defaultPlanId();
 
   if (name.length < 3 || name.length > 120) throw new AppError(400, kind === 'PF' ? 'Informe seu nome completo.' : 'Informe a razão social.');
   if (kind === 'PF' && !isValidCPF(document)) throw new AppError(400, 'CPF inválido. Confira os números.');

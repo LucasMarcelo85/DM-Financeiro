@@ -28,7 +28,7 @@ export default function Profile() {
           <span className="profile-avatar" aria-hidden="true">{user.name.trim().charAt(0).toUpperCase()}</span>
           <div className="profile-name">
             <strong>{user.name}</strong>
-            {isAdmin ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} />}
+            {isAdmin ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} name={user.planName} color={user.planColor} />}
           </div>
           <button className="btn btn-primary" onClick={() => setConfiguring(true)}>
             <Icon name="gear" size={18} /> Configurar

@@ -1,17 +1,12 @@
 // Modelo do documento do editor de portfólio (código puro, sem React).
 //
-// Documento: { v: 1, theme, seo: { title, description }, blocks: [bloco] }
-// Bloco: { id, t, ...campos }  ·  Tipos: banner, logo, heading, text, image, gallery, video, button, divider, spacer
-// Blocos empilhados na vertical (a página se adapta ao celular), ao contrário do contrato, que é uma folha A4.
-//
+// Peças compartilhadas do portfólio: tema, cores, links e vídeo (código puro, sem React).
+// O documento do editor livre (elementos com posição por dispositivo) fica em doc.js.
 // O servidor valida o mesmo formato em server/utils/portfolio.js (manter padrões, opções e vídeo em sincronia).
 
 import { fontCss } from '../contract/model.js';
 
-export { FONTS, FONT_GROUPS } from '../contract/model.js';
-export const MAX_BLOCKS = 80;
-export const MAX_GALLERY = 12;
-
+export { FONTS, FONT_GROUPS, fontCss } from '../contract/model.js';
 export const DEFAULT_THEME = {
   primary: '#f2a33a', bg: '#ffffff', text: '#14202e', headingFont: 'playfair', bodyFont: 'inter', radius: 'soft', width: 'normal',
 };
@@ -31,29 +26,7 @@ export const RADIUS_OPTIONS = [['square', 'Reto'], ['soft', 'Suave'], ['pill', '
 export const WIDTH_OPTIONS = [['narrow', 'Estreita'], ['normal', 'Média'], ['wide', 'Ampla']];
 export const ALIGN_OPTIONS = [['left', 'Esquerda'], ['center', 'Centro'], ['right', 'Direita']];
 
-export const BLOCK_LABELS = {
-  banner: 'Banner', logo: 'Logo', heading: 'Título', text: 'Texto', image: 'Imagem', gallery: 'Galeria',
-  video: 'Vídeo', button: 'Botão', divider: 'Divisor', spacer: 'Espaço',
-};
-
 export const emptyLink = () => ({ kind: 'link', url: '', phone: '', message: '', email: '' });
-
-const DEFAULTS = {
-  banner: () => ({
-    image: '', bgColor: '', overlay: 0.35, overlayColor: '#000000', title: 'Seu título aqui', subtitle: 'Uma frase curta sobre o que você faz.',
-    align: 'center', height: 'md', textColor: '#ffffff', showButton: true, buttonLabel: 'Fale conosco', link: { ...emptyLink(), kind: 'whatsapp' },
-  }),
-  logo: () => ({ src: '', size: 72, align: 'center' }),
-  heading: () => ({ text: 'Título da seção', size: 'lg', align: 'left', color: '' }),
-  text: () => ({ text: 'Escreva aqui o seu texto. Conte quem você é, o que oferece e por que as pessoas devem confiar em você.', size: 'md', align: 'left', color: '' }),
-  image: () => ({ src: '', alt: '', caption: '', width: 'md', radius: 'soft', align: 'center' }),
-  gallery: () => ({ items: [], cols: 3, radius: 'soft' }),
-  video: () => ({ url: '', caption: '', width: 'lg' }),
-  button: () => ({ label: 'Falar no WhatsApp', link: { ...emptyLink(), kind: 'whatsapp' }, style: 'solid', size: 'md', align: 'center', full: false, color: '' }),
-  divider: () => ({ style: 'solid', color: '' }),
-  spacer: () => ({ height: 32 }),
-};
-export const BLOCK_TYPES = Object.keys(DEFAULTS);
 
 const ALPHABET = 'abcdefghijklmnopqrstuvwxyz0123456789';
 export function uid() {
@@ -62,69 +35,6 @@ export function uid() {
   (globalThis.crypto || { getRandomValues: (b) => b.forEach((_, i) => (b[i] = Math.floor(Math.random() * 256))) }).getRandomValues(buf);
   for (const n of buf) s += ALPHABET[n % ALPHABET.length];
   return s;
-}
-
-export function newBlock(t, over = {}) {
-  if (!DEFAULTS[t]) throw new Error(`Tipo de bloco desconhecido: ${t}`);
-  return { id: uid(), t, ...DEFAULTS[t](), ...over };
-}
-
-export const blankDoc = () => ({ v: 1, theme: { ...DEFAULT_THEME }, seo: { title: '', description: '' }, blocks: [] });
-
-// Completa o que veio do banco com os padrões (a tela nunca quebra por um campo que falta).
-export function normalizeDoc(raw) {
-  const src = raw && typeof raw === 'object' ? raw : {};
-  const blocks = (Array.isArray(src.blocks) ? src.blocks : []).slice(0, MAX_BLOCKS).flatMap((b) => {
-    if (!b || typeof b !== 'object' || !DEFAULTS[b.t]) return [];
-    const d = DEFAULTS[b.t]();
-    const out = { ...d, ...b, id: typeof b.id === 'string' && b.id ? b.id : uid() };
-    if (d.link) out.link = { ...emptyLink(), ...(b.link && typeof b.link === 'object' ? b.link : {}) };
-    if (b.t === 'gallery') out.items = (Array.isArray(b.items) ? b.items : []).filter((it) => it && typeof it.src === 'string').map((it) => ({ id: it.id || uid(), src: it.src, alt: it.alt || '' }));
-    return [out];
-  });
-  return {
-    v: 1,
-    theme: { ...DEFAULT_THEME, ...(src.theme && typeof src.theme === 'object' ? src.theme : {}) },
-    seo: { title: '', description: '', ...(src.seo && typeof src.seo === 'object' ? src.seo : {}) },
-    blocks,
-  };
-}
-
-// ---------- Operações imutáveis ----------
-export const patchBlock = (doc, id, patch) => ({ ...doc, blocks: doc.blocks.map((b) => (b.id === id ? { ...b, ...patch } : b)) });
-export const patchTheme = (doc, patch) => ({ ...doc, theme: { ...doc.theme, ...patch } });
-export const patchSeo = (doc, patch) => ({ ...doc, seo: { ...doc.seo, ...patch } });
-export const findBlock = (doc, id) => doc.blocks.find((b) => b.id === id) || null;
-export const removeBlock = (doc, id) => ({ ...doc, blocks: doc.blocks.filter((b) => b.id !== id) });
-
-export function insertBlock(doc, block, afterId = null) {
-  const i = afterId ? doc.blocks.findIndex((b) => b.id === afterId) : -1;
-  const blocks = [...doc.blocks];
-  blocks.splice(i < 0 ? blocks.length : i + 1, 0, block);
-  return { ...doc, blocks };
-}
-
-export function moveBlock(doc, from, to) {
-  if (from === to || from < 0 || to < 0 || from >= doc.blocks.length || to >= doc.blocks.length) return doc;
-  const blocks = [...doc.blocks];
-  const [b] = blocks.splice(from, 1);
-  blocks.splice(to, 0, b);
-  return { ...doc, blocks };
-}
-
-export function cloneBlock(b) {
-  const copy = JSON.parse(JSON.stringify(b));
-  copy.id = uid();
-  if (copy.items) copy.items = copy.items.map((it) => ({ ...it, id: uid() }));
-  return copy;
-}
-export function duplicateBlock(doc, id) {
-  const i = doc.blocks.findIndex((b) => b.id === id);
-  if (i < 0) return { doc, block: null };
-  const block = cloneBlock(doc.blocks[i]);
-  const blocks = [...doc.blocks];
-  blocks.splice(i + 1, 0, block);
-  return { doc: { ...doc, blocks }, block };
 }
 
 export const clamp = (n, min, max) => Math.min(max, Math.max(min, n));
@@ -193,6 +103,5 @@ export function themeVars(t) {
   };
 }
 
-// Endereço público da página. Com domínio próprio verificado vem pronto do servidor (customUrl);
-// senão o domínio é o de onde o usuário está acessando o sistema.
-export const pageUrl = (path, customUrl) => customUrl || `${window.location.origin}${path}`;
+// Endereço público da página (o domínio vem de onde o usuário está acessando).
+export const pageUrl = (path) => `${window.location.origin}${path}`;

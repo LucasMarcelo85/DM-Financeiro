@@ -29,7 +29,6 @@ const encryptionSeed = (env.ENCRYPTION_KEY || '').trim() || jwtSecret;
 export const config = {
   port: positive(env.PORT, 3001),
   appUrl: trimSlash(env.APP_URL) || 'http://localhost:5173',
-  serverIp: (env.SERVER_IP || '').trim(),
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true' ? 1 : 0,
   jwtSecret,
   secretKey: crypto.createHash('sha256').update(`dm-financeiro:${encryptionSeed}`).digest(),
@@ -64,6 +63,19 @@ export const config = {
     idleMs: Math.max(1, Number(env.AUDIT_SYNC_IDLE_SECONDS ?? 300)) * 1000,
     mediaMaxBytes: Math.max(1, Number(env.AUDIT_MEDIA_MAX_MB ?? 20)) * 1024 * 1024,
   },
+  // Serviços externos do catálogo (CEP, mapa, rota e frete). Não precisam de chave no .env: o token do SuperFrete é
+  // cadastrado por cada usuário na própria tela. Os endereços abaixo só existem para testes ou para trocar de provedor.
+  geo: {
+    viacep: (env.VIACEP_URL || 'https://viacep.com.br').replace(/\/$/, ''),
+    nominatim: (env.NOMINATIM_URL || 'https://nominatim.openstreetmap.org').replace(/\/$/, ''),
+    osrm: (env.OSRM_URL || 'https://router.project-osrm.org').replace(/\/$/, ''),
+    superfrete: (env.SUPERFRETE_URL || 'https://api.superfrete.com').replace(/\/$/, ''),
+    superfreteSandbox: (env.SUPERFRETE_SANDBOX_URL || 'https://sandbox.superfrete.com').replace(/\/$/, ''),
+  },
+  // Limite geral de requisições por IP por minuto (a API inteira). Só mude se precisar.
+  rateLimitPerMinute: Math.max(60, Number(env.RATE_LIMIT_PER_MINUTE ?? 600)),
+  // Pedidos do catálogo são apagados sozinhos depois de 10 dias.
+  orderRetentionDays: 10,
   // Mensagens da auditoria com mais de 60 dias são apagadas sozinhas (para não encher o banco).
   // A tela oferece os filtros de 7, 30 e 60 dias.
   auditRetentionDays: 60,
@@ -82,16 +94,7 @@ export const config = {
     prata: positive(env.PLAN_PRATA_PRICE, 54.9),
     ouro: positive(env.PLAN_OURO_PRICE, 64.9),
   },
-  easypanel: {
-    url: trimSlash(env.EASYPANEL_API_URL),
-    apiKey: (env.EASYPANEL_API_KEY || '').trim(),
-    projectName: (env.EASYPANEL_PROJECT_NAME || '').trim(),
-    serviceName: (env.EASYPANEL_SERVICE_NAME || '').trim(),
-  },
 };
 
 export const evolutionConfigured = () => Boolean(config.evolution.url && config.evolution.apiKey);
 export const infinitepayConfigured = () => Boolean(config.infinitepay.handle);
-export const easypanelConfigured = () => Boolean(
-  config.easypanel.url && config.easypanel.apiKey && config.easypanel.projectName && config.easypanel.serviceName
-);

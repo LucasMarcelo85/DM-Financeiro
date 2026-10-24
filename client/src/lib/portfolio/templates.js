@@ -1,63 +1,119 @@
-// Pontos de partida do portfólio. São exemplos: o usuário troca textos, cores, imagens e links no editor.
-import { blankDoc, newBlock, THEME_PRESETS } from './model.js';
+// Pontos de partida do portfólio. São exemplos: o usuário troca textos, cores, imagens e links no editor e arrasta tudo para onde quiser.
+// Cada modelo é desenhado no computador; tablet e celular nascem já ajustados (proporcional ou em coluna) e podem ser refinados à parte.
+import { THEME_PRESETS } from './model.js';
+import { FILL0, adaptDevice, blankDoc, newElement, stackDevice } from './doc.js';
 
 const preset = (key) => { const { primary, bg, text } = THEME_PRESETS.find((p) => p.key === key); return { primary, bg, text }; };
-const wa = () => ({ kind: 'whatsapp', url: '', phone: '', message: 'Olá! Vi sua página e gostaria de saber mais.', email: '' });
+const wa = (message = 'Olá! Vi sua página e gostaria de saber mais.') => ({ kind: 'whatsapp', url: '', phone: '', message, email: '' });
+const url = () => ({ kind: 'link', url: '', phone: '', message: '', email: '' });
 
-export const TEMPLATES = [
-  { key: 'blank', label: 'Em branco', desc: 'Comece do zero e adicione os blocos que quiser.' },
-  { key: 'links', label: 'Cartão de links', desc: 'Logo, apresentação curta e botões: WhatsApp, Instagram e site.' },
-  { key: 'services', label: 'Serviços e portfólio', desc: 'Banner, sobre você, serviços, galeria de trabalhos e contato.' },
-  { key: 'company', label: 'Apresentação da empresa', desc: 'Quem somos, diferenciais, vídeo institucional e contato.' },
+export const SITE_TEMPLATES = [
+  { key: 'blank', label: 'Em branco', desc: 'Comece do zero e arraste os elementos para onde quiser.' },
+  { key: 'links', label: 'Cartão de links', desc: 'Foto, apresentação curta e botões: WhatsApp, Instagram e site.' },
+  { key: 'services', label: 'Serviços e portfólio', desc: 'Banner animado, sobre você, três serviços e contato.' },
+  { key: 'promo', label: 'Página de oferta', desc: 'Fundo com cores em movimento, destaque animado e botão chamativo.' },
 ];
+export const CATALOG_TEMPLATES = [
+  { key: 'catalog', label: 'Catálogo digital', desc: 'Topo com nome da loja e botão de WhatsApp; produtos, carrinho e pedido prontos.' },
+  { key: 'catalog-bold', label: 'Catálogo colorido', desc: 'Topo com degradê animado e formas decorativas.' },
+];
+export const TEMPLATES = [...SITE_TEMPLATES, ...CATALOG_TEMPLATES];
+
+// Deixa tablet (proporcional) e celular (em coluna) prontos a partir do desenho do computador.
+function finish(doc) {
+  let d = adaptDevice(doc, 'desktop', 'tablet');
+  d = stackDevice(d, 'mobile');
+  return d;
+}
 
 // `name`: nome da pessoa ou empresa (vem do cadastro) para já aparecer na página.
 export function buildTemplate(key, name = 'Sua empresa') {
-  const doc = blankDoc();
+  const kind = key.startsWith('catalog') ? 'catalog' : 'site';
+  const doc = blankDoc(kind);
+  const th = doc.theme;
+  const E = (t, over) => newElement(t, doc.theme, over);
+  const box = (x, y, w, h, fs) => ({ x, y, w, h, ...(fs ? { fs } : {}) });
+
   if (key === 'links') {
-    doc.theme = { ...doc.theme, ...preset('grafite'), width: 'narrow', radius: 'pill' };
-    doc.blocks = [
-      newBlock('spacer', { height: 24 }),
-      newBlock('logo', { size: 96 }),
-      newBlock('heading', { text: name, size: 'lg', align: 'center' }),
-      newBlock('text', { text: 'Uma frase curta sobre o que você faz e como as pessoas podem falar com você.', align: 'center' }),
-      newBlock('button', { label: 'Chamar no WhatsApp', link: wa(), full: true, size: 'lg' }),
-      newBlock('button', { label: 'Instagram', link: { kind: 'link', url: '', phone: '', message: '', email: '' }, style: 'outline', full: true, size: 'lg' }),
-      newBlock('button', { label: 'Nosso site', link: { kind: 'link', url: '', phone: '', message: '', email: '' }, style: 'soft', full: true, size: 'lg' }),
+    doc.theme = { ...th, ...preset('grafite'), headingFont: 'montserrat' };
+    doc.seo = { title: name, description: `Fale com ${name}.` };
+    doc.heights.desktop = 620;
+    doc.elements = [
+      E('shape', { shape: 'circle', fill: FILL0({ type: 'gradient', c1: '#27496d', c2: '#6d4aff', animate: 'flow' }), box: box(520, 40, 160, 160), anim: { enter: 'zoom-in' } }),
+      E('image', { mask: 'circle', fit: 'cover', box: box(530, 50, 140, 140), anim: { enter: 'zoom-in', delay: 100 } }),
+      E('text', { text: name, align: 'center', font: 'montserrat', weight: 700, box: box(380, 220, 440, 50, 34), anim: { enter: 'fade', delay: 150 } }),
+      E('text', { text: 'Uma frase curta sobre o que você faz e como as pessoas podem falar com você.', align: 'center', box: box(380, 280, 440, 60, 18), anim: { enter: 'fade', delay: 250 } }),
+      E('button', { label: 'Chamar no WhatsApp', link: wa(), icon: 'whatsapp', style: 'solid', radius: 999, box: box(380, 370, 440, 58, 18), anim: { enter: 'slide-up', delay: 300 } }),
+      E('button', { label: 'Instagram', link: url(), icon: 'instagram', style: 'outline', radius: 999, box: box(380, 444, 440, 58, 18), anim: { enter: 'slide-up', delay: 400 } }),
+      E('button', { label: 'Nosso site', link: url(), icon: 'globe', style: 'soft', radius: 999, box: box(380, 518, 440, 58, 18), anim: { enter: 'slide-up', delay: 500 } }),
     ];
   } else if (key === 'services') {
-    doc.theme = { ...doc.theme, ...preset('oceano') };
+    doc.theme = { ...th, ...preset('oceano') };
     doc.seo = { title: name, description: `Conheça o trabalho de ${name}.` };
-    doc.blocks = [
-      newBlock('banner', { title: name, subtitle: 'Soluções sob medida para o seu negócio.', height: 'lg', bgColor: '#1f55a6', buttonLabel: 'Peça um orçamento', link: wa() }),
-      newBlock('heading', { text: 'Sobre nós', align: 'center' }),
-      newBlock('text', { text: 'Conte aqui a sua história, há quanto tempo atua e o que torna o seu trabalho diferente.', align: 'center' }),
-      newBlock('heading', { text: 'O que fazemos', align: 'center' }),
-      newBlock('text', { text: '• Serviço 1: descreva em uma linha\n• Serviço 2: descreva em uma linha\n• Serviço 3: descreva em uma linha' }),
-      newBlock('heading', { text: 'Trabalhos recentes', align: 'center' }),
-      newBlock('gallery', { cols: 3 }),
-      newBlock('divider'),
-      newBlock('heading', { text: 'Vamos conversar?', align: 'center' }),
-      newBlock('button', { label: 'Falar no WhatsApp', link: wa(), size: 'lg' }),
-      newBlock('spacer', { height: 40 }),
+    doc.heights.desktop = 1180;
+    const card = (x, icon, title, desc, delay) => [
+      E('shape', { shape: 'rect', radius: 18, fill: FILL0({ c1: '#ffffff' }), shadow: 'medium', box: box(x, 640, 340, 250), anim: { enter: 'slide-up', delay } }),
+      E('icon', { name: icon, color: '#ffffff', bg: 'circle', bgColor: '#1f55a6', box: box(x + 28, 666, 64, 64), anim: { enter: 'zoom-in', delay: delay + 100, hover: 'rotate' } }),
+      E('text', { text: title, font: 'playfair', weight: 700, color: '#14202e', box: box(x + 28, 748, 284, 36, 24), anim: { enter: 'fade', delay: delay + 150 } }),
+      E('text', { text: desc, color: '#4a5a6c', box: box(x + 28, 790, 284, 80, 16), anim: { enter: 'fade', delay: delay + 200 } }),
     ];
-  } else if (key === 'company') {
-    doc.theme = { ...doc.theme, ...preset('floresta'), headingFont: 'montserrat' };
-    doc.seo = { title: name, description: `Conheça ${name}.` };
-    doc.blocks = [
-      newBlock('logo', { size: 64, align: 'left' }),
-      newBlock('banner', { title: `Somos a ${name}`, subtitle: 'Qualidade, compromisso e atendimento de verdade.', height: 'md', bgColor: '#137a52', align: 'left', showButton: false }),
-      newBlock('heading', { text: 'Quem somos', size: 'lg' }),
-      newBlock('text', { text: 'Apresente a empresa: missão, valores e o que você entrega aos clientes.' }),
-      newBlock('heading', { text: 'Nossos diferenciais', size: 'lg' }),
-      newBlock('text', { text: '• Atendimento próximo\n• Prazo e transparência\n• Equipe especializada' }),
-      newBlock('video', { width: 'lg', caption: 'Cole o link de um vídeo do YouTube ou Vimeo no painel ao lado.' }),
-      newBlock('divider'),
-      newBlock('heading', { text: 'Fale com a gente', size: 'lg', align: 'center' }),
-      newBlock('button', { label: 'Chamar no WhatsApp', link: wa(), size: 'lg' }),
-      newBlock('button', { label: 'Enviar e-mail', link: { kind: 'email', url: '', phone: '', message: '', email: '' }, style: 'outline', size: 'lg' }),
-      newBlock('spacer', { height: 40 }),
+    doc.elements = [
+      E('shape', { shape: 'rect', fill: FILL0({ type: 'gradient', c1: '#1f55a6', c2: '#6d4aff', angle: 120, animate: 'flow' }), box: box(0, 0, 1200, 430) }),
+      E('shape', { shape: 'circle', fill: FILL0({ c1: '#ffffff' }), opacity: 12, box: box(900, 40, 260, 260), anim: { loop: 'float' } }),
+      E('shape', { shape: 'ring', radius: 14, fill: FILL0({ c1: '#ffffff' }), opacity: 25, box: box(80, 250, 150, 150), anim: { loop: 'spin' } }),
+      E('text', { text: name, align: 'center', font: 'playfair', weight: 700, color: '#ffffff', box: box(200, 120, 800, 80, 58), anim: { enter: 'slide-up' } }),
+      E('text', { text: 'Soluções sob medida para o seu negócio.', align: 'center', color: '#e6efff', box: box(250, 215, 700, 40, 22), anim: { enter: 'fade', delay: 200 } }),
+      E('button', { label: 'Peça um orçamento', link: wa(), icon: 'whatsapp', style: 'lift', color: '#ffffff', textColor: '#1f55a6', radius: 999, box: box(460, 290, 280, 60, 19), anim: { enter: 'zoom-in', delay: 400, loop: 'pulse' } }),
+      E('text', { text: 'Sobre nós', align: 'center', font: 'playfair', weight: 700, box: box(300, 480, 600, 50, 38), anim: { enter: 'fade' } }),
+      E('text', { text: 'Conte aqui a sua história, há quanto tempo atua e o que torna o seu trabalho diferente.', align: 'center', box: box(300, 540, 600, 70, 18), anim: { enter: 'fade', delay: 100 } }),
+      ...card(60, 'star', 'Serviço 1', 'Descreva em poucas linhas o que está incluso neste serviço.', 0),
+      ...card(430, 'zap', 'Serviço 2', 'Descreva em poucas linhas o que está incluso neste serviço.', 120),
+      ...card(800, 'award', 'Serviço 3', 'Descreva em poucas linhas o que está incluso neste serviço.', 240),
+      E('text', { text: 'Vamos conversar?', align: 'center', font: 'playfair', weight: 700, box: box(300, 950, 600, 50, 36), anim: { enter: 'fade' } }),
+      E('button', { label: 'Falar no WhatsApp', link: wa(), icon: 'whatsapp', style: 'solid', radius: 14, box: box(470, 1020, 260, 58, 18), anim: { enter: 'slide-up' } }),
+    ];
+  } else if (key === 'promo') {
+    doc.theme = { ...th, primary: '#ff4d6d', bg: '#1b1034', text: '#ffffff', bgType: 'gradient', bgColor2: '#5b21b6', bgAngle: 135, bgAnimate: 'flow', headingFont: 'montserrat' };
+    doc.seo = { title: `Oferta: ${name}`, description: 'Aproveite esta oferta por tempo limitado.' };
+    doc.heights.desktop = 760;
+    doc.elements = [
+      E('shape', { shape: 'circle', fill: FILL0({ type: 'gradient', c1: '#ff4d6d', c2: '#ffb347', animate: 'hue' }), opacity: 70, box: box(90, 110, 220, 220), anim: { loop: 'float' } }),
+      E('shape', { shape: 'star', fill: FILL0({ c1: '#ffd166' }), box: box(940, 90, 130, 130), anim: { loop: 'spin' } }),
+      E('shape', { shape: 'hexagon', fill: FILL0({ type: 'gradient', c1: '#22d3ee', c2: '#6366f1', animate: 'flow' }), opacity: 60, box: box(990, 420, 150, 150), anim: { loop: 'float' } }),
+      E('text', { text: 'OFERTA POR TEMPO LIMITADO', align: 'center', color: '#ffd166', weight: 700, spacing: 3, box: box(250, 120, 700, 30, 18), anim: { enter: 'fade' } }),
+      E('text', { text: 'Seu título de impacto aqui', align: 'center', font: 'montserrat', weight: 700, useFill: true, fill: FILL0({ type: 'gradient', c1: '#ffffff', c2: '#ffd166', angle: 90, animate: 'flow' }), box: box(150, 170, 900, 150, 68), anim: { enter: 'slide-up', delay: 150 } }),
+      E('text', { text: 'Explique em uma frase o benefício principal e por que vale agir agora.', align: 'center', color: '#e9defc', box: box(260, 345, 680, 70, 22), anim: { enter: 'fade', delay: 300 } }),
+      E('button', { label: 'Quero aproveitar', link: wa('Olá! Quero aproveitar a oferta.'), icon: 'arrow-right', iconPos: 'right', style: 'flow', color: '#ff4d6d', color2: '#ffb347', textColor: '#1b1034', radius: 999, box: box(430, 450, 340, 72, 22), anim: { enter: 'zoom-in', delay: 500, loop: 'pulse' } }),
+      E('icon', { name: 'check-circle', color: '#6ee7b7', box: box(300, 590, 36, 36), anim: { enter: 'fade', delay: 600 } }),
+      E('text', { text: 'Benefício 1', color: '#ffffff', box: box(346, 594, 180, 30, 18), anim: { enter: 'fade', delay: 650 } }),
+      E('icon', { name: 'check-circle', color: '#6ee7b7', box: box(530, 590, 36, 36), anim: { enter: 'fade', delay: 700 } }),
+      E('text', { text: 'Benefício 2', color: '#ffffff', box: box(576, 594, 180, 30, 18), anim: { enter: 'fade', delay: 750 } }),
+      E('icon', { name: 'check-circle', color: '#6ee7b7', box: box(760, 590, 36, 36), anim: { enter: 'fade', delay: 800 } }),
+      E('text', { text: 'Benefício 3', color: '#ffffff', box: box(806, 594, 180, 30, 18), anim: { enter: 'fade', delay: 850 } }),
+    ];
+  } else if (key === 'catalog') {
+    doc.theme = { ...th, ...preset('floresta'), headingFont: 'montserrat' };
+    doc.seo = { title: `${name} — Catálogo`, description: `Veja os produtos de ${name} e faça seu pedido.` };
+    doc.heights.desktop = 260;
+    doc.elements = [
+      E('shape', { shape: 'rect', fill: FILL0({ c1: '#137a52' }), box: box(0, 0, 1200, 260) }),
+      E('image', { mask: 'circle', fit: 'cover', box: box(80, 60, 140, 140), borderW: 4, anim: { enter: 'zoom-in' } }),
+      E('text', { text: name, font: 'montserrat', weight: 700, color: '#ffffff', box: box(250, 70, 620, 60, 46), anim: { enter: 'slide-right' } }),
+      E('text', { text: 'Escolha seus produtos, monte o carrinho e finalize o pedido.', color: '#dff5ea', box: box(250, 140, 620, 60, 19), anim: { enter: 'fade', delay: 150 } }),
+      E('button', { label: 'Fale com a loja', link: wa(), icon: 'whatsapp', style: 'lift', color: '#ffffff', textColor: '#137a52', radius: 999, box: box(920, 95, 220, 56, 17), anim: { enter: 'zoom-in', delay: 300 } }),
+    ];
+  } else if (key === 'catalog-bold') {
+    doc.theme = { ...th, ...preset('rosa'), headingFont: 'poppins' };
+    doc.seo = { title: `${name} — Catálogo`, description: `Veja os produtos de ${name} e faça seu pedido.` };
+    doc.heights.desktop = 300;
+    doc.elements = [
+      E('shape', { shape: 'rect', fill: FILL0({ type: 'gradient', c1: '#d6336c', c2: '#7c3aed', angle: 120, animate: 'flow' }), box: box(0, 0, 1200, 300) }),
+      E('shape', { shape: 'circle', fill: FILL0({ c1: '#ffffff' }), opacity: 14, box: box(930, 20, 240, 240), anim: { loop: 'float' } }),
+      E('shape', { shape: 'star', fill: FILL0({ c1: '#ffe066' }), box: box(1040, 190, 70, 70), anim: { loop: 'spin' } }),
+      E('text', { text: name, font: 'poppins', weight: 700, color: '#ffffff', box: box(80, 80, 760, 80, 58), anim: { enter: 'slide-up' } }),
+      E('text', { text: 'Novidades toda semana. Peça pelo carrinho e receba em casa.', color: '#ffeaf3', box: box(80, 170, 700, 50, 21), anim: { enter: 'fade', delay: 150 } }),
+      E('button', { label: 'Fale com a loja', link: wa(), icon: 'whatsapp', style: 'shine', color: '#ffffff', textColor: '#d6336c', radius: 999, box: box(80, 232, 240, 52, 17), anim: { enter: 'zoom-in', delay: 300 } }),
     ];
   }
-  return doc;
+  return key === 'blank' ? doc : finish(doc);
 }

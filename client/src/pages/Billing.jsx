@@ -9,12 +9,15 @@ export default function Billing() {
   const { user } = useAuth();
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [plan, setPlan] = useState(['bronze', 'prata', 'ouro'].includes(user.plan) ? user.plan : 'prata');
+  const [plan, setPlan] = useState(user.plan);
   const [period, setPeriod] = useState('mensal');
   const [busy, setBusy] = useState(false);
 
   useEffect(() => {
-    api.get('/billing').then(setData).catch((e) => toast(e.message, 'error'));
+    api.get('/billing').then((d) => {
+      setData(d);
+      setPlan((cur) => (d.plans.some((p) => p.id === cur) ? cur : (d.plans.find((p) => p.id === 'prata') || d.plans[0])?.id || cur)); // o plano atual pode não existir mais
+    }).catch((e) => toast(e.message, 'error'));
   }, [toast]);
 
   async function pay() {

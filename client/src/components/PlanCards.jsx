@@ -30,10 +30,10 @@ export default function PlanCards({ plans, periods, period, selected, onSelect, 
   return (
     <section className="pc-grid" role="radiogroup" aria-label="Escolha seu plano">
       {plans.map((p) => (
-        <label key={p.id} className={`pc pc-${p.id} ${selected === p.id ? 'is-on' : ''}`}>
+        <label key={p.id} className={`pc pc-${p.id} ${selected === p.id ? 'is-on' : ''}`} style={p.color ? { '--pc-accent': p.color } : undefined}>
           <input type="radio" name="plan" value={p.id} checked={selected === p.id} onChange={() => onSelect(p.id)} />
           <span className="pc-head">
-            <PlanBadge plan={p.id} />
+            <PlanBadge plan={p.id} name={p.name} color={p.color} />
             {currentPlan === p.id && <small className="pc-current">Seu plano</small>}
           </span>
           <span className="pc-price">

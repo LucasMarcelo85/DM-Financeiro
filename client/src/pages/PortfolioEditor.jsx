@@ -4,20 +4,28 @@ import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
 import Modal from '../components/Modal.jsx';
 import EIcon from '../components/contract/EIcon.jsx';
-import PortfolioView from '../components/portfolio/PortfolioView.jsx';
-import PortfolioInspector from '../components/portfolio/PortfolioInspector.jsx';
+import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars } from '../components/portfolio/Canvas.jsx';
+import Stage from '../components/portfolio/Stage.jsx';
+import { ElementInspector, PageInspector } from '../components/portfolio/Inspector.jsx';
+import ImageEditor from '../components/portfolio/ImageEditor.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
+import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
-  BLOCK_LABELS, MAX_BLOCKS, duplicateBlock, findBlock, insertBlock, moveBlock, newBlock, normalizeDoc, pageUrl, patchBlock, patchSeo, patchTheme, removeBlock,
-} from '../lib/portfolio/model.js';
+  DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, adaptDevice, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc,
+  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, stackDevice,
+} from '../lib/portfolio/doc.js';
+import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
+import { IMAGE_ACCEPT, fitImage } from '../lib/contract/image.js';
+import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
-  { t: 'banner', icon: 'banner' }, { t: 'logo', icon: 'logo' }, { t: 'heading', icon: 'title' }, { t: 'text', icon: 'text' },
-  { t: 'image', icon: 'image' }, { t: 'gallery', icon: 'gallery' }, { t: 'video', icon: 'video' }, { t: 'button', icon: 'button' },
-  { t: 'divider', icon: 'divider' }, { t: 'spacer', icon: 'spacer' },
+  { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
+  { t: 'shape', icon: 'shape' }, { t: 'video', icon: 'video' }, { t: 'products', icon: 'grid' },
 ];
+const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
 const SAVE_LABEL = { saved: 'Salvo', dirty: 'Alterações não salvas', saving: 'Salvando...', error: 'Erro ao salvar' };
+const ZOOMS = [0.25, 0.33, 0.5, 0.67, 0.75, 0.9, 1, 1.25, 1.5];
 
 export default function PortfolioEditor() {
   const { id } = useParams();
@@ -25,27 +33,43 @@ export default function PortfolioEditor() {
   const toast = useToast();
 
   const [doc, setDocState] = useState(null);
-  const [meta, setMeta] = useState(null); // { slug, published, isMain, path, customUrl }
+  const [meta, setMeta] = useState(null);
   const [name, setName] = useState('');
   const [saveState, setSaveState] = useState('saved');
   const [selectedId, setSelectedId] = useState(null);
-  const [device, setDevice] = useState('mobile'); // 'mobile' | 'desktop'
+  const [device, setDevice] = useState('desktop');
+  const [manualZoom, setManualZoom] = useState(null);
+  const [avail, setAvail] = useState(900);
   const [preview, setPreview] = useState(false);
+  const [animate, setAnimate] = useState(false);
+  const [replay, setReplay] = useState(0);
   const [share, setShare] = useState(false);
   const [busy, setBusy] = useState('');
   const [leave, setLeave] = useState(false);
   const [panelOpen, setPanelOpen] = useState(false);
+  const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers'
+  const [products, setProducts] = useState([]);
+  const [categories, setCategories] = useState([]);
+  const [imageTool, setImageTool] = useState(null); // { id, tool }
+  const [catalogCfg, setCatalogCfg] = useState(false);
+  const [converted, setConverted] = useState(false);
+  const [interacting, setInteracting] = useState(false);
 
   const docRef = useRef(null);
   const nameRef = useRef('');
   const past = useRef([]);
   const future = useRef([]);
   const lastKey = useRef({ key: null, t: 0 });
-  const version = useRef(0); // sobe a cada alteração
+  const version = useRef(0);
   const savedVersion = useRef(0);
   const saving = useRef(false);
   const selectedRef = useRef(null);
+  const deviceRef = useRef('desktop');
+  const stageRef = useRef(null);
+  const fileRef = useRef(null);
+  const pendingAdd = useRef(null);
   selectedRef.current = selectedId;
+  deviceRef.current = device;
   nameRef.current = name;
 
   // ---------------------------------------------------------------- carregar
@@ -54,20 +78,36 @@ export default function PortfolioEditor() {
     api.get(`/portfolios/${id}`)
       .then(({ portfolio: p }) => {
         if (!alive) return;
-        const d = normalizeDoc(p.data);
+        const d = normalizeDoc(p.data, p.kind);
         docRef.current = d;
         setDocState(d);
+        setConverted(p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length > 0);
         setName(p.name);
-        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, customUrl: p.customUrl });
+        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, kind: p.kind });
+        if (p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length) { version.current = 1; setSaveState('dirty'); }
       })
       .catch((e) => { toast(e.message, 'error'); nav('/portfolio', { replace: true }); });
+    api.get('/products').then((r) => { if (alive) { setProducts(r.products); setCategories(r.categories); } }).catch(() => {});
     return () => { alive = false; };
   }, [id, nav, toast]);
+
+  // largura disponível para o palco (zoom automático)
+  useEffect(() => {
+    const el = stageRef.current;
+    if (!el || typeof ResizeObserver === 'undefined') return undefined;
+    const ro = new ResizeObserver(() => setAvail(el.clientWidth));
+    ro.observe(el);
+    setAvail(el.clientWidth);
+    return () => ro.disconnect();
+  }, [doc && meta]); // eslint-disable-line react-hooks/exhaustive-deps
+
+  const fitZoom = Math.min(1, Math.max(0.2, (avail - 40) / DESIGN_W[device]));
+  const zoom = manualZoom ?? fitZoom;
 
   // ---------------------------------------------------------------- histórico
   const touch = useCallback(() => { version.current += 1; setSaveState('dirty'); }, []);
 
-  // `key` agrupa alterações seguidas (digitar, arrastar uma barra, escolher cor) em um único passo de "desfazer".
+  // `key` agrupa alterações seguidas (digitar, arrastar, mexer numa barra) em um único passo de "desfazer".
   const commit = useCallback((next, key) => {
     const prev = docRef.current;
     if (!next || next === prev) return;
@@ -90,14 +130,13 @@ export default function PortfolioEditor() {
     docRef.current = d;
     lastKey.current = { key: null, t: 0 };
     setDocState(d);
-    setSelectedId((s) => (s && findBlock(d, s) ? s : null));
+    setSelectedId((s) => (s && findElement(d, s) ? s : null));
     touch();
   }, [touch]);
   const undo = useCallback(() => jump(past, future), [jump]);
   const redo = useCallback(() => jump(future, past), [jump]);
 
-  const selected = useMemo(() => (doc && selectedId ? findBlock(doc, selectedId) : null), [doc, selectedId]);
-  const selectedIndex = selected ? doc.blocks.findIndex((b) => b.id === selected.id) : -1;
+  const selected = useMemo(() => (doc && selectedId ? findElement(doc, selectedId) : null), [doc, selectedId]);
 
   // ---------------------------------------------------------------- salvar
   const save = useCallback(async () => {
@@ -111,6 +150,7 @@ export default function PortfolioEditor() {
       savedVersion.current = v;
       saving.current = false;
       setSaveState(version.current === v ? 'saved' : 'dirty');
+      setConverted(false);
       return true;
     } catch (e) {
       saving.current = false;
@@ -121,10 +161,10 @@ export default function PortfolioEditor() {
   }, [id, toast]);
 
   useEffect(() => {
-    if (saveState !== 'dirty') return undefined;
+    if (saveState !== 'dirty' || interacting) return undefined;
     const t = setTimeout(save, 2500);
     return () => clearTimeout(t);
-  }, [saveState, doc, name, save]);
+  }, [saveState, doc, name, save, interacting]);
 
   useEffect(() => {
     const warn = (e) => { if (version.current !== savedVersion.current) { e.preventDefault(); e.returnValue = ''; } };
@@ -143,7 +183,7 @@ export default function PortfolioEditor() {
     if (busy) return;
     setBusy('publish');
     try {
-      if (!(await save())) return; // não publica com alterações que não foram salvas
+      if (!(await save())) return;
       const { portfolio } = await api.patch(`/portfolios/${id}`, { published: value });
       setMeta((m) => ({ ...m, published: portfolio.published }));
       toast(value ? 'Página publicada. O link já funciona.' : 'Página despublicada: agora só você vê.');
@@ -154,67 +194,111 @@ export default function PortfolioEditor() {
   async function saveSlug(slug) {
     try {
       const { portfolio } = await api.patch(`/portfolios/${id}`, { slug });
-      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path, customUrl: portfolio.customUrl }));
+      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path }));
       toast('Endereço atualizado.');
     } catch (e) { toast(e.message, 'error'); }
   }
 
   async function copyLink() {
-    if (await copyText(pageUrl(meta.path, meta.customUrl))) toast('Link copiado!'); else setShare(true);
+    if (await copyText(pageUrl(meta.path))) toast('Link copiado!'); else setShare(true);
   }
 
-  // ---------------------------------------------------------------- blocos
-  function addBlock(t) {
+  // ---------------------------------------------------------------- elementos
+  // Coloca o elemento no dispositivo atual e deriva os outros dois a partir dele (cada um passa a ter vida própria).
+  function place(el, x, y) {
+    const dv = deviceRef.current;
+    const W = DESIGN_W[dv];
+    let b = { ...el.box[dv] };
+    if (el.t === 'text' || el.t === 'button' || el.t === 'icon') b = { ...el.box.desktop, ...(dv !== 'desktop' ? el.box[dv] : {}) };
+    if (b.w > W - 40) { b.h = Math.round(b.h * ((W - 40) / b.w)); b.w = W - 40; }
+    b.x = Math.max(0, Math.round(x ?? (W - b.w) / 2));
+    b.y = Math.max(0, Math.round(y ?? 60));
+    const next = { ...el, box: { ...el.box, [dv]: b } };
+    for (const d of DEVICES.map((v) => v.id)) if (d !== dv) next.box[d] = { ...next.box[d], ...scaleBox(b, dv, d, el.t), hide: false };
+    return next;
+  }
+
+  function topOfView() {
+    const sc = stageRef.current;
+    const z = manualZoom ?? Math.min(1, Math.max(0.2, ((sc?.clientWidth || 900) - 40) / DESIGN_W[deviceRef.current]));
+    return Math.max(40, Math.round(((sc?.scrollTop || 0) + 24) / z + 40));
+  }
+
+  function addNew(t, over = {}, at) {
     const d = docRef.current;
-    if (d.blocks.length >= MAX_BLOCKS) { toast(`A página aceita até ${MAX_BLOCKS} blocos.`, 'error'); return; }
-    const block = newBlock(t);
-    commit(insertBlock(d, block, selectedRef.current));
-    setSelectedId(block.id);
+    if (d.elements.length >= MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return null; }
+    let el = newElement(t, d.theme, over);
+    el = place(el, at?.x, at?.y ?? topOfView());
+    commit(addElement(d, el));
+    setSelectedId(el.id);
     setPreview(false);
     setPanelOpen(true);
-    setTimeout(() => document.querySelector(`[data-block="${block.id}"]`)?.scrollIntoView({ block: 'nearest', behavior: 'smooth' }), 50);
+    return el;
+  }
+
+  async function imageFromFile(file, at) {
+    try {
+      const { src } = await fitImage(file, 1600);
+      const img = await loadImage(src);
+      const w = Math.min(420, DESIGN_W[deviceRef.current] - 40);
+      const h = Math.round(w * (img.naturalHeight / img.naturalWidth));
+      const el = addNew('image', { src, box: { desktop: { x: 60, y: 60, w, h } } }, at && { x: Math.round(at.x - w / 2), y: Math.round(at.y - h / 2) });
+      return el;
+    } catch (e) { toast(e.message, 'error'); return null; }
+  }
+
+  function addFromPalette(t) {
+    if (t === 'image') { pendingAdd.current = null; fileRef.current?.click(); return; }
+    if (t === 'products' && !products.length) toast('Cadastre produtos na aba Produtos/Serviços para escolher aqui.', 'error');
+    const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } } : t === 'icon' ? {} : undefined;
+    addNew(t, base);
   }
 
   const patchSelected = useCallback((patch, key) => {
     const sel = selectedRef.current;
-    if (sel) commit(patchBlock(docRef.current, sel, patch), key ? `${sel}:${key}` : `${sel}:${Object.keys(patch).join(',')}`);
+    if (sel) commit(patchElement(docRef.current, sel, patch), `${sel}:${key || Object.keys(patch).join(',')}`);
   }, [commit]);
 
-  function move(from, to) { commit(moveBlock(docRef.current, from, to)); }
-
-  function duplicate(blockId) {
-    const d = docRef.current;
-    if (d.blocks.length >= MAX_BLOCKS) { toast(`A página aceita até ${MAX_BLOCKS} blocos.`, 'error'); return; }
-    const r = duplicateBlock(d, blockId);
-    if (r.block) { commit(r.doc); setSelectedId(r.block.id); }
-  }
-
-  function remove(blockId) {
-    commit(removeBlock(docRef.current, blockId));
-    setSelectedId((s) => (s === blockId ? null : s));
-  }
+  const setBox = useCallback((elId, patch, key) => {
+    commit(patchBox(docRef.current, elId, deviceRef.current, patch), `${elId}:${deviceRef.current}:${key || Object.keys(patch).join(',')}`);
+  }, [commit]);
 
   function act(action) {
     const sel = selectedRef.current;
+    const d = docRef.current;
     if (!sel) return;
-    const i = docRef.current.blocks.findIndex((b) => b.id === sel);
-    if (action === 'delete') remove(sel);
-    else if (action === 'duplicate') duplicate(sel);
-    else if (action === 'up') move(i, i - 1);
-    else if (action === 'down') move(i, i + 1);
+    if (action === 'delete') { commit(removeElement(d, sel)); setSelectedId(null); }
+    else if (action === 'duplicate') {
+      if (d.elements.length >= MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return; }
+      const r = duplicateElement(d, sel);
+      if (r.element) { commit(r.doc); setSelectedId(r.element.id); }
+    } else if (['front', 'back', 'up', 'down'].includes(action)) commit(moveLayer(d, sel, action));
+    else if (action.startsWith('align:')) commit(alignElement(d, sel, deviceRef.current, action.slice(6)));
+    else if (action === 'copy-from-desktop') {
+      const el = findElement(d, sel);
+      if (el) commit(patchBox(d, sel, deviceRef.current, scaleBox(boxOf(el, 'desktop'), 'desktop', deviceRef.current, el.t)));
+    }
   }
-
-  const view = useMemo(() => ({
-    select: (blockId) => { setSelectedId(blockId); setPanelOpen(true); },
-    move, duplicate, remove,
-  }), []); // eslint-disable-line react-hooks/exhaustive-deps
 
   const inspectorApi = useMemo(() => ({
     patch: patchSelected,
+    box: (p, key) => { const sel = selectedRef.current; if (sel) setBox(sel, p, key); },
     patchTheme: (p, key) => commit(patchTheme(docRef.current, p), key || 'theme'),
     patchSeo: (p, key) => commit(patchSeo(docRef.current, p), key || 'seo'),
+    patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
+    patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
+    heights: (dv, v) => commit({ ...docRef.current, heights: { ...docRef.current.heights, [dv]: v } }, `height:${dv}`),
+    layout: (how) => {
+      const d = docRef.current; const dv = deviceRef.current;
+      commit(how === 'adapt' ? adaptDevice(d, 'desktop', dv) : stackDevice(d, dv));
+      toast(how === 'adapt' ? 'Layout ajustado a partir do computador.' : 'Elementos organizados em coluna.');
+    },
     act, toast, saveSlug, copyLink,
-  }), [patchSelected, commit, toast, meta?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+    error: (m) => toast(m, 'error'),
+    imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
+    play: () => { setAnimate(true); setReplay((r) => r + 1); },
+    openCatalogSettings: () => setCatalogCfg(true),
+  }), [patchSelected, setBox, commit, toast, meta?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------- atalhos
   useEffect(() => {
@@ -223,12 +307,21 @@ export default function PortfolioEditor() {
       if (tag === 'INPUT' || tag === 'TEXTAREA' || tag === 'SELECT' || e.target?.isContentEditable) return;
       const mod = e.ctrlKey || e.metaKey;
       const key = e.key.toLowerCase();
+      const sel = selectedRef.current;
       if (mod && key === 'z') { e.preventDefault(); (e.shiftKey ? redo : undo)(); }
       else if (mod && key === 'y') { e.preventDefault(); redo(); }
       else if (mod && key === 's') { e.preventDefault(); save(); }
-      else if (mod && key === 'd' && selectedRef.current) { e.preventDefault(); act('duplicate'); }
-      else if (!mod && (key === 'delete' || key === 'backspace') && selectedRef.current) { e.preventDefault(); act('delete'); }
+      else if (mod && key === 'd' && sel) { e.preventDefault(); act('duplicate'); }
+      else if (!mod && (key === 'delete' || key === 'backspace') && sel) { e.preventDefault(); act('delete'); }
       else if (key === 'escape') setSelectedId(null);
+      else if (sel && key.startsWith('arrow')) {
+        const el = findElement(docRef.current, sel);
+        if (!el || el.locked) return;
+        e.preventDefault();
+        const step = e.shiftKey ? 10 : 1;
+        const b = el.box[deviceRef.current];
+        setBox(sel, { x: b.x + (key === 'arrowright' ? step : key === 'arrowleft' ? -step : 0), y: b.y + (key === 'arrowdown' ? step : key === 'arrowup' ? -step : 0) }, 'nudge');
+      }
     };
     window.addEventListener('keydown', onKey);
     return () => window.removeEventListener('keydown', onKey);
@@ -236,63 +329,129 @@ export default function PortfolioEditor() {
 
   if (!doc || !meta) return <div className="splash"><span className="lamp lamp-lg is-pending" /></div>;
 
+  const W = DESIGN_W[device];
+  const toolEl = imageTool ? findElement(doc, imageTool.id) : null;
+  const zoomIdx = ZOOMS.reduce((best, z, i) => (Math.abs(z - zoom) < Math.abs(ZOOMS[best] - zoom) ? i : best), 0);
+
   return (
-    <div className="ce pe">
+    <div className="ce pe pe2">
       <header className="ce-top">
         <button type="button" className="btn btn-ghost btn-sm" onClick={goBack}><EIcon name="back" size={16} /> Portfólio</button>
-        <input
-          className="input input-sm ce-name"
-          value={name}
-          maxLength={120}
-          aria-label="Nome da página"
+        <input className="input input-sm ce-name" value={name} maxLength={120} aria-label="Nome da página"
           onChange={(e) => { setName(e.target.value); touch(); }}
-          onBlur={() => { if (!name.trim()) { setName('Página sem título'); touch(); } }}
-        />
+          onBlur={() => { if (!name.trim()) { setName('Página sem título'); touch(); } }} />
         <span className={`ce-status is-${saveState}`} role="status">{SAVE_LABEL[saveState]}</span>
         <span className={`pe-pub ${meta.published ? 'is-on' : ''}`}>{meta.published ? 'Publicada' : 'Rascunho'}</span>
         <span className="ce-grow" />
-        <div className="seg seg-view pe-device-seg" role="radiogroup" aria-label="Tamanho da tela">
-          <button role="radio" aria-checked={device === 'mobile'} className={device === 'mobile' ? 'is-on' : ''} onClick={() => setDevice('mobile')} title="Ver como no celular"><EIcon name="mobile" size={16} /> <span className="ce-lbl">Celular</span></button>
-          <button role="radio" aria-checked={device === 'desktop'} className={device === 'desktop' ? 'is-on' : ''} onClick={() => setDevice('desktop')} title="Ver como no computador"><EIcon name="desktop" size={16} /> <span className="ce-lbl">Computador</span></button>
+        <div className="seg seg-view pe-device-seg" style={{ '--n': 3 }} role="radiogroup" aria-label="Desenhar para qual tela">
+          {DEVICES.map((d) => (
+            <button key={d.id} role="radio" aria-checked={device === d.id} className={device === d.id ? 'is-on' : ''} onClick={() => { setDevice(d.id); setManualZoom(null); }} title={`Desenhar a versão para ${d.label.toLowerCase()} (${d.w}px)`}>
+              <EIcon name={DEVICE_ICON[d.id]} size={16} /> <span className="ce-lbl">{d.label}</span>
+            </button>
+          ))}
         </div>
+        <span className="pe-zoom" role="group" aria-label="Zoom">
+          <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.max(0, zoomIdx - 1)])} disabled={zoomIdx === 0} title="Diminuir" aria-label="Diminuir zoom"><EIcon name="zoom-out" size={16} /></button>
+          <button type="button" className="pe-zoom-val" onClick={() => setManualZoom(null)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
+          <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.min(ZOOMS.length - 1, zoomIdx + 1)])} disabled={zoomIdx === ZOOMS.length - 1} title="Aumentar" aria-label="Aumentar zoom"><EIcon name="zoom-in" size={16} /></button>
+        </span>
         <button type="button" className="ce-mini" onClick={undo} disabled={!past.current.length} title="Desfazer (Ctrl+Z)" aria-label="Desfazer"><EIcon name="undo" /></button>
         <button type="button" className="ce-mini" onClick={redo} disabled={!future.current.length} title="Refazer (Ctrl+Y)" aria-label="Refazer"><EIcon name="redo" /></button>
-        <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); }} title="Ver a página sem as ferramentas de edição">
-          <Eye /> <span className="ce-lbl">{preview ? 'Voltar a editar' : 'Visualizar'}</span>
+        <button type="button" className={`btn btn-ghost btn-sm ${animate ? 'is-on' : ''}`} aria-pressed={animate} onClick={() => { setAnimate((a) => !a); setReplay((r) => r + 1); }} title="Ver as animações rodando">
+          <EIcon name="play" size={15} /> <span className="ce-lbl">{animate ? 'Parar animações' : 'Testar animações'}</span>
         </button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublished(!meta.published)} disabled={!!busy}>
-          {busy === 'publish' ? 'Aguarde...' : meta.published ? 'Despublicar' : 'Publicar'}
+        <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); setAnimate(false); }} title="Ver a página sem as ferramentas de edição">
+          <EIcon name="eye" size={15} /> <span className="ce-lbl">{preview ? 'Voltar a editar' : 'Visualizar'}</span>
         </button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublished(!meta.published)} disabled={!!busy}>{busy === 'publish' ? 'Aguarde...' : meta.published ? 'Despublicar' : 'Publicar'}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShare(true)}><EIcon name="share" size={16} /> <span className="ce-lbl">Compartilhar</span></button>
         <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saveState === 'saving' || saveState === 'saved'}>Salvar</button>
       </header>
 
+      {converted && <p className="banner banner-amber pe-converted" role="status">Esta página foi criada no editor antigo e foi convertida para o editor livre. Confira como ficou em cada tela (computador, tablet e celular) e ajuste. Ela só é salva quando você salvar ou editar.</p>}
+
       <div className="ce-body">
-        <nav className="ce-palette" aria-label="Adicionar blocos">
-          {PALETTE.map((p) => (
-            <button key={p.t} type="button" className="ce-tool" onClick={() => addBlock(p.t)} title={`Adicionar ${BLOCK_LABELS[p.t].toLowerCase()}`}>
+        <nav className="ce-palette pe-left" aria-label="Elementos">
+          <div className="pe-left-tabs" role="tablist">
+            <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>
+            <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
+          </div>
+          {leftTab === 'add' ? PALETTE.map((p) => (
+            <button key={p.t} type="button" className="ce-tool" draggable onClick={() => addFromPalette(p.t)} onDragStart={(e) => { e.dataTransfer.setData('text/pv-type', p.t); e.dataTransfer.effectAllowed = 'copy'; }}
+              title={`Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
               <EIcon name={p.icon} size={20} />
-              <span>{BLOCK_LABELS[p.t]}</span>
+              <span>{ELEMENT_LABELS[p.t]}</span>
             </button>
-          ))}
+          )) : (
+            <ul className="pe-layers">
+              {[...doc.elements].reverse().map((el) => {
+                const b = el.box[device];
+                return (
+                  <li key={el.id} className={`${selectedId === el.id ? 'is-on' : ''}${b.hide ? ' is-off' : ''}`}>
+                    <button type="button" className="pe-layer-name" onClick={() => { setSelectedId(el.id); setPanelOpen(true); }}>
+                      {el.name || (el.t === 'text' ? (el.text || '').slice(0, 22) || 'Texto' : el.t === 'button' ? el.label : ELEMENT_LABELS[el.t])}
+                      <small>{ELEMENT_LABELS[el.t]}</small>
+                    </button>
+                    <button type="button" className="ce-mini" onClick={() => commit(patchBox(docRef.current, el.id, device, { hide: !b.hide }))} title={b.hide ? 'Mostrar neste dispositivo' : 'Esconder neste dispositivo'} aria-label="Mostrar ou esconder"><EIcon name={b.hide ? 'eye-off' : 'eye'} size={14} /></button>
+                    <button type="button" className="ce-mini" onClick={() => commit(patchElement(docRef.current, el.id, { locked: !el.locked }))} title={el.locked ? 'Destravar' : 'Travar'} aria-label="Travar ou destravar"><EIcon name={el.locked ? 'lock' : 'unlock'} size={14} /></button>
+                  </li>
+                );
+              })}
+              {!doc.elements.length && <li className="muted small pe-layers-empty">Nenhum elemento ainda.</li>}
+            </ul>
+          )}
         </nav>
 
-        <main className="ce-stage pe-stage" onClick={() => setSelectedId(null)}>
-          <div className={`pe-device is-${device}`}>
-            <PortfolioView doc={doc} editing={!preview} selectedId={selectedId} on={view} />
+        <main className="ce-stage pe-stage2" ref={stageRef}>
+          <div className="pe-frame" style={{ width: W * zoom, ...pvVars(doc.theme) }}>
+            <PageBackground theme={doc.theme} />
+            {preview ? (
+              <>
+                <ClipDefs />
+                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} />
+              </>
+            ) : (
+              <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
+                onSelect={(sid) => { setSelectedId(sid); if (sid) setPanelOpen(true); }}
+                onBox={setBox} onInteract={setInteracting}
+                onDropType={(t, x, y) => addNew(t, undefined, { x: Math.round(x - 100), y: Math.round(y - 30) })}
+                onDropFile={(f, x, y) => imageFromFile(f, { x, y })}
+                onEdit={(eid) => {
+                  const el = findElement(docRef.current, eid);
+                  if (!el) return;
+                  setPanelOpen(true);
+                  if (el.t === 'text') setTimeout(() => document.getElementById('text-content')?.focus(), 60);
+                  else if (el.t === 'image') { if (el.src) setImageTool({ id: eid, tool: 'crop' }); else fileRef.current?.click(); }
+                }} />
+            )}
+            <PageCredit theme={doc.theme} />
           </div>
+          {!doc.elements.length && !preview && <p className="pe-empty-hint">Comece adicionando elementos pela barra à esquerda: clique ou arraste para a página. Também dá para soltar uma imagem do seu computador aqui.</p>}
         </main>
 
         <aside className={`ce-side ${panelOpen ? 'is-open' : ''}`} aria-label="Propriedades">
           <button type="button" className="ce-side-toggle" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}>
-            {panelOpen ? 'Fechar propriedades' : selected ? `Propriedades: ${BLOCK_LABELS[selected.t]}` : 'Propriedades da página'}
+            {panelOpen ? 'Fechar propriedades' : selected ? `Propriedades: ${ELEMENT_LABELS[selected.t]}` : 'Propriedades da página'}
           </button>
-          <PortfolioInspector block={selected} doc={doc} meta={meta} index={selectedIndex} count={doc.blocks.length} api={inspectorApi} />
+          {selected
+            ? <ElementInspector el={selected} device={device} api={inspectorApi} products={products} />
+            : <PageInspector doc={doc} device={device} meta={meta} api={inspectorApi} categories={categories} />}
         </aside>
       </div>
 
-      {share && <ShareModal name={name} path={meta.path} customUrl={meta.customUrl} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
+      <input ref={fileRef} type="file" accept={IMAGE_ACCEPT} hidden onChange={async (e) => {
+        const f = e.target.files?.[0]; e.target.value = '';
+        if (!f) return;
+        const sel = selectedRef.current && findElement(docRef.current, selectedRef.current);
+        if (sel?.t === 'image' && !sel.src) { try { patchSelected({ src: (await fitImage(f, 1600)).src }, 'src'); } catch (er) { toast(er.message, 'error'); } } else imageFromFile(f);
+      }} />
 
+      {toolEl && toolEl.src && (
+        <ImageEditor src={toolEl.src} initial={imageTool.tool} onClose={() => setImageTool(null)}
+          onApply={(src) => { commit(patchElement(docRef.current, toolEl.id, { src, zoom: 1, px: 50, py: 50 })); toast('Imagem atualizada.'); }} />
+      )}
+      {catalogCfg && <CatalogSettings onClose={() => setCatalogCfg(false)} />}
+      {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
       {leave && (
         <Modal title="Não foi possível salvar" onClose={() => setLeave(false)}
           footer={<><button className="btn btn-ghost" onClick={() => setLeave(false)}>Continuar editando</button><button className="btn btn-danger" onClick={() => { version.current = savedVersion.current; nav('/portfolio'); }}>Sair sem salvar</button></>}>
@@ -302,9 +461,3 @@ export default function PortfolioEditor() {
     </div>
   );
 }
-
-const Eye = () => (
-  <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8" strokeLinecap="round" strokeLinejoin="round" aria-hidden="true" focusable="false">
-    <path d="M2 12s3.6-7 10-7 10 7 10 7-3.6 7-10 7S2 12 2 12z" /><path d="M12 15a3 3 0 1 0 0-6 3 3 0 0 0 0 6z" />
-  </svg>
-);

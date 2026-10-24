@@ -9,7 +9,7 @@ import { config, ROOT, evolutionConfigured, infinitepayConfigured } from './conf
 import { prisma, connectWithRetry } from './prisma.js';
 import { AppError, DAY } from './utils/helpers.js';
 import { auth, pinGuard, requireAccess, requireAdmin } from './middleware/auth.js';
-import { ensurePlans } from './plans.js';
+import { ensurePlans, topPlanId } from './plans.js';
 import authRoutes from './routes/auth.js';
 import instanceRoutes, { instanceRouter } from './routes/instances.js';
 import auditRoutes from './routes/audit.js';
@@ -22,9 +22,11 @@ import messageRoutes from './routes/messages.js';
 import contractRoutes from './routes/contracts.js';
 import portfolioRoutes from './routes/portfolios.js';
 import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/public-portfolio.js';
+import productRoutes from './routes/products.js';
+import catalogRoutes from './routes/catalog.js';
+import publicCatalogRoutes, { ordersWebhook } from './routes/public-catalog.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
-import { customDomainMiddleware } from './services/domains.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 import { startMaintenance, stopMaintenance } from './services/maintenance.js';
@@ -60,18 +62,31 @@ async function seedAdmin() {
   await prisma.user.create({
     data: {
       kind: document.length === 14 ? 'PJ' : 'PF', name, document: doc, email,
-      passwordHash: bcrypt.hashSync(password, 10), role: 'admin', plan: 'ouro', trialEndsAt: new Date(Date.now() + DAY),
+      passwordHash: bcrypt.hashSync(password, 10), role: 'admin', plan: topPlanId(), trialEndsAt: new Date(Date.now() + DAY),
     },
   });
   console.log(`[admin] Conta admin criada: ${email}`);
 }
 try {
-  await seedAdmin();
   await ensurePlans(); // valores e limites dos planos vêm do banco (o .env só define os iniciais)
+  await seedAdmin();
 } catch (e) {
   console.error('[banco] falha ao preparar o banco. As tabelas existem? Rode: npm run db:deploy\n', e.message);
   process.exit(1);
 }
+
+// CSP das páginas públicas que usam pixel de rastreamento (tráfego pago). As demais telas continuam com a CSP restrita.
+const PIXEL_CSP = [
+  "default-src 'self'",
+  "script-src 'self' https://connect.facebook.net https://www.googletagmanager.com https://analytics.tiktok.com",
+  "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
+  "font-src 'self' https://fonts.gstatic.com",
+  "img-src 'self' data: https://www.facebook.com https://*.facebook.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com https://*.google.com https://*.doubleclick.net https://analytics.tiktok.com",
+  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
+  "media-src 'self' https:",
+  "connect-src 'self' https://www.facebook.com https://*.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.doubleclick.net https://analytics.tiktok.com https://*.tiktok.com",
+  "frame-ancestors 'none'",
+].join('; ');
 
 const app = express();
 app.disable('x-powered-by');
@@ -95,22 +110,27 @@ app.use(
     },
   })
 );
-app.use(customDomainMiddleware);
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
-const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p.startsWith('/api/webhooks/evolution/');
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 
 const limiter = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde um pouco e tente de novo.' } });
-app.use('/api', limiter(600, 60 * 1000));
+app.use('/api', limiter(config.rateLimitPerMinute, 60 * 1000));
 app.use('/api/auth/login', limiter(20, 15 * 60 * 1000));
 app.use('/api/auth/register', limiter(10, 60 * 60 * 1000));
 app.use('/api/auth/forgot', limiter(8, 15 * 60 * 1000)); // pedir código de recuperação
 app.use('/api/auth/reset', limiter(15, 15 * 60 * 1000)); // digitar o código e a nova senha
 app.use('/api/auth/pin', limiter(60, 15 * 60 * 1000)); // PIN: verificar, criar, esqueci
 app.use('/api/auth/profile', limiter(20, 15 * 60 * 1000)); // trocar e-mail/senha pede a senha atual
+
+// Pedidos do catálogo (público): até 60 tentativas e 12 pedidos concluídos por IP a cada 15 minutos (tentativas com erro de preenchimento não gastam os 12).
+app.use('/api/webhooks/orders', limiter(60, 15 * 60 * 1000));
+app.use('/api/webhooks/orders', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, skipFailedRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos pedidos em pouco tempo. Aguarde um pouco e tente de novo.' } }));
+app.use('/api/public/catalog/shipping', limiter(40, 10 * 60 * 1000)); // simulação de frete (chama serviços externos)
+app.use('/api/public/cep', limiter(60, 10 * 60 * 1000));
 
 app.get('/api/health', async (_req, res) => {
   try {
@@ -121,6 +141,7 @@ app.get('/api/health', async (_req, res) => {
   }
 });
 app.use('/api', authRoutes); // /plans e /auth/*
+app.use('/api/webhooks/orders', ordersWebhook); // pedidos do catálogo: sem login
 app.use('/api/webhooks', webhookRouter);
 app.use('/api/webhooks', auditWebhookRoutes);
 app.use('/api/billing', auth, billingRouter);
@@ -135,31 +156,27 @@ app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
 app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '12mb' }), portfolioRoutes);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
+app.use('/api/public', publicCatalogRoutes);
+app.use('/api/products', auth, requireAccess, express.json({ limit: '8mb' }), productRoutes);
+app.use('/api/catalog', auth, requireAccess, pinGuard('pedidos'), catalogRoutes);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 
 // Em produção (após `npm run build`) o próprio servidor entrega o front.
 const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
-  const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
-  // Domínio próprio: "/" e "/<página>" entregam o HTML do portfólio antes do index.html genérico.
-  app.use(async (req, res, next) => {
-    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
-    try {
-      const meta = await portfolioShareMeta(req);
-      return res.status(meta ? 200 : 404).type('html').send(injectMeta(shell, meta, req.customDomain.slug));
-    } catch (e) {
-      console.error('[portfolio] domínio próprio:', e.message);
-      return next(e);
-    }
-  });
   app.use(express.static(dist));
+  const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   app.use(async (req, res) => {
     // Endereço de uma página do portfólio: entrega o HTML já com título, descrição e imagem do link (WhatsApp, redes sociais).
     if (req.method === 'GET') {
       try {
         const meta = await portfolioShareMeta(req);
-        if (meta) return res.type('html').send(injectMeta(shell, meta));
+        if (meta) {
+          // Só quando a página tem pixel (Meta, Google, TikTok): libera os endereços oficiais deles nesta página pública.
+          if (meta.pixel) res.set('Content-Security-Policy', PIXEL_CSP);
+          return res.type('html').send(injectMeta(shell, meta));
+        }
       } catch (e) {
         console.error('[portfolio] pré-visualização do link:', e.message);
       }

@@ -22,12 +22,6 @@ enum Role {
   admin
 }
 
-enum Plan {
-  bronze
-  prata
-  ouro
-}
-
 enum PaymentStatus {
   pending
   paid
@@ -76,7 +70,7 @@ model User {
   phone        String    @default("")
   passwordHash String    @map("password_hash")
   role         Role      @default(usuario)
-  plan         Plan      @default(bronze)
+  plan         String    @default("bronze") // id de um plano da tabela plan_settings
   trialEndsAt  DateTime  @map("trial_ends_at")
   accessUntil  DateTime? @map("access_until")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -85,9 +79,6 @@ model User {
   lastActivity   String?   @map("last_activity")
   // Endereço público do portfólio (dominio/<portfolioSlug>), feito do nome/razão social. Criado na 1ª página.
   portfolioSlug  String?   @unique @map("portfolio_slug")
-  // Domínio próprio do portfólio (ex.: usuario.com.br). Só atende depois de verificado (DNS apontando para o servidor).
-  customDomain           String?   @unique @map("custom_domain")
-  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
   // Código PIN opcional (guardado com hash) e as abas do menu que ele protege (chaves em server/utils/pin.js).
   pinHash        String?   @map("pin_hash")
   pinTabs        String[]  @default([]) @map("pin_tabs")
@@ -104,6 +95,9 @@ model User {
   auditLabels     AuditLabel[]
   accessEvents    AccessEvent[]
   verificationCodes VerificationCode[]
+  products        Product[]
+  orders          Order[]
+  catalogSettings CatalogSettings?
 
   @@map("users")
 }
@@ -143,7 +137,7 @@ model Payment {
   id             Int           @id @default(autoincrement())
   userId         Int           @map("user_id")
   orderNsu       String        @unique @map("order_nsu")
-  plan           Plan
+  plan           String
   amountCents    Int           @map("amount_cents")
   // Período contratado (mensal, semestral ou anual) e quantos dias de acesso ele libera.
   period         String        @default("mensal")
@@ -305,6 +299,7 @@ model Portfolio {
   slug      String
   published Boolean  @default(false)
   isMain    Boolean  @default(false) @map("is_main")
+  kind      String   @default("site") // 'site' (página livre) ou 'catalog' (catálogo digital)
   data      Json
   createdAt DateTime @default(now()) @map("created_at")
   updatedAt DateTime @updatedAt @map("updated_at")
@@ -459,12 +454,16 @@ model AccessEvent {
 // Uma linha por plano (bronze, prata, ouro). `priceCents` é o preço MENSAL; semestral e anual saem dele (ver server/plans.js).
 // Os valores iniciais vêm do .env (PLAN_*_PRICE) e dos limites padrão, só na primeira execução.
 model PlanSetting {
-  plan           Plan     @id
+  plan           String   @id // identificador do plano (ex.: bronze, prata, ouro, ou um criado pelo admin)
+  name           String   @default("")
+  color          String   @default("")
+  sortOrder      Int      @default(0) @map("sort_order")
   priceCents     Int      @map("price_cents")
   instances      Int
   auditInstances Int      @map("audit_instances")
   contracts      Int
   portfolios     Int
+  catalogProducts Int     @default(0) @map("catalog_products") // 0 = sem catálogo digital nem produtos
   auditSend      Boolean  @default(false) @map("audit_send")
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
@@ -486,4 +485,77 @@ model VerificationCode {
 
   @@index([userId, purpose])
   @@map("verification_codes")
+}
+
+// ---------- Produtos / serviços e catálogo digital ----------
+// Cadastro usado no portfólio e no catálogo digital. As imagens ficam em outra tabela (bytes) e são servidas por endereço próprio.
+model Product {
+  id          Int      @id @default(autoincrement())
+  userId      Int      @map("user_id")
+  kind        String   @default("produto") // 'produto' | 'servico'
+  name        String
+  category    String   @default("")
+  description String   @default("")
+  priceCents  Int      @default(0) @map("price_cents")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  images ProductImage[]
+
+  @@index([userId, category])
+  @@map("products")
+}
+
+// Uma imagem por produto; com variações, de 2 a 4 imagens (cada uma com o nome da variação e, se quiser, preço próprio).
+model ProductImage {
+  id         Int    @id @default(autoincrement())
+  productId  Int    @map("product_id")
+  position   Int    @default(0)
+  label      String @default("")
+  priceCents Int?   @map("price_cents")
+  mime       String
+  data       Bytes
+
+  product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@index([productId, position])
+  @@map("product_images")
+}
+
+// Configuração do catálogo do usuário (entregas e frete). O token do SuperFrete fica criptografado e NUNCA vai para a página pública.
+model CatalogSettings {
+  userId     Int      @id @map("user_id")
+  config     Json
+  superfrete String? // token criptografado (utils/secret.js)
+  updatedAt  DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("catalog_settings")
+}
+
+// Pedido feito no catálogo. Apagado sozinho depois de 10 dias (services/maintenance.js) ou quando o usuário excluir.
+model Order {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @map("user_id")
+  code          String
+  customerName  String   @map("customer_name")
+  customerPhone String   @map("customer_phone")
+  deliveryType  String   @map("delivery_type") // 'excursao' | 'motoboy' | 'correios'
+  delivery      Json
+  items         Json
+  subtotalCents Int      @map("subtotal_cents")
+  shippingCents Int      @map("shipping_cents")
+  totalCents    Int      @map("total_cents")
+  notes         String   @default("")
+  status        String   @default("novo") // 'novo' | 'atendido'
+  createdAt     DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@index([createdAt])
+  @@map("orders")
 }

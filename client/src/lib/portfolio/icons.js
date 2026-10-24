@@ -1,0 +1,73 @@
+// Biblioteca de ícones do portfólio (redes sociais, contato, comércio e geral). Desenhados em 24x24.
+// Cada ícone: { s: [traços], f: [preenchidos] } com caminhos SVG. Os logotipos das redes são versões simplificadas
+// em traço: para o logotipo oficial exato, o usuário pode usar uma imagem e colocar link nela.
+
+const circle = (cx, cy, r) => `M${cx - r} ${cy}a${r} ${r} 0 1 0 ${2 * r} 0a${r} ${r} 0 1 0 ${-2 * r} 0`;
+const rect = (x, y, w, h, r = 0) => (r
+  ? `M${x + r} ${y}h${w - 2 * r}a${r} ${r} 0 0 1 ${r} ${r}v${h - 2 * r}a${r} ${r} 0 0 1 ${-r} ${r}h${-(w - 2 * r)}a${r} ${r} 0 0 1 ${-r} ${-r}v${-(h - 2 * r)}a${r} ${r} 0 0 1 ${r} ${-r}z`
+  : `M${x} ${y}h${w}v${h}h${-w}z`);
+const poly = (pts) => `M${pts.split(' ').map((p) => p.replace(',', ' ')).join('L')}z`;
+
+export const ICONS = {
+  // ---- Redes sociais
+  whatsapp: { g: 'social', label: 'WhatsApp', s: ['M21 11.5a8.38 8.38 0 0 1-.9 3.8 8.5 8.5 0 0 1-7.6 4.7 8.38 8.38 0 0 1-3.8-.9L3 21l1.9-5.7a8.38 8.38 0 0 1-.9-3.8 8.5 8.5 0 0 1 4.7-7.6 8.38 8.38 0 0 1 3.8-.9h.5a8.48 8.48 0 0 1 8 8v.5z', 'M9.2 8.6c-.3.6-.2 1.6.5 2.8s1.7 2.1 2.8 2.6c.9.4 1.6.2 2-.4l.4-.7-1.7-.9-.7.6c-.6-.2-1.5-1-1.8-1.7l.6-.7-.8-1.8-.8.2z'] },
+  instagram: { g: 'social', label: 'Instagram', s: [rect(2, 2, 20, 20, 5), 'M16 11.37A4 4 0 1 1 12.63 8 4 4 0 0 1 16 11.37z', 'M17.5 6.5h.01'] },
+  facebook: { g: 'social', label: 'Facebook', s: ['M18 2h-3a5 5 0 0 0-5 5v3H7v4h3v8h4v-8h3l1-4h-4V7a1 1 0 0 1 1-1h3z'] },
+  youtube: { g: 'social', label: 'YouTube', s: ['M22.54 6.42a2.78 2.78 0 0 0-1.94-2C18.88 4 12 4 12 4s-6.88 0-8.6.46a2.78 2.78 0 0 0-1.94 2A29 29 0 0 0 1 11.75a29 29 0 0 0 .46 5.33A2.78 2.78 0 0 0 3.4 19c1.72.46 8.6.46 8.6.46s6.88 0 8.6-.46a2.78 2.78 0 0 0 1.94-2 29 29 0 0 0 .46-5.25 29 29 0 0 0-.46-5.33z', poly('9.75,15.02 15.5,11.75 9.75,8.48')] },
+  tiktok: { g: 'social', label: 'TikTok', s: ['M9 12a4 4 0 1 0 4 4V4a5 5 0 0 0 5 5'] },
+  linkedin: { g: 'social', label: 'LinkedIn', s: ['M16 8a6 6 0 0 1 6 6v7h-4v-7a2 2 0 0 0-2-2 2 2 0 0 0-2 2v7h-4v-7a6 6 0 0 1 6-6z', rect(2, 9, 4, 12), circle(4, 4, 2)] },
+  'x-twitter': { g: 'social', label: 'X (Twitter)', f: ['M3.5 3h4.4l4.4 6.1L17.6 3h2.6l-6.8 7.9L21 21h-4.4l-4.7-6.5L6.3 21H3.7l7.2-8.3L3.5 3zm3.4 1.6l10.6 14.8h1.2L8.1 4.6H6.9z'] },
+  telegram: { g: 'social', label: 'Telegram', s: ['M22 2L11 13', poly('22,2 15,22 11,13 2,9')] },
+  pinterest: { g: 'social', label: 'Pinterest', s: [circle(12, 12, 10), 'M10.2 21l1.9-8.2', 'M9.6 14.2C8.4 11.8 9.2 7.5 12.8 7.5c2.6 0 3.7 2 3.2 4.1-.5 2.1-2.2 3.2-3.8 2.5'] },
+  spotify: { g: 'social', label: 'Spotify', s: [circle(12, 12, 10), 'M7 9.5c3.5-1 7.5-.7 10.5 1', 'M7.6 12.7c3-.8 6.1-.5 8.7 1', 'M8.2 15.7c2.4-.6 4.7-.4 6.8.8'] },
+  threads: { g: 'social', label: 'Threads', s: ['M17.5 9.5C17 6.6 15 5 12 5 8.4 5 6 7.7 6 12s2.4 7 6 7c2.9 0 5-1.6 5-3.8 0-2.3-2.2-3.4-5-3.4-1.9 0-3 .8-3 1.9 0 1 1 1.7 2.4 1.7 2.3 0 3.4-1.6 3.4-4.5'] },
+  // ---- Contato
+  phone: { g: 'contact', label: 'Telefone', s: ['M22 16.92v3a2 2 0 0 1-2.18 2 19.79 19.79 0 0 1-8.63-3.07 19.5 19.5 0 0 1-6-6 19.79 19.79 0 0 1-3.07-8.67A2 2 0 0 1 4.11 2h3a2 2 0 0 1 2 1.72 12.84 12.84 0 0 0 .7 2.81 2 2 0 0 1-.45 2.11L8.09 9.91a16 16 0 0 0 6 6l1.27-1.27a2 2 0 0 1 2.11-.45 12.84 12.84 0 0 0 2.81.7A2 2 0 0 1 22 16.92z'] },
+  mail: { g: 'contact', label: 'E-mail', s: ['M4 4h16a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z', 'M22 6l-10 7L2 6'] },
+  message: { g: 'contact', label: 'Mensagem', s: ['M21 15a2 2 0 0 1-2 2H7l-4 4V5a2 2 0 0 1 2-2h14a2 2 0 0 1 2 2z'] },
+  'map-pin': { g: 'contact', label: 'Localização', s: ['M21 10c0 7-9 13-9 13s-9-6-9-13a9 9 0 0 1 18 0z', circle(12, 10, 3)] },
+  globe: { g: 'contact', label: 'Site', s: [circle(12, 12, 10), 'M2 12h20', 'M12 2a15.3 15.3 0 0 1 4 10 15.3 15.3 0 0 1-4 10 15.3 15.3 0 0 1-4-10 15.3 15.3 0 0 1 4-10z'] },
+  link: { g: 'contact', label: 'Link', s: ['M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71', 'M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71'] },
+  calendar: { g: 'contact', label: 'Agenda', s: [rect(3, 4, 18, 18, 2), 'M16 2v4', 'M8 2v4', 'M3 10h18'] },
+  clock: { g: 'contact', label: 'Horário', s: [circle(12, 12, 10), 'M12 6v6l4 2'] },
+  // ---- Comércio
+  cart: { g: 'shop', label: 'Carrinho', s: ['M1 1h4l2.68 13.39a2 2 0 0 0 2 1.61h9.72a2 2 0 0 0 2-1.61L23 6H6', circle(9, 21, 1), circle(20, 21, 1)] },
+  bag: { g: 'shop', label: 'Sacola', s: ['M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z', 'M3 6h18', 'M16 10a4 4 0 0 1-8 0'] },
+  tag: { g: 'shop', label: 'Etiqueta', s: ['M20.59 13.41l-7.17 7.17a2 2 0 0 1-2.83 0L2 12V2h10l8.59 8.59a2 2 0 0 1 0 2.82z', 'M7 7h.01'] },
+  percent: { g: 'shop', label: 'Desconto', s: ['M19 5L5 19', circle(6.5, 6.5, 2.5), circle(17.5, 17.5, 2.5)] },
+  gift: { g: 'shop', label: 'Presente', s: ['M20 12v10H4V12', rect(2, 7, 20, 5), 'M12 22V7', 'M12 7H7.5a2.5 2.5 0 0 1 0-5C11 2 12 7 12 7z', 'M12 7h4.5a2.5 2.5 0 0 0 0-5C13 2 12 7 12 7z'] },
+  truck: { g: 'shop', label: 'Entrega', s: [rect(1, 3, 15, 13), 'M16 8h4l3 3v5h-7V8z', circle(5.5, 18.5, 2.5), circle(18.5, 18.5, 2.5)] },
+  card: { g: 'shop', label: 'Cartão', s: [rect(1, 4, 22, 16, 2), 'M1 10h22'] },
+  dollar: { g: 'shop', label: 'Valor', s: ['M12 1v22', 'M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'] },
+  store: { g: 'shop', label: 'Loja', s: ['M3 9l1.5-5h15L21 9', 'M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0V9z', 'M5 14v7h14v-7', 'M10 21v-5h4v5'] },
+  coffee: { g: 'shop', label: 'Café', s: ['M18 8h1a4 4 0 0 1 0 8h-1', 'M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z', 'M6 1v3', 'M10 1v3', 'M14 1v3'] },
+  // ---- Geral
+  star: { g: 'general', label: 'Estrela', s: [poly('12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26')] },
+  heart: { g: 'general', label: 'Coração', s: ['M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'] },
+  check: { g: 'general', label: 'Certo', s: ['M20 6L9 17l-5-5'] },
+  'check-circle': { g: 'general', label: 'Confirmado', s: ['M22 11.08V12a10 10 0 1 1-5.93-9.14', 'M22 4L12 14.01l-3-3'] },
+  'arrow-right': { g: 'general', label: 'Seta', s: ['M5 12h14', 'M12 5l7 7-7 7'] },
+  'arrow-up-right': { g: 'general', label: 'Seta diagonal', s: ['M7 17L17 7', 'M7 7h10v10'] },
+  'chevron-down': { g: 'general', label: 'Para baixo', s: ['M6 9l6 6 6-6'] },
+  play: { g: 'general', label: 'Reproduzir', s: [poly('5,3 19,12 5,21')] },
+  download: { g: 'general', label: 'Baixar', s: ['M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4', 'M7 10l5 5 5-5', 'M12 15V3'] },
+  search: { g: 'general', label: 'Buscar', s: [circle(11, 11, 8), 'M21 21l-4.35-4.35'] },
+  user: { g: 'general', label: 'Pessoa', s: ['M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2', circle(12, 7, 4)] },
+  users: { g: 'general', label: 'Equipe', s: ['M17 21v-2a4 4 0 0 0-4-4H5a4 4 0 0 0-4 4v2', circle(9, 7, 4), 'M23 21v-2a4 4 0 0 0-3-3.87', 'M16 3.13a4 4 0 0 1 0 7.75'] },
+  home: { g: 'general', label: 'Início', s: ['M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z', 'M9 22V12h6v10'] },
+  award: { g: 'general', label: 'Prêmio', s: [circle(12, 8, 7), 'M8.21 13.89L7 23l5-3 5 3-1.21-9.12'] },
+  shield: { g: 'general', label: 'Segurança', s: ['M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10z'] },
+  thumbs: { g: 'general', label: 'Curtir', s: ['M14 9V5a3 3 0 0 0-3-3l-4 9v11h11.28a2 2 0 0 0 2-1.7l1.38-9a2 2 0 0 0-2-2.3H14z', 'M7 22H4a2 2 0 0 1-2-2v-7a2 2 0 0 1 2-2h3'] },
+  zap: { g: 'general', label: 'Raio', s: [poly('13,2 3,14 12,14 11,22 21,10 12,10')] },
+  sun: { g: 'general', label: 'Sol', s: [circle(12, 12, 5), 'M12 1v2', 'M12 21v2', 'M4.22 4.22l1.42 1.42', 'M18.36 18.36l1.42 1.42', 'M1 12h2', 'M21 12h2', 'M4.22 19.78l1.42-1.42', 'M18.36 5.64l1.42-1.42'] },
+  moon: { g: 'general', label: 'Lua', s: ['M21 12.79A9 9 0 1 1 11.21 3 7 7 0 0 0 21 12.79z'] },
+  camera: { g: 'general', label: 'Câmera', s: ['M23 19a2 2 0 0 1-2 2H3a2 2 0 0 1-2-2V8a2 2 0 0 1 2-2h4l2-3h6l2 3h4a2 2 0 0 1 2 2z', circle(12, 13, 4)] },
+  music: { g: 'general', label: 'Música', s: ['M9 18V5l12-2v13', circle(6, 18, 3), circle(18, 16, 3)] },
+  smile: { g: 'general', label: 'Sorriso', s: [circle(12, 12, 10), 'M8 14s1.5 2 4 2 4-2 4-2', 'M9 9h.01', 'M15 9h.01'] },
+  briefcase: { g: 'general', label: 'Trabalho', s: [rect(2, 7, 20, 14, 2), 'M16 21V5a2 2 0 0 0-2-2h-4a2 2 0 0 0-2 2v16'] },
+  book: { g: 'general', label: 'Livro', s: ['M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z', 'M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z'] },
+  bell: { g: 'general', label: 'Aviso', s: ['M18 8A6 6 0 0 0 6 8c0 7-3 9-3 9h18s-3-2-3-9', 'M13.73 21a2 2 0 0 1-3.46 0'] },
+  tool: { g: 'general', label: 'Ferramenta', s: ['M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'] },
+  plus: { g: 'general', label: 'Mais', s: ['M12 5v14', 'M5 12h14'] },
+  x: { g: 'general', label: 'Fechar', s: ['M18 6L6 18', 'M6 6l12 12'] },
+};

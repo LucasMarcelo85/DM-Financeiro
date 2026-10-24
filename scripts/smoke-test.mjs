@@ -70,10 +70,46 @@ const graph = http.createServer(async (req, res) => {
   if (m[1] === '999000111') return json(res, 400, { error: { code: 100, message: 'Unsupported get request.' } });
   return json(res, 200, { display_phone_number: '+55 85 99999-0000', verified_name: 'Loja Teste' });
 });
+// Serviços de CEP, mapa, rota e frete falsos (o catálogo usa ViaCEP, Nominatim, OSRM e SuperFrete de verdade em produção).
+const geoCalls = { cep: 0, geocode: 0, route: 0, quote: 0, lastQuote: null };
+const SF_TOKEN = 'sf-token-de-teste-0123456789';
+const geoFake = http.createServer(async (req, res) => {
+  const url = new URL(req.url, 'http://x');
+  if (url.pathname.startsWith('/ws/')) { // ViaCEP
+    geoCalls.cep++;
+    const cep = url.pathname.split('/')[2];
+    if (cep === '99999999') return json(res, 200, { erro: 'true' });
+    return json(res, 200, { cep, logradouro: cep === '60000000' ? 'Rua Destino' : 'Rua Origem', bairro: 'Centro', localidade: 'Fortaleza', uf: 'CE' });
+  }
+  if (url.pathname === '/search') { // Nominatim
+    geoCalls.geocode++;
+    const q = url.searchParams.get('q') || '';
+    if (/Inexistente/.test(q)) return json(res, 200, []);
+    const o = /Origem/.test(q);
+    return json(res, 200, [{ lat: o ? '-3.7300' : '-3.7900', lon: o ? '-38.5200' : '-38.5500' }]);
+  }
+  if (url.pathname.startsWith('/route/v1/driving/')) { // OSRM
+    geoCalls.route++;
+    return json(res, 200, { code: 'Ok', routes: [{ distance: 7350 }] }); // 7,35 km
+  }
+  if (url.pathname === '/api/v0/calculator' && req.method === 'POST') { // SuperFrete
+    const b = await readBody(req);
+    geoCalls.quote++; geoCalls.lastQuote = { auth: req.headers.authorization, body: b };
+    if (req.headers.authorization !== `Bearer ${SF_TOKEN}`) return json(res, 401, { message: 'Unauthenticated' });
+    if (b.to?.postal_code === '11111111') return json(res, 422, { message: 'CEP inválido' });
+    return json(res, 200, [
+      { id: 2, name: 'SEDEX', price: 48.9, delivery_time: 3, delivery_range: { min: 2, max: 3 }, company: { name: 'Correios' } },
+      { id: 1, name: 'PAC', price: '27,40', delivery_time: 7, delivery_range: { min: 5, max: 7 }, company: { name: 'Correios' } },
+      { id: 17, name: 'Mini Envios', error: 'Fora das dimensões' },
+    ]);
+  }
+  return json(res, 404, {});
+});
 const listen = (s) => new Promise((r) => s.listen(0, '127.0.0.1', () => r(s.address().port)));
 const evoPort = await listen(evo);
 const ipPort = await listen(ip);
 const graphPort = await listen(graph);
+const geoPort = await listen(geoFake);
 
 // ---------- banco temporário ----------
 const dbName = `dm_smoke_${Date.now()}`;
@@ -93,7 +129,7 @@ const server = spawn('node', ['server/index.js'], {
   cwd: root,
   env: { ...process.env, PORT: String(port), DATABASE_URL: dbUrl.toString(), JWT_SECRET: 'x'.repeat(40), APP_URL: 'http://localhost:5173',
     EVOLUTION_API_URL: `http://127.0.0.1:${evoPort}`, EVOLUTION_API_KEY: 'k', EVOLUTION_MESSAGE_DELAY_MS: '50',
-    META_GRAPH_URL: `http://127.0.0.1:${graphPort}`, AUDIT_SYNC_SECONDS: '1', AUDIT_SYNC_IDLE_SECONDS: '2', ENCRYPTION_KEY: 'chave-de-teste-para-tokens', INFINITEPAY_HANDLE: 'loja', INFINITEPAY_API_URL: `http://127.0.0.1:${ipPort}`, SCHEDULER_INTERVAL_SECONDS: '1',
+    META_GRAPH_URL: `http://127.0.0.1:${graphPort}`, AUDIT_SYNC_SECONDS: '1', AUDIT_SYNC_IDLE_SECONDS: '2', ENCRYPTION_KEY: 'chave-de-teste-para-tokens', RATE_LIMIT_PER_MINUTE: '100000', VIACEP_URL: `http://127.0.0.1:${geoPort}`, NOMINATIM_URL: `http://127.0.0.1:${geoPort}`, OSRM_URL: `http://127.0.0.1:${geoPort}`, SUPERFRETE_URL: `http://127.0.0.1:${geoPort}`, SUPERFRETE_SANDBOX_URL: `http://127.0.0.1:${geoPort}`, INFINITEPAY_HANDLE: 'loja', INFINITEPAY_API_URL: `http://127.0.0.1:${ipPort}`, SCHEDULER_INTERVAL_SECONDS: '1',
     ADMIN_EMAIL: 'admin@t.com', ADMIN_PASSWORD: 'admin12345', APP_TIMEZONE: 'America/Sao_Paulo' },
   stdio: ['ignore', 'pipe', 'inherit'],
 });
@@ -420,7 +456,7 @@ try {
 
   // Segunda página (prata = 2) e limites por plano
   r = await u('POST', '/portfolios', { name: 'Segunda' }); assert.equal(r.status, 201); const pg2 = r.body.portfolio;
-  assert.equal(pg2.isMain, false); assert.equal(pg2.path, '/maria-teste/segunda'); assert.deepEqual(pg2.data.blocks, []);
+  assert.equal(pg2.isMain, false); assert.equal(pg2.path, '/maria-teste/segunda'); assert.equal(pg2.data.v, 2); assert.deepEqual(pg2.data.elements, []); assert.equal(pg2.kind, 'site');
   r = await u('POST', '/portfolios', { name: 'Terceira' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED');
   r = await u('POST', `/portfolios/${pg1.id}/duplicate`); assert.equal(r.status, 403);
   ok('limite de páginas: prata = 2');
@@ -905,7 +941,7 @@ try {
   assert.equal(r.body.plans[0].priceCents, 3490); assert.equal(r.body.plans[0].prices.semestral, 17450); assert.equal(r.body.plans[2].auditSend, true); assert.ok(r.body.plans.every((x) => Number.isInteger(x.userCount)));
   assert.equal((await db.query('SELECT count(*)::int n FROM plan_settings')).rows[0].n, 3); // criados no banco na primeira execução
   assert.equal((await other('GET', '/contracts')).body.limit, 2);
-  const planBody = { priceCents: 4990, instances: 2, auditInstances: 2, contracts: 5, portfolios: 3, auditSend: true };
+  const planBody = { name: 'Bronze', color: '#a8672f', sortOrder: 1, priceCents: 4990, instances: 2, auditInstances: 2, contracts: 5, portfolios: 3, catalogProducts: 0, auditSend: true };
   r = await a('PUT', '/admin/plans/bronze', planBody); assert.equal(r.status, 200, JSON.stringify(r.body));
   const b2 = r.body.plans.find((x) => x.id === 'bronze'); assert.equal(b2.priceCents, 4990); assert.deepEqual(b2.prices, { mensal: 4990, semestral: 24950, anual: 44910 }); assert.deepEqual([b2.instances, b2.auditInstances, b2.contracts, b2.portfolios, b2.auditSend], [2, 2, 5, 3, true]);
   assert.equal((await db.query("SELECT price_cents, contracts FROM plan_settings WHERE plan = 'bronze'")).rows[0].contracts, 5);
@@ -917,7 +953,7 @@ try {
     r = await a('PUT', '/admin/plans/bronze', { ...planBody, ...bad }); assert.equal(r.status, 400, JSON.stringify(bad));
   }
   r = await a('PUT', '/admin/plans/diamante', planBody); assert.equal(r.status, 404);
-  r = await a('PUT', '/admin/plans/bronze', { priceCents: 3490, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, auditSend: false }); assert.equal(r.status, 200); // volta ao padrão
+  r = await a('PUT', '/admin/plans/bronze', { name: 'Bronze', color: '#a8672f', sortOrder: 1, priceCents: 3490, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, auditSend: false }); assert.equal(r.status, 200); // volta ao padrão
   assert.equal((await other('GET', '/contracts')).body.limit, 2);
   ok('admin vê e altera valor e limites de cada plano; vale na hora para limites, tela de planos e pagamento; entradas inválidas são recusadas');
 
@@ -1060,6 +1096,234 @@ try {
   r = await a('DELETE', `/instances/${adminInst.id}`); assert.equal(r.status, 200); evoState = prevEvo;
   evoState = 'close'; r = await anon2('POST', '/auth/forgot', { identifier: 'maria@t.com' }); assert.equal(r.status, 503); assert.equal(r.body.code, 'RECOVERY_UNAVAILABLE'); evoState = prevEvo;
   ok('sem WhatsApp do admin conectado a recuperação avisa que está indisponível');
+
+  { // escopo próprio: os nomes deste bloco não colidem com os dos testes anteriores
+  // ===== admin: criar, editar e excluir planos =====
+  const otherId = (await db.query("SELECT id FROM users WHERE email = 'e@t.com'")).rows[0].id;
+  const newPlanB = { id: 'diamante', name: 'Diamante', color: '#3b82f6', sortOrder: 4, priceCents: 19990, instances: 5, auditInstances: 8, contracts: 50, portfolios: 15, catalogProducts: 500, auditSend: true };
+  r = await u('POST', '/admin/plans', newPlanB); assert.equal(r.status, 403);
+  for (const bad of [{ id: 'Dia mante' }, { id: 'admin' }, { id: 'a' }, { id: '' }, { name: '' }, { color: 'azul' }, { catalogProducts: -1 }, { priceCents: 5 }, { auditSend: 'sim' }]) {
+    r = await a('POST', '/admin/plans', { ...newPlanB, ...bad }); assert.equal(r.status, 400, JSON.stringify(bad));
+  }
+  r = await a('POST', '/admin/plans', { ...newPlanB, id: 'bronze' }); assert.equal(r.status, 409);
+  r = await a('POST', '/admin/plans', newPlanB); assert.equal(r.status, 201, JSON.stringify(r.body)); assert.deepEqual(r.body.plans.map((x) => x.id), ['bronze', 'prata', 'ouro', 'diamante']);
+  r = await pub('GET', '/plans'); const dia = r.body.plans.find((x) => x.id === 'diamante');
+  assert.equal(dia.name, 'Diamante'); assert.equal(dia.prices.anual, 19990 * 9); assert.equal(dia.catalogProducts, 500); assert.equal(r.body.plans.find((x) => x.id === 'bronze').catalogProducts, 0); assert.equal(r.body.plans.find((x) => x.id === 'prata').catalogProducts, 40); assert.equal(r.body.plans.find((x) => x.id === 'ouro').catalogProducts, 120);
+  r = await a('PATCH', `/admin/users/${otherId}/plan`, { plan: 'diamante' }); assert.equal(r.status, 200);
+  r = await other('GET', '/auth/me'); assert.equal(r.body.user.plan, 'diamante'); assert.equal(r.body.user.planName, 'Diamante'); assert.equal(r.body.user.planColor, '#3b82f6'); assert.equal(r.body.user.limits.catalogProducts, 500); assert.equal(r.body.user.limits.portfolios, 15);
+  r = await a('PUT', '/admin/plans/diamante', { ...newPlanB, name: 'Diamante Plus', catalogProducts: 300 }); assert.equal(r.status, 200); assert.equal(r.body.plans.find((x) => x.id === 'diamante').userCount, 1);
+  assert.equal((await other('GET', '/auth/me')).body.user.limits.catalogProducts, 300);
+  r = await a('DELETE', '/admin/plans/diamante'); assert.equal(r.status, 409); assert.equal(r.body.code, 'PLAN_IN_USE'); // tem usuário: precisa dizer para onde ele vai
+  r = await a('DELETE', '/admin/plans/diamante', { moveTo: 'diamante' }); assert.equal(r.status, 409);
+  r = await a('DELETE', '/admin/plans/diamante', { moveTo: 'inexistente' }); assert.equal(r.status, 409);
+  r = await a('DELETE', '/admin/plans/diamante', { moveTo: 'bronze' }); assert.equal(r.status, 200); assert.equal(r.body.moved, 1); assert.equal(r.body.plans.some((x) => x.id === 'diamante'), false);
+  assert.equal((await other('GET', '/auth/me')).body.user.plan, 'bronze'); assert.equal((await db.query("SELECT count(*)::int n FROM plan_settings WHERE plan = 'diamante'")).rows[0].n, 0);
+  r = await a('DELETE', '/admin/plans/diamante'); assert.equal(r.status, 404);
+  r = await a('POST', '/admin/plans', newPlanB); assert.equal(r.status, 201); r = await a('DELETE', '/admin/plans/diamante'); assert.equal(r.status, 200); assert.equal(r.body.moved, 0); // sem usuários: exclui direto
+  ok('admin cria, edita e exclui planos (com mudança dos usuários para outro plano); plano novo já aparece nos limites e na tela de planos');
+
+  // ===== portfólio no formato novo (posição livre por dispositivo): limpeza, pixel e catálogo digital =====
+  const PNGD = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAYAAAAfFcSJAAAADUlEQVR42mNkYPhfDwAChwGA60e6kgAAAABJRU5ErkJggg==';
+  const hostileDoc = {
+    v: 2, kind: 'catalog', theme: { primary: '#112233', bgType: 'gradient', bgColor2: 'red', bgAnimate: 'flow' },
+    pixel: { meta: '123456789012345', google: 'G-ABC12345', tiktok: '<script>alert(1)</script>' }, heights: { desktop: 99999, tablet: 50, mobile: 'x' },
+    elements: [
+      { t: 'text', text: 'Olá', box: { desktop: { x: 10, y: 20, w: 300, h: 60, fs: 32 }, mobile: { x: 5000, y: -999, w: 1, h: 99999 } }, anim: { enter: 'fade', loop: 'evil', hover: 'grow', delay: 99999 }, link: { kind: 'link', url: 'javascript:alert(1)' } },
+      { t: 'image', src: PNGD, mask: 'circle', filters: { brightness: 900 }, box: { desktop: { x: 0, y: 100, w: 200, h: 200 } } },
+      { t: 'icon', name: 'whatsapp', link: { kind: 'whatsapp', phone: '(85) 99999-1234' }, box: { desktop: { x: 0, y: 0, w: 48, h: 48 } } },
+      { t: 'icon', name: '<img onerror=x>' },
+      { t: 'button', label: 'Comprar', style: 'neon', box: { desktop: { x: 0, y: 0, w: 200, h: 50, fs: 16 } } },
+      { t: 'shape', shape: 'star', fill: { type: 'gradient', c1: '#ff0000', c2: 'bad', animate: 'flow' }, box: { desktop: { x: 0, y: 0, w: 100, h: 100 } } },
+      { t: 'script', box: {} }, { t: 'products', ids: [3, 3, -1, 'x', 5], cols: { desktop: 99 } },
+    ],
+  };
+  r = await u('POST', '/portfolios', { name: 'Doc novo', data: hostileDoc }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  const v2id = r.body.portfolio.id; let d2 = r.body.portfolio.data;
+  assert.equal(d2.v, 2); assert.equal(d2.kind, 'site'); assert.equal(d2.elements.length, 7); assert.equal(d2.elements.some((e) => e.t === 'script'), false); // a página é "site" (o tipo vem de quem cria), "script" some
+  assert.deepEqual(d2.heights, { desktop: 30000, tablet: 200, mobile: 700 }); assert.equal(d2.theme.bgColor2, '#e9eef5'); assert.equal(d2.theme.bgType, 'gradient'); assert.equal(d2.theme.bgAnimate, 'flow');
+  assert.deepEqual(d2.pixel, { meta: '123456789012345', google: 'G-ABC12345', tiktok: '' });
+  const [elTx, elIm, elIc, elIc2, elBt, elSh, elPr] = d2.elements;
+  assert.deepEqual(elTx.box.desktop, { x: 10, y: 20, w: 300, h: 60, r: 0, hide: false, fs: 32 }); assert.deepEqual(elTx.box.mobile, { x: 4000, y: -200, w: 4, h: 8000, r: 0, hide: false, fs: 32 }); assert.equal(elTx.box.tablet.x, 10); // tablet sem dados copia o desktop
+  assert.deepEqual(elTx.anim, { enter: 'fade', loop: 'none', hover: 'grow', delay: 5000, duration: 700 }); assert.equal(elTx.link.url, '');
+  assert.equal(elIm.mask, 'circle'); assert.equal(elIm.filters.brightness, 200); assert.equal(elIc.link.phone, '5585999991234'); assert.equal(elIc2.name, 'star'); assert.equal(elBt.style, 'neon');
+  assert.equal(elSh.fill.c2, '#d6336c'); assert.equal(elSh.fill.animate, 'flow'); assert.deepEqual(elPr.ids, [3, 5]); assert.equal(elPr.cols.desktop, 6);
+  assert.ok(d2.elements.every((e) => e.box.desktop && e.box.tablet && e.box.mobile && e.anim));
+  r = await u('POST', '/portfolios', { name: 'Svg', data: { v: 2, elements: [{ t: 'image', src: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }] } }); assert.equal(r.status, 400);
+  r = await u('POST', '/portfolios', { name: 'Muitos', data: { v: 2, elements: Array.from({ length: 201 }, () => ({ t: 'shape' })) } }); assert.equal(r.status, 400);
+  r = await u('POST', '/portfolios', { name: 'Sem lista', data: { v: 2 } }); assert.equal(r.status, 400);
+  r = await u('PATCH', `/portfolios/${v2id}`, { data: { v: 2, kind: 'catalog', elements: [] } }); assert.equal(r.status, 200);
+  assert.equal((await u('GET', `/portfolios/${v2id}`)).body.portfolio.data.kind, 'site'); // o tipo não muda depois de criado
+  r = await u('DELETE', `/portfolios/${v2id}`); assert.equal(r.status, 200);
+  ok('documento do editor livre: valores fora do limite são corrigidos, links perigosos e SVG recusados, pixel só com IDs válidos');
+
+  // --- catálogo digital depende do plano (bronze não tem; prata/ouro têm)
+  r = await other('POST', '/portfolios', { name: 'Catálogo', kind: 'catalog' }); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED');
+  r = await u('POST', '/portfolios', { name: 'Catálogo da Maria', kind: 'catalog' }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  const ctg = r.body.portfolio; assert.equal(ctg.kind, 'catalog'); assert.equal(ctg.data.kind, 'catalog'); assert.equal(ctg.data.catalog.display, 'category'); assert.deepEqual(ctg.data.catalog.columns, { desktop: 4, tablet: 3, mobile: 2 });
+  r = await u('PATCH', `/portfolios/${ctg.id}`, { data: { ...ctg.data, catalog: { display: 'only', onlyCategory: 'Doces', columns: { desktop: 9, mobile: 0 }, cardStyle: 'xx' } } }); assert.equal(r.status, 200);
+  const ctg2 = (await u('GET', `/portfolios/${ctg.id}`)).body.portfolio.data.catalog; assert.equal(ctg2.display, 'only'); assert.equal(ctg2.onlyCategory, 'Doces'); assert.equal(ctg2.columns.desktop, 6); assert.equal(ctg2.columns.mobile, 1); assert.equal(ctg2.cardStyle, 'soft');
+  ok('página de catálogo digital: só nos planos que incluem catálogo; modos "por categoria", "misturados" e "somente a categoria"');
+
+  // ===== produtos e serviços =====
+  const prodBody = (over = {}) => ({ kind: 'produto', name: 'Brigadeiro', category: 'Doces', description: 'Gostoso', priceCents: 450, images: [{ data: PNGD }], ...over });
+  r = await other('POST', '/products', prodBody()); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED'); // bronze: sem produtos
+  assert.equal((await other('GET', '/products')).body.limit, 0); assert.equal((await u('GET', '/products')).body.limit, 120);
+  for (const bad of [{ name: '' }, { category: '' }, { images: [] }, { images: Array.from({ length: 5 }, (_, i) => ({ data: PNGD, label: `v${i}` })) }, { images: [{ data: PNGD }, { data: PNGD }] }, { images: [{ data: 'data:image/svg+xml;base64,PHN2Zz48L3N2Zz4=' }] }, { images: [{ data: 'data:image/png;base64,AAAAAAAAAAAAAAAA' }] }, { priceCents: -5 }, { priceCents: 'abc' }, { images: [{ id: 999999 }] }]) {
+    r = await u('POST', '/products', prodBody(bad)); assert.equal(r.status, 400, JSON.stringify(bad).slice(0, 80));
+  }
+  r = await u('POST', '/products', prodBody()); assert.equal(r.status, 201, JSON.stringify(r.body)); const p1 = r.body.product;
+  assert.equal(p1.images.length, 1); assert.equal(p1.images[0].label, ''); assert.match(p1.images[0].url, /^\/api\/public\/product-image\/\d+$/); assert.equal(p1.active, true);
+  r = await u('POST', '/products', prodBody({ kind: 'servico', name: 'Camiseta', category: 'Roupas', priceCents: 5990, images: [{ data: PNGD, label: 'Azul', priceCents: 6490 }, { data: PNGD, label: 'Vermelha' }, { data: PNGD, label: 'Preta' }, { data: PNGD, label: 'Branca' }] }));
+  assert.equal(r.status, 201, JSON.stringify(r.body)); const pv = r.body.product; assert.deepEqual(pv.images.map((i) => [i.label, i.priceCents]), [['Azul', 6490], ['Vermelha', null], ['Preta', null], ['Branca', null]]); assert.equal(pv.kind, 'servico');
+  r = await u('GET', '/products'); assert.equal(r.body.count, 2); assert.deepEqual(r.body.categories, ['Doces', 'Roupas']);
+  assert.equal((await u('GET', '/products?q=camis')).body.products.length, 1); assert.equal((await u('GET', '/products?category=Doces')).body.products.length, 1); assert.equal((await u('GET', '/products?kind=servico')).body.products.length, 1);
+  assert.equal((await other('GET', `/products/${p1.id}`)).status, 404); assert.equal((await other('DELETE', `/products/${p1.id}`)).status, 404); // o produto é só do dono
+  // editar: mantém imagens existentes (por id), troca nome, tira uma e põe outra
+  r = await u('PATCH', `/products/${pv.id}`, prodBody({ kind: 'servico', name: 'Camiseta Premium', category: 'Roupas', priceCents: 7990, images: [{ id: pv.images[0].id, label: 'Azul-marinho', priceCents: 8490 }, { id: pv.images[2].id, label: 'Preta' }, { data: PNGD, label: 'Verde' }] }));
+  assert.equal(r.status, 200, JSON.stringify(r.body)); assert.deepEqual(r.body.product.images.map((i) => [i.label, i.priceCents]), [['Azul-marinho', 8490], ['Preta', null], ['Verde', null]]); assert.equal(r.body.product.images[0].id, pv.images[0].id);
+  assert.equal((await db.query('SELECT count(*)::int n FROM product_images WHERE product_id = $1', [pv.id])).rows[0].n, 3);
+  r = await u('PATCH', `/products/${pv.id}`, prodBody({ images: [{ id: p1.images[0].id }] })); assert.equal(r.status, 400); // imagem de outro produto
+  r = await u('PATCH', `/products/${p1.id}`, { active: false }); assert.equal(r.status, 200); assert.equal(r.body.product.active, false);
+  const imgRes = await fetch(`http://localhost:${port}${p1.images[0].url}`); assert.equal(imgRes.status, 404); // inativo: a imagem não é pública
+  await u('PATCH', `/products/${p1.id}`, { active: true });
+  const imgOk = await fetch(`http://localhost:${port}${p1.images[0].url}`); assert.equal(imgOk.status, 200); assert.equal(imgOk.headers.get('content-type'), 'image/png'); assert.match(imgOk.headers.get('cache-control'), /immutable/); assert.equal((await imgOk.arrayBuffer()).byteLength, 70);
+  assert.equal((await fetch(`http://localhost:${port}/api/public/product-image/9999999`)).status, 404);
+  // limite do plano (muda o ouro para 3 e volta)
+  const ouroNow = (await a('GET', '/admin/plans')).body.plans.find((x) => x.id === 'ouro');
+  const ouroBody = { name: ouroNow.name, color: ouroNow.color, sortOrder: ouroNow.sortOrder, priceCents: ouroNow.priceCents, instances: ouroNow.instances, auditInstances: ouroNow.auditInstances, contracts: ouroNow.contracts, portfolios: ouroNow.portfolios, catalogProducts: ouroNow.catalogProducts, auditSend: ouroNow.auditSend };
+  await a('PUT', '/admin/plans/ouro', { ...ouroBody, catalogProducts: 3 });
+  r = await u('POST', '/products', prodBody({ name: 'Terceiro', category: 'Doces' })); assert.equal(r.status, 201);
+  r = await u('POST', '/products', prodBody({ name: 'Quarto' })); assert.equal(r.status, 403); assert.equal(r.body.code, 'LIMIT_REACHED');
+  await a('PUT', '/admin/plans/ouro', ouroBody);
+  const p3 = (await u('GET', '/products?q=Terceiro')).body.products[0]; assert.equal((await u('DELETE', `/products/${p3.id}`)).status, 200);
+  assert.equal((await fetch(`http://localhost:${port}${p3.images[0].url}`)).status, 404); assert.equal((await db.query('SELECT count(*)::int n FROM product_images WHERE product_id = $1', [p3.id])).rows[0].n, 0);
+  ok('produtos/serviços: nome, categoria e imagem obrigatórios; variações (até 4 imagens com nome e preço); limite do plano; imagem pública só de produto ativo');
+
+  // ===== configuração do catálogo: entregas, frete e SuperFrete =====
+  r = await u('GET', '/catalog/settings'); assert.equal(r.status, 200); assert.equal(r.body.hasSuperfreteToken, false); assert.equal(r.body.config.correios.enabled, false);
+  const okCfgC = {
+    storeName: 'Doces da Maria', whatsapp: '(85) 99999-0000', excursion: { enabled: true },
+    motoboy: { enabled: true, mode: 'km', perKmCents: 200, minCents: 800, maxKm: 30, originZip: '60001000' },
+    correios: { enabled: true, originZip: '60001000', heightCm: 10, widthCm: 15, lengthCm: 20, weightG: 500 },
+  };
+  const putCfg = (config, extra = {}) => u('PUT', '/catalog/settings', { config, ...extra });
+  r = await putCfg(okCfgC); assert.equal(r.status, 400); assert.match(r.body.error, /token do SuperFrete/); // Correios exige o token
+  r = await putCfg(okCfgC, { superfreteToken: 'curto' }); assert.equal(r.status, 400);
+  for (const [name, mut, re] of [
+    ['sem CEP de origem', { correios: { ...okCfgC.correios, originZip: '' } }, /CEP de origem/],
+    ['sem altura', { correios: { ...okCfgC.correios, heightCm: 0 } }, /altura, largura, comprimento e peso/],
+    ['sem peso', { correios: { ...okCfgC.correios, weightG: '' } }, /altura, largura, comprimento e peso/],
+    ['grande demais', { correios: { ...okCfgC.correios, heightCm: 100, widthCm: 100, lengthCm: 100 } }, /200 cm/],
+    ['CEP inválido', { correios: { ...okCfgC.correios, originZip: '123' } }, /CEP de origem inválido/],
+    ['motoboy km sem origem', { motoboy: { ...okCfgC.motoboy, originZip: '' } }, /de onde o motoboy sai/],
+    ['motoboy km sem valor', { motoboy: { ...okCfgC.motoboy, perKmCents: 0 } }, /valor cobrado por km/],
+    ['WhatsApp inválido', { whatsapp: '123' }, /WhatsApp da loja/],
+  ]) { r = await putCfg({ ...okCfgC, ...mut }, { superfreteToken: SF_TOKEN }); assert.equal(r.status, 400, name); assert.match(r.body.error, re, name); }
+  r = await putCfg(okCfgC, { superfreteToken: SF_TOKEN }); assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.hasSuperfreteToken, true); assert.equal(r.body.superfreteHint, '…6789'); assert.equal(JSON.stringify(r.body).includes(SF_TOKEN), false); // o token nunca volta para a tela
+  assert.equal(r.body.config.whatsapp, '5585999990000'); assert.equal(r.body.config.motoboy.maxKm, 30);
+  const storedTok = (await db.query('SELECT superfrete FROM catalog_settings WHERE user_id = $1', [mariaId])).rows[0].superfrete; assert.ok(storedTok.startsWith('v1.') && !storedTok.includes(SF_TOKEN)); // criptografado no banco
+  assert.equal(JSON.stringify((await u('GET', '/catalog/settings')).body).includes(SF_TOKEN), false);
+  r = await putCfg(okCfgC); assert.equal(r.status, 200); assert.equal(r.body.hasSuperfreteToken, true); // salvar sem token mantém o token
+  r = await putCfg({ ...okCfgC, correios: { ...okCfgC.correios, enabled: false } }, { clearSuperfreteToken: true }); assert.equal(r.status, 200); assert.equal(r.body.hasSuperfreteToken, false);
+  r = await putCfg(okCfgC); assert.equal(r.status, 400); r = await putCfg(okCfgC, { superfreteToken: SF_TOKEN }); assert.equal(r.status, 200);
+  r = await u('POST', '/catalog/settings/test-shipping', { zip: '60000000' }); assert.equal(r.status, 200); assert.equal(r.body.provider, 'SuperFrete'); assert.deepEqual(r.body.options.map((o) => [o.name, o.priceCents]), [['PAC', 2740], ['SEDEX', 4890]]); // "Mini Envios" veio com erro e some
+  assert.equal(geoCalls.lastQuote.auth, `Bearer ${SF_TOKEN}`); assert.deepEqual(geoCalls.lastQuote.body.package, { height: 10, width: 15, length: 20, weight: 0.5 }); assert.equal(geoCalls.lastQuote.body.from.postal_code, '60001000'); assert.equal(geoCalls.lastQuote.body.to.postal_code, '60000000');
+  ok('configuração do catálogo: Correios exige CEP de origem, medidas, peso e token; motoboy por km exige origem; token criptografado e nunca devolvido');
+
+  // ===== página pública do catálogo =====
+  await u('PATCH', `/portfolios/${ctg.id}`, { published: true });
+  r = await pub('GET', `/public/portfolio?u=maria-teste&p=${ctg.slug}`); assert.equal(r.status, 200, JSON.stringify(r.body));
+  assert.equal(r.body.page.kind, 'catalog'); assert.deepEqual(r.body.products.map((x) => x.name).sort(), ['Brigadeiro', 'Camiseta Premium']); assert.equal(r.body.store.storeName, 'Doces da Maria'); assert.equal(r.body.store.correios.enabled, true); assert.equal(r.body.store.motoboy.mode, 'km');
+  const pubTxt = JSON.stringify(r.body); assert.equal(pubTxt.includes(SF_TOKEN), false); assert.equal(pubTxt.includes('60001000'), false); assert.equal(pubTxt.includes('originZip'), false); // sem token e sem endereço de saída
+  assert.ok(r.body.products.every((x) => x.images.every((i) => i.url.startsWith('/api/public/product-image/') && !JSON.stringify(i).includes('data:'))));
+  await u('PATCH', `/products/${p1.id}`, { active: false }); assert.deepEqual((await pub('GET', `/public/portfolio?u=maria-teste&p=${ctg.slug}`)).body.products.map((x) => x.name), ['Camiseta Premium']); await u('PATCH', `/products/${p1.id}`, { active: true });
+  // página livre com cartões de produtos escolhidos
+  r = await u('POST', '/portfolios', { name: 'Vitrine', data: { v: 2, elements: [{ t: 'products', ids: [pv.id], box: { desktop: { x: 0, y: 0, w: 600, h: 300 } } }] } }); assert.equal(r.status, 201); const vit = r.body.portfolio;
+  await u('PATCH', `/portfolios/${vit.id}`, { published: true });
+  r = await pub('GET', `/public/portfolio?u=maria-teste&p=${vit.slug}`); assert.deepEqual(r.body.products.map((x) => x.name), ['Camiseta Premium']); assert.equal(r.body.store, undefined);
+  r = await pub('GET', '/public/cep/60000000'); assert.equal(r.status, 200); assert.deepEqual(r.body.address, { zip: '60000000', street: 'Rua Destino', district: 'Centro', city: 'Fortaleza', state: 'CE', complement: '' });
+  assert.equal((await pub('GET', '/public/cep/99999999')).status, 404); assert.equal((await pub('GET', '/public/cep/123')).status, 400);
+  const callsBefore = geoCalls.cep; await pub('GET', '/public/cep/60000000'); assert.equal(geoCalls.cep, callsBefore); // segunda consulta vem do cache
+  const quoteReq = (b) => pub('POST', '/public/catalog/shipping/quote', { u: 'maria-teste', ...b });
+  r = await quoteReq({ type: 'motoboy', zip: '60000000' }); assert.equal(r.status, 200, JSON.stringify(r.body)); // 7,35 km -> 7,4 km x R$ 2,00 = R$ 14,80 (acima do mínimo de R$ 8,00)
+  assert.deepEqual(r.body.options, [{ id: 'motoboy', name: 'Motoboy', priceCents: 1480, km: 7.4, approx: false }]); assert.equal(r.body.address.street, 'Rua Destino'); assert.equal(r.body.provider, null);
+  r = await quoteReq({ type: 'motoboy', street: 'Rua Nova', number: '10', city: 'Fortaleza', state: 'CE' }); assert.equal(r.status, 200); assert.equal(r.body.options[0].priceCents, 1480);
+  r = await quoteReq({ type: 'motoboy', street: 'Rua X', city: 'Inexistente' }); assert.equal(r.status, 422); assert.equal(r.body.code, 'ADDRESS_NOT_FOUND');
+  r = await quoteReq({ type: 'motoboy' }); assert.equal(r.status, 400); // CEP ou endereço é obrigatório
+  r = await quoteReq({ type: 'correios', zip: '60000000' }); assert.equal(r.status, 200); assert.equal(r.body.provider, 'SuperFrete'); assert.deepEqual(r.body.options.map((o) => [o.id, o.name, o.priceCents, o.days.max]), [['1', 'PAC', 2740, 7], ['2', 'SEDEX', 4890, 3]]);
+  r = await quoteReq({ type: 'correios', zip: '11111111' }); assert.equal(r.status, 422); r = await quoteReq({ type: 'correios' }); assert.equal(r.status, 400); r = await quoteReq({ type: 'drone', zip: '60000000' }); assert.equal(r.status, 400);
+  assert.equal((await pub('POST', '/public/catalog/shipping/quote', { u: 'empresa-ltda-2', type: 'motoboy', zip: '60000000' })).status, 404); // plano sem catálogo
+  await putCfg(okCfgC, { superfreteToken: 'token-errado-0123456789012345' }); r = await quoteReq({ type: 'correios', zip: '60000000' }); assert.equal(r.status, 502); assert.equal(r.body.code, 'SHIPPING_TOKEN'); await putCfg(okCfgC, { superfreteToken: SF_TOKEN });
+  await putCfg({ ...okCfgC, motoboy: { ...okCfgC.motoboy, mode: 'fixed', fixedCents: 1200 } }); r = await quoteReq({ type: 'motoboy', zip: '60000000' }); assert.deepEqual(r.body.options[0], { id: 'motoboy', name: 'Motoboy', priceCents: 1200, km: null, approx: false }); // valor fixo: sem calcular km
+  await putCfg(okCfgC);
+  ok('página pública do catálogo traz produtos e formas de entrega (sem token); CEP autopreenche; frete por km, fixo e Correios (SuperFrete) simulado');
+
+  // ===== pedidos pelo webhook =====
+  const placeOrder = (body) => pub('POST', '/webhooks/orders/maria-teste', body);
+  const cartItems = [{ productId: p1.id, qty: 2, unitCents: 1 }, { productId: pv.id, imageId: pv.images[0].id, qty: 1 }]; // o preço mandado pelo navegador é ignorado
+  const custInfo = { name: 'João Cliente', phone: '(85) 98888-7777' };
+  const excInfo = { type: 'excursao', warehouse: 'Galpão Central', city: 'Caruaru', address: 'Rua das Flores, 100' };
+  for (const [name, body] of [
+    ['sem nome', { customer: { phone: custInfo.phone }, items: cartItems, delivery: excInfo }], ['sem telefone', { customer: { name: 'João' }, items: cartItems, delivery: excInfo }], ['telefone inválido', { customer: { name: 'João', phone: '123' }, items: cartItems, delivery: excInfo }],
+    ['carrinho vazio', { customer: custInfo, items: [], delivery: excInfo }], ['produto inexistente', { customer: custInfo, items: [{ productId: 999999, qty: 1 }], delivery: excInfo }], ['quantidade zero', { customer: custInfo, items: [{ productId: p1.id, qty: 0 }], delivery: excInfo }],
+    ['variação inválida', { customer: custInfo, items: [{ productId: p1.id, imageId: pv.images[0].id, qty: 1 }], delivery: excInfo }], ['sem entrega', { customer: custInfo, items: cartItems }], ['entrega inválida', { customer: custInfo, items: cartItems, delivery: { type: 'drone' } }],
+    ['excursão sem galpão', { customer: custInfo, items: cartItems, delivery: { ...excInfo, warehouse: '' } }], ['excursão sem cidade', { customer: custInfo, items: cartItems, delivery: { ...excInfo, city: '' } }], ['excursão sem endereço', { customer: custInfo, items: cartItems, delivery: { ...excInfo, address: '' } }],
+    ['motoboy sem CEP nem endereço', { customer: custInfo, items: cartItems, delivery: { type: 'motoboy' } }], ['correios sem CEP', { customer: custInfo, items: cartItems, delivery: { type: 'correios', serviceId: '1' } }], ['correios sem serviço', { customer: custInfo, items: cartItems, delivery: { type: 'correios', zip: '60000000' } }],
+  ]) { r = await placeOrder(body); assert.equal(r.status, 400, name); }
+  r = await placeOrder({ customer: custInfo, items: cartItems, delivery: { type: 'correios', zip: '60000000', serviceId: '99' } }); assert.equal(r.status, 409); // serviço que a simulação não devolveu
+  assert.equal((await db.query('SELECT count(*)::int n FROM orders')).rows[0].n, 0); assert.equal((await db.query("SELECT count(*)::int n FROM contacts WHERE phone = '5585988887777'")).rows[0].n, 0); // pedido recusado não grava nada
+  assert.equal((await pub('POST', '/webhooks/orders/empresa-ltda-2', { customer: custInfo, items: cartItems, delivery: excInfo })).status, 404);
+
+  r = await placeOrder({ customer: custInfo, items: cartItems, delivery: excInfo, notes: 'Entregar de manhã', shippingCents: 1 }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.order.subtotalCents, 2 * 450 + 8490); assert.equal(r.body.order.shippingCents, 0); assert.equal(r.body.order.totalCents, 2 * 450 + 8490); assert.match(r.body.order.code, /^[A-Z2-9]{6}$/); assert.match(r.body.whatsappUrl, /^https:\/\/wa\.me\/5585999990000\?text=/);
+  assert.match(decodeURIComponent(r.body.whatsappUrl), /2x Brigadeiro/); assert.match(decodeURIComponent(r.body.whatsappUrl), /Camiseta Premium \(Azul-marinho\)/);
+  let c1 = (await db.query("SELECT * FROM contacts WHERE user_id = $1 AND phone = '5585988887777'", [mariaId])).rows; // o cliente já fica salvo em Clientes
+  assert.equal(c1.length, 1); assert.equal(c1[0].name, 'João Cliente'); assert.equal(c1[0].city, 'Caruaru'); assert.equal(c1[0].street, 'Rua das Flores, 100'); assert.match(c1[0].complement, /Galpão Central/);
+  let o1 = (await db.query('SELECT * FROM orders ORDER BY id DESC LIMIT 1')).rows[0]; assert.equal(o1.delivery_type, 'excursao'); assert.equal(o1.customer_phone, '5585988887777'); assert.equal(o1.items[0].unitCents, 450); assert.equal(o1.notes, 'Entregar de manhã');
+  // motoboy (por km): o servidor recalcula tudo e completa o endereço pelo CEP
+  r = await placeOrder({ customer: { name: 'Outro Nome', phone: '85988887777' }, items: [{ productId: p1.id, qty: 1 }], delivery: { type: 'motoboy', zip: '60000000', number: '55' } }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.order.shippingCents, 1480); assert.equal(r.body.order.totalCents, 450 + 1480);
+  o1 = (await db.query('SELECT * FROM orders ORDER BY id DESC LIMIT 1')).rows[0]; assert.equal(o1.delivery.km, 7.4); assert.equal(o1.delivery.street, 'Rua Destino'); assert.equal(o1.delivery.city, 'Fortaleza');
+  c1 = (await db.query("SELECT * FROM contacts WHERE user_id = $1 AND phone = '5585988887777'", [mariaId])).rows; // mesmo telefone = mesmo cliente (único)
+  assert.equal(c1.length, 1); assert.equal(c1[0].name, 'João Cliente'); assert.equal(c1[0].city, 'Fortaleza'); assert.equal(c1[0].zip, '60000000'); assert.equal(c1[0].street, 'Rua Destino');
+  r = await putCfg({ ...okCfgC, motoboy: { ...okCfgC.motoboy, maxKm: 5 } }); r = await placeOrder({ customer: custInfo, items: cartItems, delivery: { type: 'motoboy', zip: '60000000' } }); assert.equal(r.status, 422); assert.equal(r.body.code, 'OUT_OF_RANGE'); await putCfg(okCfgC);
+  // correios pelo SuperFrete: o servidor confere o serviço e o preço de novo
+  r = await placeOrder({ customer: { name: 'Ana Cliente', phone: '(85) 97777-6666' }, items: [{ productId: p1.id, qty: 1 }], delivery: { type: 'correios', zip: '60000-000', serviceId: '1', number: '12', price: 1 } }); assert.equal(r.status, 201, JSON.stringify(r.body));
+  assert.equal(r.body.order.shippingCents, 2740); o1 = (await db.query('SELECT * FROM orders ORDER BY id DESC LIMIT 1')).rows[0]; assert.equal(o1.delivery.service, 'PAC'); assert.equal(o1.delivery.quoteBy, 'SuperFrete'); assert.equal(o1.delivery.zip, '60000000'); assert.equal(o1.delivery.days.max, 7);
+  assert.equal((await db.query("SELECT count(*)::int n FROM contacts WHERE user_id = $1 AND phone = '5585977776666'", [mariaId])).rows[0].n, 1);
+  r = await placeOrder({ customer: { name: 'Ana Cliente', phone: '(85) 97777-6666' }, items: [{ productId: p1.id, qty: 1 }], delivery: { type: 'correios', zip: '60000000', serviceId: '2' } }); assert.equal(r.status, 201); assert.equal(r.body.order.shippingCents, 4890);
+  assert.equal((await db.query("SELECT count(*)::int n FROM contacts WHERE user_id = $1 AND phone = '5585977776666'", [mariaId])).rows[0].n, 1);
+  r = await putCfg({ ...okCfgC, excursion: { enabled: false } }, { superfreteToken: SF_TOKEN }); r = await placeOrder({ customer: custInfo, items: cartItems, delivery: excInfo }); assert.equal(r.status, 400); await putCfg(okCfgC); // forma de entrega desligada
+  ok('pedido pelo webhook: nome e telefone obrigatórios; excursão exige galpão/cidade/endereço; motoboy exige CEP ou endereço; Correios exige CEP e serviço; preços e frete recalculados no servidor');
+  ok('cada pedido salva o cliente na aba Clientes e o telefone é único (mesmo telefone = mesmo cliente, com endereço atualizado)');
+
+  // --- lista de pedidos do usuário, exclusão e limpeza de 10 dias
+  r = await u('GET', '/catalog/orders'); assert.equal(r.status, 200); assert.equal(r.body.total, 4); assert.equal(r.body.fresh, 4); assert.equal(r.body.retentionDays, 10); assert.equal(r.body.orders[0].delivery.type, 'correios');
+  assert.equal((await u('GET', '/catalog/orders?q=ana')).body.orders.length, 2); assert.equal((await u('GET', '/catalog/orders?q=85977776666')).body.orders.length, 2);
+  const ordId = r.body.orders[3].id;
+  assert.equal((await other('GET', '/catalog/orders')).body.total, 0); assert.equal((await other('PATCH', `/catalog/orders/${ordId}`, { status: 'atendido' })).status, 404); assert.equal((await other('DELETE', `/catalog/orders/${ordId}`)).status, 404);
+  r = await u('PATCH', `/catalog/orders/${ordId}`, { status: 'atendido' }); assert.equal(r.body.order.status, 'atendido'); assert.equal((await u('PATCH', `/catalog/orders/${ordId}`, { status: 'xx' })).status, 400);
+  assert.equal((await u('GET', '/catalog/orders?status=novo')).body.orders.length, 3);
+  assert.equal((await u('DELETE', `/catalog/orders/${ordId}`)).status, 200); assert.equal((await u('GET', '/catalog/orders')).body.total, 3);
+  // pedidos antigos (mais de 10 dias) são apagados pela limpeza automática
+  await db.query("UPDATE orders SET created_at = (now() AT TIME ZONE 'UTC') - interval '11 days' WHERE id = (SELECT min(id) FROM orders)");
+  await db.query("UPDATE orders SET created_at = (now() AT TIME ZONE 'UTC') - interval '9 days' WHERE id = (SELECT max(id) FROM orders)");
+  const { purgeOldOrders } = await import('../server/services/maintenance.js');
+  assert.equal(await purgeOldOrders(), 1); assert.equal((await u('GET', '/catalog/orders')).body.total, 2); // sobra o de 9 dias e o de agora
+  await purgeOldOrders();
+  r = await u('POST', '/catalog/orders/bulk-delete', {}); assert.equal(r.status, 400);
+  const leftOrders = (await u('GET', '/catalog/orders')).body.orders; r = await u('POST', '/catalog/orders/bulk-delete', { ids: [leftOrders[0].id] }); assert.equal(r.body.removed, 1);
+  r = await u('POST', '/catalog/orders/bulk-delete', { all: true }); assert.equal(r.body.removed, 1); assert.equal((await u('GET', '/catalog/orders')).body.total, 0);
+  assert.equal((await db.query("SELECT count(*)::int n FROM contacts WHERE user_id = $1 AND phone = '5585988887777'", [mariaId])).rows[0].n, 1); // apagar pedidos não apaga o cliente
+  ok('pedidos: o usuário vê, marca como atendido e exclui (um, vários ou todos); pedidos com mais de 10 dias são apagados sozinhos');
+
+  // limpeza do cenário
+  await db.query("DELETE FROM contacts WHERE user_id = $1 AND phone IN ('5585988887777', '5585977776666')", [mariaId]);
+  for (const id of [ctg.id, vit.id]) await u('DELETE', `/portfolios/${id}`);
+  for (const id of [p1.id, pv.id]) await u('DELETE', `/products/${id}`);
+  await testPrisma.$disconnect();
+  }
 
   // ===== clientes: dados para variáveis dos contratos =====
   r = await u('POST', '/contacts', { name: 'Cliente Contrato', phone: '85 98888-0001', document: '111.444.777-35', zip: '60000-000', street: ' Rua  das Flores ', number: '12', complement: 'Sala 3', district: 'Centro', city: 'Fortaleza', state: 'ce' });

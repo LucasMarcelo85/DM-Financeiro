@@ -15,6 +15,8 @@ const NAV = [
   { to: '/contratos', label: 'Contratos', icon: 'file' },
   { to: '/auditoria', label: 'Auditoria', icon: 'eye' },
   { to: '/portfolio', label: 'Portfólio', icon: 'globe' },
+  { to: '/produtos', label: 'Produtos', icon: 'box', feature: 'catalog' },
+  { to: '/pedidos', label: 'Pedidos', icon: 'receipt', feature: 'catalog' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
   { to: '/perfil', label: 'Perfil', icon: 'gear', always: true },
 ];
@@ -31,9 +33,10 @@ export function Brand({ light }) {
 export default function Layout() {
   const { user, logout, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
+  const base = NAV.filter((i) => i.feature !== 'catalog' || (user.limits?.catalogProducts ?? 0) > 0); // Produtos e Pedidos só nos planos com catálogo digital
   const items = user.role === 'admin'
-    ? [...NAV, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
-    : NAV;
+    ? [...base, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
+    : base;
   // Aba protegida por código PIN e ainda não destravada: mostra o pedido do PIN no lugar da página.
   const tab = tabOfPath(pathname);
   const locked = isTabLocked(user, pinUnlocked, tab);
@@ -74,7 +77,7 @@ export default function Layout() {
         <div className="sidebar-user">
           <div className="sidebar-user-info">
             <strong title={user.name}>{user.name}</strong>
-            {user.role === 'admin' ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} />}
+            {user.role === 'admin' ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} name={user.planName} color={user.planColor} />}
           </div>
           <button className="btn btn-ghost-light btn-sm" onClick={logout}>
             <Icon name="logout" size={16} /> Sair

@@ -9,90 +9,39 @@ import { useToast } from '../components/Toast.jsx';
 import { dateBR, plural } from '../lib/format.js';
 import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
-import { TEMPLATES, buildTemplate } from '../lib/portfolio/templates.js';
+import { CATALOG_TEMPLATES, SITE_TEMPLATES, TEMPLATES, buildTemplate } from '../lib/portfolio/templates.js';
 
-function NewPageModal({ onClose, onCreate, busy }) {
-  const [key, setKey] = useState('services');
-  const [name, setName] = useState('');
+function TemplateGroup({ title, hint, list, value, onPick, disabled }) {
   return (
-    <Modal title="Nova página de portfólio" onClose={busy ? () => {} : onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={() => onCreate(key, name)} disabled={busy}>{busy ? 'Criando...' : 'Criar e editar'}</button></>}>
-      <label className="field"><span>Nome da página</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ex.: Apresentação da empresa" autoFocus /></label>
-      <fieldset className="field">
-        <legend>Começar de</legend>
-        <div className="ct-templates">
-          {TEMPLATES.map((t) => (
-            <label key={t.key} className={`ct-template ${key === t.key ? 'is-on' : ''}`}>
-              <input type="radio" name="ptpl" value={t.key} checked={key === t.key} onChange={() => setKey(t.key)} />
-              <strong>{t.label}</strong>
-              <span className="muted small">{t.desc}</span>
-            </label>
-          ))}
-        </div>
-        <small>Tudo pode ser trocado no editor: cores, banner, logo, imagens, vídeo, textos e botões.</small>
-      </fieldset>
-    </Modal>
+    <fieldset className="field" disabled={disabled}>
+      <legend>{title}</legend>
+      {hint && <small className="ct-group-hint">{hint}</small>}
+      <div className="ct-templates">
+        {list.map((t) => (
+          <label key={t.key} className={`ct-template ${value === t.key ? 'is-on' : ''} ${disabled ? 'is-locked' : ''}`}>
+            <input type="radio" name="ptpl" value={t.key} checked={value === t.key} onChange={() => onPick(t.key)} />
+            <strong>{t.label}</strong>
+            <span className="muted small">{t.desc}</span>
+          </label>
+        ))}
+      </div>
+    </fieldset>
   );
 }
 
-// Domínio próprio: o usuário aponta o domínio dele (registro A) para o IP do servidor e o site passa a abrir em meusite.com.br.
-function DomainCard({ domain, onChange }) {
-  const toast = useToast();
-  const [value, setValue] = useState(domain.name);
-  const [busy, setBusy] = useState('');
-  useEffect(() => setValue(domain.name), [domain.name]);
-
-  const saved = Boolean(domain.name);
-  const changed = value.trim() !== domain.name;
-
-  async function run(kind, fn, okMsg) {
-    setBusy(kind);
-    try {
-      const r = await fn();
-      if (okMsg) toast(okMsg(r));
-      await onChange();
-    } catch (e) { toast(e.message, 'error'); } finally { setBusy(''); }
-  }
-
-  const save = () => run('save', () => api.put('/portfolios/domain', { domain: value }),
-    (r) => (r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Domínio salvo. Falta apontar o DNS (veja abaixo).'));
-  const remove = () => run('remove', () => api.put('/portfolios/domain', { domain: '' }), () => 'Domínio removido.');
-  const check = () => run('check', () => api.post('/portfolios/domain/check'),
-    (r) => (r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Ainda não encontrei o apontamento. O DNS pode levar de minutos a algumas horas.'));
-
+function NewPageModal({ onClose, onCreate, busy, catalogOk }) {
+  const [key, setKey] = useState('services');
+  const [name, setName] = useState('');
   return (
-    <section className="pl-domain">
-      <div className="pl-domain-head">
-        <span className="action-icon"><Icon name="link" size={22} /></span>
-        <div>
-          <strong>Domínio próprio</strong>
-          <span className="muted small">Use o endereço do seu site (ex.: <code>meusite.com.br</code>) em vez do endereço do sistema. A página principal abre direto nele e as outras ficam depois da barra.</span>
-        </div>
-        {saved && <span className={`pill ${domain.verified ? 'pill-sent' : 'pill-partial'}`}>{domain.verified ? 'Ativo' : 'Aguardando DNS'}</span>}
-      </div>
-
-      <div className="pl-domain-row">
-        <input className="input" value={value} onChange={(e) => setValue(e.target.value)} maxLength={253} placeholder="meusite.com.br" aria-label="Seu domínio" inputMode="url" autoCapitalize="none" spellCheck={false} />
-        <button className="btn btn-primary" onClick={save} disabled={!!busy || !value.trim() || !changed}>{busy === 'save' ? 'Salvando...' : 'Salvar domínio'}</button>
-        {saved && <button className="btn btn-ghost" onClick={remove} disabled={!!busy}>{busy === 'remove' ? 'Removendo...' : 'Remover'}</button>}
-      </div>
-
-      {saved && !domain.verified && (
-        <div className="banner banner-amber">
-          <div>
-            <strong>Falta apontar o domínio para o sistema.</strong>
-            <span>
-              No painel onde você registrou o domínio (Registro.br, GoDaddy, Hostinger...), abra o <b>DNS</b> e crie um registro
-              {' '}<b>tipo A</b>, nome <b>@</b>{domain.serverIp ? <>, apontando para <code>{domain.serverIp}</code></> : ' (o IP do servidor)'}. Se quiser o <b>www</b>, crie outro igual com nome <b>www</b>.
-              No Cloudflare, deixe a nuvem <b>cinza</b> (somente DNS).
-            </span>
-          </div>
-          <button className="btn btn-ghost btn-sm" onClick={check} disabled={!!busy}>{busy === 'check' ? 'Verificando...' : 'Verificar agora'}</button>
-        </div>
-      )}
-      {!saved && domain.serverIp && <p className="muted small">Depois de salvar, aponte o DNS do seu domínio (registro <b>tipo A</b>) para o IP <code>{domain.serverIp}</code>.</p>}
-      {saved && domain.verified && <p className="muted small">Seu site abre em <strong>{domain.name}</strong>. O endereço antigo do sistema continua funcionando.</p>}
-    </section>
+    <Modal title="Nova página" onClose={busy ? () => {} : onClose} wide
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={() => onCreate(key, name)} disabled={busy}>{busy ? 'Criando...' : 'Criar e editar'}</button></>}>
+      <label className="field"><span>Nome da página</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ex.: Apresentação da empresa" autoFocus /></label>
+      <TemplateGroup title="Página livre" list={SITE_TEMPLATES} value={key} onPick={setKey} />
+      <TemplateGroup title="Catálogo digital" list={CATALOG_TEMPLATES} value={key} onPick={setKey} disabled={!catalogOk}
+        hint={catalogOk ? 'Vitrine de produtos com carrinho e pedido: duas páginas (início e carrinho), entrega por excursão, motoboy ou Correios.' : 'O seu plano não inclui o catálogo digital. Veja os planos para liberar.'} />
+      {!catalogOk && <Link className="btn btn-ghost btn-sm" to="/plano" onClick={onClose}>Ver planos com catálogo</Link>}
+      <small>Tudo pode ser trocado no editor: arraste elementos, mude cores, imagens, ícones, botões, animações e formatos.</small>
+    </Modal>
   );
 }
 
@@ -119,13 +68,14 @@ export default function Portfolios() {
     setBusy('create');
     try {
       const tpl = TEMPLATES.find((t) => t.key === key);
-      const { portfolio } = await api.post('/portfolios', { name: name.trim() || tpl.label, data: buildTemplate(key, user.name) });
+      const doc = buildTemplate(key, user.name);
+      const { portfolio } = await api.post('/portfolios', { name: name.trim() || tpl.label, kind: doc.kind, data: doc });
       nav(`/portfolio/${portfolio.id}`);
     } catch (e) { toast(e.message, 'error'); setBusy(''); }
   }
 
   async function copy(p) {
-    if (await copyText(pageUrl(p.path, p.customUrl))) toast('Link copiado!'); else setSharing(p);
+    if (await copyText(pageUrl(p.path))) toast('Link copiado!'); else setSharing(p);
   }
 
   async function duplicate(p) {
@@ -184,13 +134,11 @@ export default function Portfolios() {
         </div>
       )}
 
-      {data && <DomainCard domain={data.domain} onChange={load} />}
-
       {data === null ? <p className="muted">Carregando...</p> : count === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="globe" size={32} /></span>
           <h2>Crie sua primeira página</h2>
-          <p>Escolha cores, banner, logo, imagens, vídeo, textos e botões com link. No fim, copie o link e envie para quem quiser.</p>
+          <p>Arraste textos, imagens, ícones, botões e formas para onde quiser, com desenho próprio para computador, tablet e celular. Depois copie o link e envie para quem quiser.</p>
           <button className="btn btn-primary" onClick={() => setNewOpen(true)}>Nova página</button>
         </section>
       ) : (
@@ -198,13 +146,14 @@ export default function Portfolios() {
           {data.portfolios.map((p) => (
             <li key={p.id} className="ct-card">
               <Link to={`/portfolio/${p.id}`} className="ct-main">
-                <span className="action-icon"><Icon name="globe" size={22} /></span>
+                <span className="action-icon"><Icon name={p.kind === 'catalog' ? 'box' : 'globe'} size={22} /></span>
                 <strong title={p.name}>{p.name}</strong>
                 <span className="pl-badges">
                   <span className={`pill ${p.published ? 'pill-sent' : 'pill-partial'}`}>{p.published ? 'Publicada' : 'Rascunho'}</span>
                   {p.isMain && <span className="tag tag-monthly">Principal</span>}
+                  {p.kind === 'catalog' && <span className="tag tag-catalog">Catálogo</span>}
                 </span>
-                <span className="pl-url" title={pageUrl(p.path, p.customUrl)}><Icon name="link" size={14} /><span>{pageUrl(p.path, p.customUrl).replace(/^https?:\/\//, '')}</span></span>
+                <span className="pl-url" title={pageUrl(p.path)}><Icon name="link" size={14} /><span>{pageUrl(p.path).replace(/^https?:\/\//, '')}</span></span>
                 <span className="muted small">editada em {dateBR(p.updatedAt)}</span>
               </Link>
               <div className="ct-actions">
@@ -214,7 +163,7 @@ export default function Portfolios() {
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={18} /></button>
               </div>
               <div className="pl-more">
-                {p.published && <a className="link-btn" href={pageUrl(p.path, p.customUrl)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
+                {p.published && <a className="link-btn" href={pageUrl(p.path)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
                 <button className="link-btn" onClick={() => duplicate(p)} disabled={full}>Duplicar</button>
                 {!p.isMain && <button className="link-btn" onClick={() => makeMain(p)}>Tornar principal</button>}
               </div>
@@ -223,13 +172,13 @@ export default function Portfolios() {
         </ul>
       )}
 
-      {newOpen && <NewPageModal busy={busy === 'create'} onClose={() => setNewOpen(false)} onCreate={create} />}
-      {sharing && <ShareModal name={sharing.name} path={sharing.path} customUrl={sharing.customUrl} published={sharing.published} busy={publishing} onPublish={() => publish(sharing)} onClose={() => setSharing(null)} />}
+      {newOpen && <NewPageModal busy={busy === 'create'} catalogOk={(data?.catalogProducts ?? 0) > 0} onClose={() => setNewOpen(false)} onCreate={create} />}
+      {sharing && <ShareModal name={sharing.name} path={sharing.path} published={sharing.published} busy={publishing} onPublish={() => publish(sharing)} onClose={() => setSharing(null)} />}
 
       {confirmDel && (
         <Modal title="Excluir esta página?" onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
-          <p><strong>{confirmDel.name}</strong> será apagada e o link <strong>{pageUrl(confirmDel.path, confirmDel.customUrl).replace(/^https?:\/\//, '')}</strong> deixa de funcionar. Não dá para desfazer.</p>
+          <p><strong>{confirmDel.name}</strong> será apagada e o link <strong>{pageUrl(confirmDel.path).replace(/^https?:\/\//, '')}</strong> deixa de funcionar. Não dá para desfazer.</p>
         </Modal>
       )}
     </>
