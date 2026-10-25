@@ -482,7 +482,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .ct-template:focus-within { box-shadow: 0 0 0 3px rgba(31, 85, 166, 0.18); }
 .ct-notes { margin: 0.5rem 0 0; padding-left: 1.2rem; display: grid; gap: 0.4rem; color: var(--muted); }
 
-.ce { height: 100dvh; display: flex; flex-direction: column; background: #e4e9f0; color: var(--text); }
+.ce { width: 100%; max-width: 100vw; height: 100dvh; min-height: 0; display: flex; flex-direction: column; overflow: hidden; background: #e4e9f0; color: var(--text); }
 .ce-top { display: flex; align-items: center; gap: 0.5rem; padding: 0.5rem 0.75rem; background: var(--card); border-bottom: 1px solid var(--line); flex-wrap: wrap; }
 .ce-name { width: min(13rem, 28vw); font-weight: 600; }
 .ce-status { font-size: 0.8rem; color: var(--muted); white-space: nowrap; }
@@ -498,11 +498,11 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .ce-mini-danger { color: var(--red-d); }
 .ce button:focus-visible, .ce select:focus-visible { outline: 3px solid rgba(31, 85, 166, 0.45); outline-offset: 1px; }
 
-.ce-body { flex: 1; min-height: 0; display: grid; grid-template-columns: 5.25rem minmax(0, 1fr) 20rem; }
+.ce-body { flex: 1; min-width: 0; min-height: 0; display: grid; grid-template-columns: 5.25rem minmax(0, 1fr) 20rem; }
 .ce-palette { display: flex; flex-direction: column; gap: 0.25rem; padding: 0.5rem; background: var(--card); border-right: 1px solid var(--line); overflow-y: auto; }
 .ce-tool { display: grid; justify-items: center; gap: 0.2rem; padding: 0.55rem 0.2rem; border: 0; border-radius: var(--r-sm); background: transparent; color: var(--text); cursor: pointer; font-size: 0.72rem; font-weight: 600; }
 .ce-tool:hover { background: #eef2f7; color: var(--blue); }
-.ce-stage { overflow: auto; min-width: 0; }
+.ce-stage { overflow: auto; min-width: 0; min-height: 0; }
 .ce-pages { display: flex; flex-direction: column; align-items: center; gap: 1.1rem; padding: 1rem 1rem 5rem; min-width: max-content; }
 .ce-page-block { display: grid; gap: 0.3rem; }
 .ce-page-bar { display: flex; align-items: center; justify-content: space-between; font-size: 0.85rem; min-width: 14rem; }
@@ -901,7 +901,8 @@ button.fat-card:hover { border-color: #b9c4d2; }
 /* ---------- Editor: casca ---------- */
 .pe2 .ce-top { flex-wrap: wrap; row-gap: 0.4rem; }
 .pe-converted { margin: 0.5rem 1rem 0; }
-.pe-left { width: 9.5rem; }
+.pe2 .ce-body { grid-template-columns: 9.5rem minmax(0, 1fr) 20rem; }
+.pe-left { width: auto; min-width: 0; }
 .pe-left-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; margin-bottom: 0.4rem; background: #e9eef5; border-radius: 8px; }
 .pe-left-tabs button { border: 0; background: transparent; padding: 0.3rem 0.1rem; border-radius: 6px; font: inherit; font-size: 0.78rem; font-weight: 700; color: var(--muted); cursor: pointer; }
 .pe-left-tabs button.is-on { background: #fff; color: var(--ink); box-shadow: 0 1px 2px rgba(20, 32, 46, .15); }
@@ -913,7 +914,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pe-layer-name small { color: var(--muted); font-weight: 500; font-size: 0.7rem; }
 .pe-layers-empty { padding: 0.5rem; }
 
-.pe-stage2 { overflow: auto; padding: 1rem 1rem 3rem; background: #dfe5ed; display: flex; flex-direction: column; align-items: center; }
+.pe-stage2 { overflow: auto; min-width: 0; min-height: 0; padding: 1rem 1rem 3rem; background: #dfe5ed; display: flex; flex-direction: column; align-items: center; }
 .pe-frame { position: relative; flex: none; background: #fff; box-shadow: 0 6px 30px rgba(20, 32, 46, .22); border-radius: 4px; overflow: hidden; display: flex; flex-direction: column; color: var(--tx); font-family: var(--bf); }
 .pe-frame > .pe-stage-canvas, .pe-frame > .pv-fit { position: relative; z-index: 1; }
 .pe-frame .pv-credit { margin-top: auto; }
@@ -934,6 +935,9 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pe-zoom { display: inline-flex; align-items: center; gap: 2px; }
 .pe-zoom-val { min-width: 3.1rem; border: 0; background: transparent; font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer; color: var(--ink); }
 @media (hover: none) { .pe-stage-canvas .pv-el.is-selected, .pe-handle { touch-action: none; } }
+@media (max-width: 64rem) {
+  .pe2 .ce-body { grid-template-columns: minmax(0, 1fr); }
+}
 
 /* ---------- Editor: painel de propriedades ---------- */
 .pe-insp-title { margin: 0 0 0.6rem; font-size: 1rem; }

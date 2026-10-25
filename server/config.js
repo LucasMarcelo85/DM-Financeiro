@@ -57,6 +57,12 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
+  easypanel: {
+    url: trimSlash(env.EASYPANEL_API_URL),
+    apiKey: (env.EASYPANEL_API_KEY || '').trim(),
+    projectName: (env.EASYPANEL_PROJECT_NAME || '').trim(),
+    serviceName: (env.EASYPANEL_SERVICE_NAME || '').trim(),
+  },
   // Auditoria: o servidor também busca as mensagens sozinho (além do webhook), para a tela nunca depender só dele.
   // AUDIT_SYNC_SECONDS=0 desliga. Com alguém olhando a tela a busca é a cada AUDIT_SYNC_SECONDS; sem ninguém, a cada AUDIT_SYNC_IDLE_SECONDS.
   auditSync: {
