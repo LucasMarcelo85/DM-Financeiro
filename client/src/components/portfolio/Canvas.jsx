@@ -166,7 +166,7 @@ function ShapeView({ el }) {
   );
 }
 
-function ButtonView({ el, box, mode }) {
+function ButtonView({ el, box, mode, onCart, onLink }) {
   const href = linkHref(el.link);
   const style = {
     '--c1': el.color, '--c2': el.color2, '--tc': el.textColor || readableOn(el.color), '--rad': `${el.radius}px`,
@@ -175,7 +175,11 @@ function ButtonView({ el, box, mode }) {
   const Icon = el.icon ? <IconSvg name={el.icon} size="1.15em" /> : null;
   const cls = `pv-btn is-${el.style}${mode === 'edit' && !href ? ' is-nolink' : ''}`;
   const body = <>{el.iconPos !== 'right' && Icon}<span>{el.label || 'Botão'}</span>{el.iconPos === 'right' && Icon}</>;
-  return { cls, style, body, href };
+  const opensCart = mode === 'public' && onCart && ['cart', 'bag'].includes(el.icon);
+  const button = opensCart
+    ? <button type="button" className={cls} style={style} onClick={() => { onCart(); onLink?.(el); }}>{body}</button>
+    : null;
+  return { cls, style, body, href, button };
 }
 
 function VideoView({ el, mode }) {
@@ -235,7 +239,7 @@ function ProductsView({ el, device, products, mode }) {
 }
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
-function ElementViewBase({ el, device, mode, animate, products, z, onLink, replay = 0 }) {
+function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, replay = 0 }) {
   const box = boxOf(el, device);
   const ref = useRef(null);
   const a = el.anim;
@@ -260,10 +264,10 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, repla
   else if (el.t === 'video') content = <VideoView el={el} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
   else if (el.t === 'button') {
-    const b = ButtonView({ el, box, mode });
-    if (mode === 'public' && !b.href) return null; // botão sem link não aparece na página pública
+    const b = ButtonView({ el, box, mode, onCart, onLink });
+    if (mode === 'public' && !b.href && !b.button) return null; // botão sem link não aparece na página pública
     content = mode === 'public'
-      ? <a className={b.cls} style={b.style} href={b.href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{b.body}</a>
+      ? b.button || <a className={b.cls} style={b.style} href={b.href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{b.body}</a>
       : <div className={b.cls} style={b.style}>{b.body}</div>;
   }
   if (content == null) return null;
@@ -309,14 +313,14 @@ export function PageCredit({ theme }) {
 }
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
-export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, onLink, replay = 0, children, minHeight }) {
+export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, onLink, onCart, replay = 0, children, minHeight }) {
   const W = DESIGN_W[device];
   const H = Math.max(minHeight || 0, pageHeight(doc, device));
   return (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
       <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
         {doc.elements.map((el, i) => (
-          <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1} onLink={onLink} replay={replay} />
+          <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1} onLink={onLink} onCart={onCart} replay={replay} />
         ))}
         {children}
       </div>

@@ -9,6 +9,7 @@ import { AppError, onlyDigits, sleep } from '../utils/helpers.js';
 
 const TIMEOUT_MS = 9000;
 const UA = 'DM-Financeiro/1.0 (catalogo digital)';
+const SUPERFRETE_UA = config.geo.superfreteUserAgent;
 
 const cache = new Map();
 async function cached(key, ttlMs, fn) {
@@ -116,12 +117,22 @@ export async function quoteMotoboy(cfg, dest) {
 // ---------- Correios pelo SuperFrete ----------
 // Serviços: 1 = PAC, 2 = SEDEX, 17 = Mini Envios. Os nomes e prazos mostrados vêm da resposta da API.
 const toMoneyCents = (v) => {
-  let n = v;
-  if (typeof v === 'string') n = v.includes(',') ? Number(v.replace(/\./g, '').replace(',', '.')) : Number(v); // "1.234,56" ou "22.5"
+  if (typeof v === 'string' && !v.trim()) return null;
+  const n = typeof v === 'string' ? (v.includes(',') ? Number(v.replace(/\./g, '').replace(',', '.')) : Number(v)) : v;
   return Number.isFinite(n) && n >= 0 ? Math.round(n * 100) : null;
 };
+const deliveryDays = (option) => {
+  const raw = option.custom_delivery_time ?? option.delivery_time ?? option.delivery_range;
+  if (raw && typeof raw === 'object') {
+    const max = Number(raw.max);
+    const min = Number(raw.min ?? max);
+    return Number.isFinite(max) ? { min: Number.isFinite(min) ? min : max, max } : null;
+  }
+  const days = Number(raw);
+  return Number.isFinite(days) ? { min: days, max: days } : null;
+};
 
-export async function quoteCorreios({ token, sandbox = false, correios, toZip, insuranceCents = 0 }) {
+export async function quoteCorreios({ token = config.geo.superfreteToken, sandbox = false, correios, toZip, insuranceCents = 0 }) {
   const to = onlyDigits(toZip);
   if (to.length !== 8) throw new AppError(400, 'Informe o CEP de destino com 8 números.');
   // Mínimos aceitos pelos Correios: 16 x 11 x 2 cm.
@@ -129,11 +140,13 @@ export async function quoteCorreios({ token, sandbox = false, correios, toZip, i
     height: Math.max(2, correios.heightCm), width: Math.max(11, correios.widthCm), length: Math.max(16, correios.lengthCm),
     weight: Math.max(0.01, Math.round(correios.weightG) / 1000), // em kg
   };
+  if (!token) throw new AppError(503, 'O frete dos Correios não está configurado no servidor. Avise o administrador.', 'SHIPPING_UNAVAILABLE');
+  const authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
   let res;
   try {
     res = await fetch(`${sandbox ? config.geo.superfreteSandbox : config.geo.superfrete}/api/v0/calculator`, {
       method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: `Bearer ${token}`, 'User-Agent': UA },
+      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authorization, 'User-Agent': SUPERFRETE_UA },
       body: JSON.stringify({
         from: { postal_code: correios.originZip }, to: { postal_code: to }, services: '1,2,17', package: pkg,
         options: { own_hand: false, receipt: false, insurance_value: insuranceCents / 100, use_insurance_value: insuranceCents > 0 },
@@ -143,18 +156,18 @@ export async function quoteCorreios({ token, sandbox = false, correios, toZip, i
   } catch {
     throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
   }
-  if (res.status === 401 || res.status === 403) throw new AppError(502, 'O token do SuperFrete foi recusado. O dono da loja precisa conferir o token nas configurações.', 'SHIPPING_TOKEN');
+  if (res.status === 401 || res.status === 403) throw new AppError(502, 'As credenciais do SuperFrete foram recusadas. Avise o administrador do sistema.', 'SHIPPING_TOKEN');
   const data = await res.json().catch(() => null);
-  if (!res.ok || !Array.isArray(data)) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, 'Não foi possível simular o frete para esse CEP. Confira o CEP de destino.', 'SHIPPING_UNAVAILABLE');
-  const options = data
+  const resultRows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+  if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, 'Não foi possível simular o frete para esse CEP. Confira o CEP de destino.', 'SHIPPING_UNAVAILABLE');
+  const options = resultRows
     .filter((o) => o && !o.error && o.id !== undefined)
     .map((o) => {
-      const cents = toMoneyCents(o.custom_price ?? o.price);
-      const max = Number(o.custom_delivery_time ?? o.delivery_time ?? o.delivery_range?.max);
-      const min = Number(o.delivery_range?.min ?? max);
+      const cents = toMoneyCents(o.custom_price) ?? toMoneyCents(o.price);
+      const days = deliveryDays(o);
       return cents === null ? null : {
         id: String(o.id), name: String(o.name || 'Correios').slice(0, 40), priceCents: cents,
-        days: Number.isFinite(max) ? { min: Number.isFinite(min) ? min : max, max } : null,
+        days,
         company: String(o.company?.name || 'Correios').slice(0, 40),
       };
     })

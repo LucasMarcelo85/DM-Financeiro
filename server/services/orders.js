@@ -5,6 +5,7 @@ import { defaultCatalogConfig, publicProduct } from '../utils/catalog.js';
 import { accessibleUserFilter } from './access.js';
 import { limitsFor } from '../plans.js';
 import { decrypt } from '../utils/secret.js';
+import { config } from '../config.js';
 import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
@@ -20,7 +21,7 @@ export async function loadCatalogOwner(userSlug) {
   const owner = await prisma.user.findFirst({ where: { portfolioSlug: slug, ...accessibleUserFilter() }, include: { catalogSettings: true } });
   if (!owner || limitsFor(owner).catalogProducts < 1) throw new AppError(404, 'Catálogo não encontrado.');
   const cfg = { ...defaultCatalogConfig(), ...(owner.catalogSettings?.config || {}) };
-  return { owner, cfg, token: decrypt(owner.catalogSettings?.superfrete) };
+  return { owner, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete) };
 }
 
 // Endereço de destino vindo do cliente (CEP ou endereço). Completa pelo CEP quando possível.
@@ -48,7 +49,7 @@ export async function quoteShipping({ cfg, token }, type, rawDest, subtotalCents
   }
   if (type === 'correios') {
     if (!cfg.correios.enabled) throw new AppError(400, 'Esta loja não envia pelos Correios.');
-    if (!token) throw new AppError(503, 'O frete dos Correios não está disponível nesta loja agora.', 'SHIPPING_UNAVAILABLE');
+    if (!token) throw new AppError(503, 'O SuperFrete não está configurado no servidor. Avise o administrador.', 'SHIPPING_UNAVAILABLE');
     const dest = await resolveDestination({ zip: rawDest?.zip });
     const options = await quoteCorreios({ token, sandbox: Boolean(cfg.correios.sandbox), correios: cfg.correios, toZip: dest.zip, insuranceCents: subtotalCents });
     return { type, dest, options };
@@ -70,6 +71,8 @@ export async function createOrder(userSlug, body = {}) {
   // 2) Itens: preço sempre vem do banco (o que o navegador mandar de preço é ignorado).
   const rawItems = Array.isArray(body.items) ? body.items.slice(0, 60) : [];
   if (!rawItems.length) throw new AppError(400, 'O carrinho está vazio.');
+  const requestedCount = rawItems.reduce((sum, item) => sum + (Number.isInteger(Number(item?.qty)) && Number(item.qty) > 0 ? Number(item.qty) : 0), 0);
+  if (requestedCount < (cfg.checkout?.minItems || 1)) throw new AppError(400, `Este pedido precisa ter pelo menos ${cfg.checkout.minItems} itens.`);
   const ids = [...new Set(rawItems.map((i) => Number(i?.productId)).filter(Number.isInteger))];
   const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: true, priceOptions: true } });
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -87,6 +90,7 @@ export async function createOrder(userSlug, body = {}) {
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
   }
   const subtotalCents = items.reduce((s, i) => s + i.totalCents, 0);
+  if (subtotalCents < (cfg.checkout?.minSubtotalCents || 0)) throw new AppError(400, `O valor mínimo do pedido é R$ ${(cfg.checkout.minSubtotalCents / 100).toFixed(2).replace('.', ',')}.`);
 
   // 3) Entrega (cada forma tem os seus campos obrigatórios).
   const d = body.delivery || {};
@@ -131,6 +135,11 @@ export async function createOrder(userSlug, body = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       order = await prisma.$transaction(async (tx) => {
+        await tx.orderCustomerProfile.upsert({
+          where: { userId_customerPhone: { userId: owner.id, customerPhone: phone } },
+          create: { userId: owner.id, customerPhone: phone, customerName },
+          update: { customerName },
+        });
         const existing = await tx.contact.findUnique({ where: { userId_phone: { userId: owner.id, phone } } });
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });

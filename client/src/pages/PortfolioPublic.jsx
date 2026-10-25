@@ -55,7 +55,7 @@ function PublicPage({ page, products, store, slug }) {
   const { device, scale } = usePageScale();
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
   const cart = useCart(slug);
-  const [cartOpen, goCart] = useCartView();
+  const [cartOpen, goCart] = useCartView(doc.catalog.cartLink);
   const pixelOn = Boolean(doc.pixel.meta || doc.pixel.google || doc.pixel.tiktok);
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
@@ -67,7 +67,7 @@ function PublicPage({ page, products, store, slug }) {
       <ClipDefs />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
-          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} onLink={onLink} />
+          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} onLink={onLink} onCart={isCatalog ? () => goCart(true) : undefined} />
         </main>
       )}
       {isCatalog && !showCart && <CatalogHome doc={doc} products={products} cart={cart} onOpenCart={() => goCart(true)} pixelOn={pixelOn} />}

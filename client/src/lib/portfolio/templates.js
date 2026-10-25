@@ -16,6 +16,8 @@ export const SITE_TEMPLATES = [
 export const CATALOG_TEMPLATES = [
   { key: 'catalog', label: 'Catálogo digital', desc: 'Topo com nome da loja e botão de WhatsApp; produtos, carrinho e pedido prontos.' },
   { key: 'catalog-bold', label: 'Catálogo colorido', desc: 'Topo com degradê animado e formas decorativas.' },
+  { key: 'catalog-minimal', label: 'Loja minimalista', desc: 'Visual limpo, elegante e direto ao catálogo.' },
+  { key: 'catalog-editorial', label: 'Loja editorial', desc: 'Capa sofisticada com destaque para a marca e o carrinho.' },
 ];
 export const TEMPLATES = [...SITE_TEMPLATES, ...CATALOG_TEMPLATES];
 
@@ -113,6 +115,30 @@ export function buildTemplate(key, name = 'Sua empresa') {
       E('text', { text: name, font: 'poppins', weight: 700, color: '#ffffff', box: box(80, 80, 760, 80, 58), anim: { enter: 'slide-up' } }),
       E('text', { text: 'Novidades toda semana. Peça pelo carrinho e receba em casa.', color: '#ffeaf3', box: box(80, 170, 700, 50, 21), anim: { enter: 'fade', delay: 150 } }),
       E('button', { label: 'Fale com a loja', link: wa(), icon: 'whatsapp', style: 'shine', color: '#ffffff', textColor: '#d6336c', radius: 999, box: box(80, 232, 240, 52, 17), anim: { enter: 'zoom-in', delay: 300 } }),
+    ];
+  } else if (key === 'catalog-minimal') {
+    doc.theme = { ...th, ...preset('oceano'), bg: '#f8fafc', headingFont: 'montserrat' };
+    doc.seo = { title: `${name} — Loja`, description: `Conheça o catálogo de ${name} e faça seu pedido.` };
+    doc.catalog.cartLayout = 'compact';
+    doc.heights.desktop = 240;
+    doc.elements = [
+      E('shape', { shape: 'rect', radius: 20, fill: FILL0({ c1: '#ffffff' }), shadow: 'small', box: box(48, 32, 1104, 176) }),
+      E('text', { text: name, font: 'montserrat', weight: 700, color: '#14202e', box: box(100, 72, 650, 58, 42), anim: { enter: 'slide-up' } }),
+      E('text', { text: 'Escolhas especiais, com toda a praticidade de comprar online.', color: '#526173', box: box(100, 138, 680, 34, 18), anim: { enter: 'fade', delay: 120 } }),
+      E('button', { label: 'Ver carrinho', link: url(), icon: 'cart', style: 'solid', radius: 999, box: box(850, 92, 230, 58, 17), anim: { enter: 'zoom-in', delay: 180 } }),
+    ];
+  } else if (key === 'catalog-editorial') {
+    doc.theme = { ...th, primary: '#bb8a55', bg: '#f6f0e8', text: '#25231f', headingFont: 'playfair' };
+    doc.seo = { title: `${name} — Coleção`, description: `Explore a coleção de ${name} e monte seu pedido.` };
+    doc.catalog.cartLayout = 'split';
+    doc.heights.desktop = 300;
+    doc.elements = [
+      E('shape', { shape: 'rect', fill: FILL0({ type: 'gradient', c1: '#24241f', c2: '#424033', angle: 120 }), box: box(0, 0, 1200, 300) }),
+      E('shape', { shape: 'ring', radius: 18, fill: FILL0({ c1: '#bb8a55' }), opacity: 60, box: box(900, 40, 200, 200), anim: { loop: 'float' } }),
+      E('text', { text: 'A CURADORIA', color: '#d8b88f', weight: 700, spacing: 4, box: box(90, 64, 400, 28, 15), anim: { enter: 'fade' } }),
+      E('text', { text: name, font: 'playfair', weight: 700, color: '#fffaf2', box: box(90, 105, 690, 74, 52), anim: { enter: 'slide-up', delay: 100 } }),
+      E('text', { text: 'Peças selecionadas para tornar cada escolha especial.', color: '#eee5d9', box: box(92, 196, 620, 44, 19), anim: { enter: 'fade', delay: 200 } }),
+      E('button', { label: 'Abrir sacola', link: url(), icon: 'bag', style: 'outline', color: '#f6f0e8', textColor: '#f6f0e8', radius: 999, box: box(840, 112, 245, 58, 17), anim: { enter: 'zoom-in', delay: 260 } }),
     ];
   }
   return key === 'blank' ? doc : finish(doc);

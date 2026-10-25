@@ -80,22 +80,31 @@ const UF = /^[A-Z]{2}$/;
 
 export const defaultCatalogConfig = () => ({
   storeName: '', whatsapp: '',
+  checkout: { minItems: 1, minSubtotalCents: 0 },
   excursion: { enabled: false },
   motoboy: { enabled: false, mode: 'fixed', fixedCents: 0, perKmCents: 0, minCents: 0, maxKm: 0, originZip: '', originStreet: '', originNumber: '', originDistrict: '', originCity: '', originState: '' },
   correios: { enabled: false, originZip: '', heightCm: 0, widthCm: 0, lengthCm: 0, weightG: 0, sandbox: false },
 });
 
-// `hasToken`: o usuário já tem (ou está enviando agora) o token do SuperFrete.
+// `hasToken`: há credencial do SuperFrete configurada no servidor ou legada para este usuário.
 export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const d = defaultCatalogConfig();
   const ex = r.excursion && typeof r.excursion === 'object' ? r.excursion : {};
   const mo = r.motoboy && typeof r.motoboy === 'object' ? r.motoboy : {};
   const co = r.correios && typeof r.correios === 'object' ? r.correios : {};
+  const checkout = r.checkout && typeof r.checkout === 'object' ? r.checkout : {};
 
   const whatsapp = r.whatsapp ? normalizePhone(r.whatsapp) : '';
   if (r.whatsapp && !whatsapp) throw new AppError(400, 'WhatsApp da loja inválido. Use DDD + número.');
-  const cfg = { storeName: line(r.storeName, 80), whatsapp: whatsapp || '', excursion: { enabled: Boolean(ex.enabled) }, motoboy: { ...d.motoboy }, correios: { ...d.correios } };
+  const cfg = {
+    storeName: line(r.storeName, 80), whatsapp: whatsapp || '',
+    checkout: {
+      minItems: intIn(checkout.minItems ?? d.checkout.minItems, 1, 999, 'Quantidade mínima do pedido'),
+      minSubtotalCents: intIn(checkout.minSubtotalCents ?? d.checkout.minSubtotalCents, 0, MAX_PRICE, 'Valor mínimo do pedido'),
+    },
+    excursion: { enabled: Boolean(ex.enabled) }, motoboy: { ...d.motoboy }, correios: { ...d.correios },
+  };
 
   // Motoboy: o usuário escolhe cobrar valor fixo ou por km. Por km, precisa informar de onde o motoboy sai (CEP ou endereço).
   cfg.motoboy.enabled = Boolean(mo.enabled);
@@ -133,7 +142,7 @@ export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
     const c = cfg.correios;
     if (!(c.heightCm > 0 && c.widthCm > 0 && c.lengthCm > 0 && c.weightG > 0)) throw new AppError(400, 'Correios: informe altura, largura, comprimento e peso do pacote para simular o frete.');
     if (c.heightCm + c.widthCm + c.lengthCm > 200) throw new AppError(400, 'Correios: a soma de altura + largura + comprimento não pode passar de 200 cm.');
-    if (!hasToken) throw new AppError(400, 'Correios: cole o token do SuperFrete (usado para simular o frete).');
+    if (!hasToken) throw new AppError(400, 'Correios: o SuperFrete não está configurado no servidor. Avise o administrador.');
   }
   return cfg;
 }
@@ -143,6 +152,7 @@ export function publicCatalogConfig(cfg) {
   const c = { ...defaultCatalogConfig(), ...(cfg || {}) };
   return {
     storeName: c.storeName, whatsapp: c.whatsapp,
+    checkout: { minItems: c.checkout?.minItems || 1, minSubtotalCents: c.checkout?.minSubtotalCents || 0 },
     excursion: { enabled: Boolean(c.excursion?.enabled) },
     motoboy: { enabled: Boolean(c.motoboy?.enabled), mode: c.motoboy?.mode === 'km' ? 'km' : 'fixed', fixedCents: c.motoboy?.fixedCents || 0, perKmCents: c.motoboy?.perKmCents || 0, minCents: c.motoboy?.minCents || 0, maxKm: c.motoboy?.maxKm || 0 },
     correios: { enabled: Boolean(c.correios?.enabled) },

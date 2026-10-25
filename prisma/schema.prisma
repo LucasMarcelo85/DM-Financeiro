@@ -99,6 +99,7 @@ model User {
   verificationCodes VerificationCode[]
   products        Product[]
   orders          Order[]
+  orderCustomerProfiles OrderCustomerProfile[]
   catalogSettings CatalogSettings?
   productPreferences ProductPreferences?
 
@@ -565,7 +566,7 @@ model CatalogSettings {
   @@map("catalog_settings")
 }
 
-// Pedido feito no catálogo. Apagado sozinho depois de 10 dias (services/maintenance.js) ou quando o usuário excluir.
+// Pedido feito no catálogo. Exclusões ficam no log até a limpeza automática após 20 dias.
 model Order {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
@@ -581,10 +582,28 @@ model Order {
   notes         String   @default("")
   status        String   @default("novo") // 'novo' | 'atendido'
   createdAt     DateTime @default(now()) @map("created_at")
+  deletedAt     DateTime? @map("deleted_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, createdAt])
   @@index([createdAt])
+  @@index([userId, deletedAt, createdAt])
   @@map("orders")
+}
+
+model OrderCustomerProfile {
+  id            Int      @id @default(autoincrement())
+  userId        Int      @map("user_id")
+  customerPhone String   @map("customer_phone")
+  customerName  String   @map("customer_name")
+  labels        String[] @default([])
+  notes         String   @default("")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, customerPhone])
+  @@index([userId, updatedAt])
+  @@map("order_customer_profiles")
 }

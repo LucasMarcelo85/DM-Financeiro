@@ -1,9 +1,10 @@
 import {
-  FiArrowRight, FiArrowUpRight, FiAward, FiBell, FiBook, FiBriefcase, FiCalendar, FiCamera, FiCheck,
-  FiCheckCircle, FiChevronDown, FiClock, FiCoffee, FiCreditCard, FiDollarSign, FiDownload, FiExternalLink,
-  FiGift, FiGlobe, FiHeart, FiHome, FiLink, FiMail, FiMapPin, FiMessageCircle, FiMoon, FiMusic, FiPercent,
-  FiPhone, FiPlay, FiPlus, FiSearch, FiShield, FiShoppingBag, FiShoppingCart, FiSmile, FiStar, FiSun,
-  FiTag, FiThumbsUp, FiTool, FiTruck, FiUser, FiUsers, FiX, FiZap,
+  FiActivity, FiArchive, FiArrowRight, FiArrowUpRight, FiAward, FiBell, FiBook, FiBox, FiBriefcase, FiCalendar, FiCamera, FiCheck,
+  FiCheckCircle, FiChevronDown, FiClock, FiCoffee, FiCreditCard, FiDollarSign, FiDownload,
+  FiCompass, FiEdit3, FiFileText, FiFilter, FiFlag, FiGift, FiGlobe, FiGrid, FiHeart, FiHome, FiImage, FiLayers, FiLayout, FiLink, FiLock, FiMail, FiMap, FiMapPin,
+  FiMessageCircle, FiMoon, FiMusic, FiPackage, FiPercent, FiPhone, FiPieChart, FiPlay, FiPlus, FiRefreshCw,
+  FiSearch, FiSettings, FiShield, FiShoppingBag, FiShoppingCart, FiSliders, FiSmile, FiStar, FiSun,
+  FiTag, FiThumbsUp, FiTool, FiTrendingUp, FiTruck, FiUser, FiUsers, FiWatch, FiX, FiZap,
 } from 'react-icons/fi';
 import { FaLinkedinIn } from 'react-icons/fa6';
 import {
@@ -51,6 +52,11 @@ export const ICONS = {
   dollar: { g: 'shop', label: 'Valor', s: ['M12 1v22', 'M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6'] },
   store: { g: 'shop', label: 'Loja', s: ['M3 9l1.5-5h15L21 9', 'M3 9h18v2a3 3 0 0 1-6 0 3 3 0 0 1-6 0 3 3 0 0 1-6 0V9z', 'M5 14v7h14v-7', 'M10 21v-5h4v5'] },
   coffee: { g: 'shop', label: 'Café', s: ['M18 8h1a4 4 0 0 1 0 8h-1', 'M2 8h16v9a4 4 0 0 1-4 4H6a4 4 0 0 1-4-4V8z', 'M6 1v3', 'M10 1v3', 'M14 1v3'] },
+  package: { g: 'shop', label: 'Pacote', s: [] },
+  basket: { g: 'shop', label: 'Cesta', s: [] },
+  box: { g: 'shop', label: 'Caixa', s: [] },
+  wallet: { g: 'shop', label: 'Carteira', s: [] },
+  'shopping-basket': { g: 'shop', label: 'Sacola de compras', s: [] },
   // ---- Geral
   star: { g: 'general', label: 'Estrela', s: [poly('12,2 15.09,8.26 22,9.27 17,14.14 18.18,21.02 12,17.77 5.82,21.02 7,14.14 2,9.27 8.91,8.26')] },
   heart: { g: 'general', label: 'Coração', s: ['M20.84 4.61a5.5 5.5 0 0 0-7.78 0L12 5.67l-1.06-1.06a5.5 5.5 0 0 0-7.78 7.78l1.06 1.06L12 21.23l7.78-7.78 1.06-1.06a5.5 5.5 0 0 0 0-7.78z'] },
@@ -80,6 +86,26 @@ export const ICONS = {
   tool: { g: 'general', label: 'Ferramenta', s: ['M14.7 6.3a1 1 0 0 0 0 1.4l1.6 1.6a1 1 0 0 0 1.4 0l3.77-3.77a6 6 0 0 1-7.94 7.94l-6.91 6.91a2.12 2.12 0 0 1-3-3l6.91-6.91a6 6 0 0 1 7.94-7.94l-3.76 3.76z'] },
   plus: { g: 'general', label: 'Mais', s: ['M12 5v14', 'M5 12h14'] },
   x: { g: 'general', label: 'Fechar', s: ['M18 6L6 18', 'M6 6l12 12'] },
+  activity: { g: 'general', label: 'Atividade', s: [] },
+  archive: { g: 'general', label: 'Arquivo', s: [] },
+  building: { g: 'general', label: 'Prédio', s: [] },
+  compass: { g: 'general', label: 'Bússola', s: [] },
+  edit: { g: 'general', label: 'Editar', s: [] },
+  file: { g: 'general', label: 'Documento', s: [] },
+  filter: { g: 'general', label: 'Filtro', s: [] },
+  flag: { g: 'general', label: 'Bandeira', s: [] },
+  grid: { g: 'general', label: 'Grade', s: [] },
+  image: { g: 'general', label: 'Imagem', s: [] },
+  layers: { g: 'general', label: 'Camadas', s: [] },
+  layout: { g: 'general', label: 'Layout', s: [] },
+  lock: { g: 'general', label: 'Cadeado', s: [] },
+  map: { g: 'general', label: 'Mapa', s: [] },
+  'pie-chart': { g: 'general', label: 'Gráfico', s: [] },
+  refresh: { g: 'general', label: 'Atualizar', s: [] },
+  settings: { g: 'general', label: 'Configurações', s: [] },
+  sliders: { g: 'general', label: 'Ajustes', s: [] },
+  'trending-up': { g: 'general', label: 'Tendência de alta', s: [] },
+  watch: { g: 'general', label: 'Relógio de pulso', s: [] },
 };
 
 export const ICON_COMPONENTS = {
@@ -93,4 +119,8 @@ export const ICON_COMPONENTS = {
   user: FiUser, users: FiUsers, home: FiHome, award: FiAward, shield: FiShield, thumbs: FiThumbsUp, zap: FiZap,
   sun: FiSun, moon: FiMoon, camera: FiCamera, music: FiMusic, smile: FiSmile, briefcase: FiBriefcase, book: FiBook,
   bell: FiBell, tool: FiTool, plus: FiPlus, x: FiX,
+  package: FiPackage, basket: FiShoppingBag, box: FiBox, wallet: FiCreditCard, 'shopping-basket': FiShoppingBag,
+  activity: FiActivity, archive: FiArchive, building: FiBriefcase, compass: FiCompass, edit: FiEdit3, file: FiFileText,
+  filter: FiFilter, flag: FiFlag, grid: FiGrid, image: FiImage, layers: FiLayers, layout: FiLayout, lock: FiLock, map: FiMap,
+  'pie-chart': FiPieChart, refresh: FiRefreshCw, settings: FiSettings, sliders: FiSliders, 'trending-up': FiTrendingUp, watch: FiWatch,
 };

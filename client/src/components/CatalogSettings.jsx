@@ -5,13 +5,13 @@ import { Check, Seg, TextField } from './portfolio/Fields.jsx';
 import { useToast } from './Toast.jsx';
 import { brl, centsToMasked, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
 
-// Entregas e frete do catálogo digital. Os dados de acesso (token do SuperFrete) ficam guardados no banco, criptografados:
-// não vão para a página pública e não precisam do arquivo .env.
+// Entregas e frete do catálogo digital.
 const cepMask = (v) => { const d = v.replace(/\D/g, '').slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
 const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
 const toForm = (c) => ({
   storeName: c.storeName, whatsapp: c.whatsapp ? maskPhone(c.whatsapp) : '',
+  checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
   excursion: { ...c.excursion },
   motoboy: { ...c.motoboy, fixed: centsToMasked(c.motoboy.fixedCents), perKm: centsToMasked(c.motoboy.perKmCents), min: centsToMasked(c.motoboy.minCents), maxKm: num(c.motoboy.maxKm), originZip: cepMask(c.motoboy.originZip) },
   correios: { ...c.correios, originZip: cepMask(c.correios.originZip), heightCm: num(c.correios.heightCm), widthCm: num(c.correios.widthCm), lengthCm: num(c.correios.lengthCm), weightG: num(c.correios.weightG) },
@@ -19,6 +19,7 @@ const toForm = (c) => ({
 
 const toConfig = (f) => ({
   storeName: f.storeName, whatsapp: f.whatsapp.replace(/\D/g, ''),
+  checkout: { minItems: Number(f.checkout.minItems) || 1, minSubtotalCents: moneyToCents(f.checkout.minSubtotal) },
   excursion: { enabled: f.excursion.enabled },
   motoboy: {
     enabled: f.motoboy.enabled, mode: f.motoboy.mode, fixedCents: moneyToCents(f.motoboy.fixed), perKmCents: moneyToCents(f.motoboy.perKm), minCents: moneyToCents(f.motoboy.min),
@@ -34,9 +35,7 @@ const toConfig = (f) => ({
 export default function CatalogSettings({ onClose, onSaved }) {
   const toast = useToast();
   const [f, setF] = useState(null);
-  const [token, setToken] = useState('');
-  const [clearToken, setClearToken] = useState(false);
-  const [info, setInfo] = useState({ hasSuperfreteToken: false, superfreteHint: '' });
+  const [info, setInfo] = useState({ hasSuperfreteToken: false });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [zip, setZip] = useState('');
@@ -64,8 +63,8 @@ export default function CatalogSettings({ onClose, onSaved }) {
   async function save() {
     setBusy(true); setError('');
     try {
-      const r = await api.put('/catalog/settings', { config: toConfig(f), ...(token.trim() ? { superfreteToken: token.trim() } : {}), ...(clearToken && !token.trim() ? { clearSuperfreteToken: true } : {}) });
-      setInfo(r); setF(toForm(r.config)); setToken(''); setClearToken(false);
+      const r = await api.put('/catalog/settings', { config: toConfig(f) });
+      setInfo(r); setF(toForm(r.config));
       toast('Configurações do catálogo salvas.');
       onSaved?.(r);
       onClose();
@@ -75,7 +74,6 @@ export default function CatalogSettings({ onClose, onSaved }) {
   async function testShipping() {
     setTesting(true); setTest(null);
     try {
-      if (token.trim() || clearToken) throw new Error('Salve as configurações primeiro e depois teste a simulação.');
       setTest((await api.post('/catalog/settings/test-shipping', { zip })).options);
     } catch (e) { setTest({ error: e.message }); } finally { setTesting(false); }
   }
@@ -86,6 +84,13 @@ export default function CatalogSettings({ onClose, onSaved }) {
       <div className="form cs-form">
         <TextField label="Nome da loja" value={f.storeName} onChange={setTop('storeName')} maxLength={80} id="cs-store" />
         <TextField label="WhatsApp da loja (opcional)" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Depois do pedido, o cliente pode enviar o resumo para este número." />
+        <fieldset className="cs-box">
+          <strong>Regras mínimas para finalizar um pedido</strong>
+          <div className="grid-2">
+            <TextField label="Quantidade mínima de itens" value={f.checkout.minItems} onChange={(v) => setF((x) => ({ ...x, checkout: { ...x.checkout, minItems: v.replace(/\D/g, '').slice(0, 3) } }))} id="cs-min-items" />
+            <TextField label="Subtotal mínimo (R$)" value={f.checkout.minSubtotal} onChange={(v) => setF((x) => ({ ...x, checkout: { ...x.checkout, minSubtotal: maskMoney(v) } }))} id="cs-min-subtotal" hint="Use 0 para não exigir valor mínimo." />
+          </div>
+        </fieldset>
         <p className="muted small">Marque as formas de entrega que você oferece. O cliente sempre informa <strong>nome</strong> e <strong>telefone</strong>.</p>
 
         <fieldset className="cs-box">
@@ -140,14 +145,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
                 <TextField label="Comprimento (cm) *" value={f.correios.lengthCm} onChange={digits('lengthCm')} id="cs-l" />
                 <TextField label="Peso (gramas) *" value={f.correios.weightG} onChange={(v) => setCo('weightG')(v.replace(/\D/g, '').slice(0, 5))} id="cs-g" />
               </div>
-              <label className="ce-field">
-                <span>Token do SuperFrete *</span>
-                <input className="input input-sm" type="password" autoComplete="off" value={token} onChange={(e) => { setToken(e.target.value); setClearToken(false); }}
-                  placeholder={info.hasSuperfreteToken && !clearToken ? `Token salvo (${info.superfreteHint}). Cole outro para trocar.` : 'Cole aqui o token da sua conta SuperFrete'} />
-              </label>
-              {info.hasSuperfreteToken && !clearToken && <button type="button" className="link-btn" onClick={() => setClearToken(true)}>Remover o token salvo</button>}
-              {clearToken && <p className="muted small">O token será removido ao salvar (os Correios precisam de token para funcionar).</p>}
-              <p className="muted small">Onde achar o token: na sua conta do SuperFrete, em <strong>Integrações</strong>. Ele fica guardado de forma criptografada, não aparece na página pública e não depende do arquivo .env.</p>
+              <p className="muted small">{info.hasSuperfreteToken ? 'O SuperFrete já está configurado pela administração do sistema.' : 'O SuperFrete ainda não está configurado no servidor. Avise o administrador para preencher SUPERFRETE_TOKEN.'}</p>
               <Check label="Usar o ambiente de testes do SuperFrete (sandbox)" checked={f.correios.sandbox} onChange={setCo('sandbox')} />
               {info.hasSuperfreteToken && (
                 <div className="cs-test">

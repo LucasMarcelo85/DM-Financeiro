@@ -425,6 +425,8 @@ function cleanDocV2(raw, kindHint) {
       columns: { desktop: Math.round(num(cols.desktop, 1, 6, 4)), tablet: Math.round(num(cols.tablet, 1, 6, 3)), mobile: Math.round(num(cols.mobile, 1, 3, 2)) },
       showSearch: bool(c.showSearch, true), showCategories: bool(c.showCategories, true), cardStyle: pick(c.cardStyle, CARD_STYLE, 'soft'),
       addLabel: line(c.addLabel, 30) || 'Adicionar', cartTitle: line(c.cartTitle, 60) || 'Seu carrinho', checkoutNote: str(c.checkoutNote, 300),
+      cartLayout: pick(c.cartLayout, new Set(['standard', 'compact', 'split']), 'standard'),
+      cartLink: /^[a-z0-9_-]{1,24}$/i.test(line(c.cartLink, 24)) ? line(c.cartLink, 24).toLowerCase() : 'carrinho',
     };
   }
   const seen = new Set();

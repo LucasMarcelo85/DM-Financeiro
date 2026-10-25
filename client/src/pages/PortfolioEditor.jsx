@@ -50,6 +50,7 @@ export default function PortfolioEditor() {
   const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers'
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [pages, setPages] = useState([]);
   const [imageTool, setImageTool] = useState(null); // { id, tool }
   const [catalogCfg, setCatalogCfg] = useState(false);
   const [converted, setConverted] = useState(false);
@@ -83,11 +84,12 @@ export default function PortfolioEditor() {
         setDocState(d);
         setConverted(p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length > 0);
         setName(p.name);
-        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, kind: p.kind });
+        setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, customUrl: p.customUrl, kind: p.kind });
         if (p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length) { version.current = 1; setSaveState('dirty'); }
       })
       .catch((e) => { toast(e.message, 'error'); nav('/portfolio', { replace: true }); });
     api.get('/products').then((r) => { if (alive) { setProducts(r.products); setCategories(r.categories); } }).catch(() => {});
+    api.get('/portfolios').then((r) => { if (alive) setPages(r.portfolios); }).catch((e) => { if (alive) toast(e.message, 'error'); });
     return () => { alive = false; };
   }, [id, nav, toast]);
 
@@ -178,6 +180,15 @@ export default function PortfolioEditor() {
     return undefined;
   }
 
+  async function switchPage(nextId) {
+    if (!nextId || nextId === id) return;
+    if (version.current !== savedVersion.current && !(await save())) {
+      setLeave(true);
+      return;
+    }
+    nav(`/portfolio/${nextId}`);
+  }
+
   // ---------------------------------------------------------------- publicar e compartilhar
   async function setPublished(value) {
     if (busy) return;
@@ -194,7 +205,7 @@ export default function PortfolioEditor() {
   async function saveSlug(slug) {
     try {
       const { portfolio } = await api.patch(`/portfolios/${id}`, { slug });
-      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path }));
+      setMeta((m) => ({ ...m, slug: portfolio.slug, path: portfolio.path, customUrl: portfolio.customUrl }));
       toast('Endereço atualizado.');
     } catch (e) { toast(e.message, 'error'); }
   }
@@ -288,6 +299,15 @@ export default function PortfolioEditor() {
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
     heights: (dv, v) => commit({ ...docRef.current, heights: { ...docRef.current.heights, [dv]: v } }, `height:${dv}`),
+    fitHeight: (dv) => {
+      const d = docRef.current;
+      const height = Math.max(200, Math.ceil(d.elements.reduce((bottom, el) => {
+        const box = boxOf(el, dv);
+        return Math.max(bottom, box.y + box.h);
+      }, 0) + 24));
+      commit({ ...d, heights: { ...d.heights, [dv]: height } }, `height:${dv}`);
+      toast('Altura ajustada ao conteúdo da página.');
+    },
     layout: (how) => {
       const d = docRef.current; const dv = deviceRef.current;
       commit(how === 'adapt' ? adaptDevice(d, 'desktop', dv) : stackDevice(d, dv));
@@ -337,11 +357,15 @@ export default function PortfolioEditor() {
     <div className="ce pe pe2">
       <header className="ce-top">
         <button type="button" className="btn btn-ghost btn-sm" onClick={goBack}><EIcon name="back" size={16} /> Portfólio</button>
+        <select className="input input-sm pe-page-select" value={id} aria-label="Selecionar página do portfólio" onChange={(e) => switchPage(e.target.value)}>
+          {pages.map((page) => <option key={page.id} value={page.id}>{page.name}</option>)}
+        </select>
         <input className="input input-sm ce-name" value={name} maxLength={120} aria-label="Nome da página"
           onChange={(e) => { setName(e.target.value); touch(); }}
           onBlur={() => { if (!name.trim()) { setName('Página sem título'); touch(); } }} />
         <span className={`ce-status is-${saveState}`} role="status">{SAVE_LABEL[saveState]}</span>
         <span className={`pe-pub ${meta.published ? 'is-on' : ''}`}>{meta.published ? 'Publicada' : 'Rascunho'}</span>
+        <a className="btn btn-ghost btn-sm pe-page-url" href={pageUrl(meta.path, meta.customUrl)} target="_blank" rel="noopener noreferrer" title={pageUrl(meta.path, meta.customUrl)}>Link</a>
         <span className="ce-grow" />
         <div className="seg seg-view pe-device-seg" style={{ '--n': 3 }} role="radiogroup" aria-label="Desenhar para qual tela">
           {DEVICES.map((d) => (

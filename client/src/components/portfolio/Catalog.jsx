@@ -258,8 +258,12 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     );
   }
 
+  const minimumItems = Number(store.checkout?.minItems) || 1;
+  const minimumSubtotal = Number(store.checkout?.minSubtotalCents) || 0;
+  const itemCount = lines.reduce((total, line) => total + line.qty, 0);
+  const meetsMinimum = itemCount >= minimumItems && subtotal >= minimumSubtotal;
   return (
-    <section className="cat-cart">
+    <section className={`cat-cart is-${cfg.cartLayout || 'standard'}`}>
       <button type="button" className="cat-back" onClick={onBack}>← Continuar comprando</button>
       <h1>{cfg.cartTitle}</h1>
       {!lines.length ? <p className="cat-empty">Seu carrinho está vazio.</p> : (
@@ -350,8 +354,9 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             <span>Frete <strong>{type === 'excursao' ? 'a combinar' : shipping === null ? '—' : brl(shipping)}</strong></span>
             <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>
           </div>
+          {!meetsMinimum && <p className="cat-muted cat-checkout-rule">Para finalizar, o pedido precisa ter {minimumItems > 1 ? `pelo menos ${minimumItems} itens` : 'ao menos 1 item'}{minimumSubtotal > 0 ? ` e subtotal mínimo de ${brl(minimumSubtotal)}` : ''}.</p>}
           {error && <p className="cat-error" role="alert">{error}</p>}
-          <button className="cat-btn" disabled={busy || !enabled.length || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>
+          <button className="cat-btn" disabled={busy || !enabled.length || !meetsMinimum || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>
         </form>
       )}
     </section>
@@ -359,8 +364,9 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
 }
 
 // Cartões da vitrine pública usam o mesmo `useCallback` de navegação do carrinho pela barra de endereço.
-export function useCartView() {
-  const read = () => new URLSearchParams(window.location.search).has('carrinho');
+export function useCartView(cartLink = 'carrinho') {
+  const key = /^[a-z0-9_-]{1,24}$/i.test(cartLink) ? cartLink : 'carrinho';
+  const read = () => { const qs = new URLSearchParams(window.location.search); return qs.has(key) || qs.has('carrinho'); };
   const [cartOpen, setCartOpen] = useState(read);
   useEffect(() => {
     const on = () => setCartOpen(read());
@@ -369,10 +375,10 @@ export function useCartView() {
   }, []);
   const go = useCallback((open) => {
     const url = new URL(window.location.href);
-    if (open) url.searchParams.set('carrinho', '1'); else url.searchParams.delete('carrinho');
+    if (open) url.searchParams.set(key, '1'); else { url.searchParams.delete(key); url.searchParams.delete('carrinho'); }
     window.history.pushState({}, '', url);
     setCartOpen(open);
     window.scrollTo({ top: 0 });
-  }, []);
+  }, [key]);
   return [cartOpen, go];
 }

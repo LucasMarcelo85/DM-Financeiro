@@ -419,7 +419,7 @@ function PixelSection({ doc, api }) {
   );
 }
 
-function CatalogSection({ doc, api, categories }) {
+function CatalogSection({ doc, api, categories, meta }) {
   const c = doc.catalog;
   const set = (k) => (v) => api.patchCatalog({ [k]: v }, `cat:${k}`);
   return (
@@ -443,6 +443,8 @@ function CatalogSection({ doc, api, categories }) {
       <Check label="Mostrar filtro de categorias" checked={c.showCategories} onChange={set('showCategories')} />
       <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />
       <TextField label="Título da página do carrinho" value={c.cartTitle} onChange={set('cartTitle')} maxLength={60} id="cc-cart" />
+      <Select label="Layout do carrinho" value={c.cartLayout} options={[['standard', 'Profissional'], ['compact', 'Compacto'], ['split', 'Resumo em destaque']]} onChange={set('cartLayout')} />
+      <TextField label="Identificador do link do carrinho" value={c.cartLink} onChange={(v) => set('cartLink')(v.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24))} maxLength={24} id="cc-cart-link" hint={`Link direto: ${pageUrl(meta.path, meta.customUrl)}?${c.cartLink || 'carrinho'}=1`} />
       <TextField label="Aviso na finalização (opcional)" value={c.checkoutNote} onChange={set('checkoutNote')} multiline rows={2} maxLength={300} id="cc-note" />
       <button type="button" className="btn btn-ghost btn-sm" onClick={api.openCatalogSettings}>Configurar entregas e frete</button>
     </Section>
@@ -485,6 +487,7 @@ export function PageInspector({ doc, device, meta, api, categories }) {
       <Section title={`Tamanho da página · ${{ desktop: 'Computador', tablet: 'Tablet', mobile: 'Celular' }[device]}`}>
         <NumField label="Altura mínima" value={doc.heights[device]} min={200} max={30000} suffix="px" onChange={setH} />
         <p className="muted small">A página cresce sozinha quando você coloca elementos mais embaixo.</p>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.fitHeight(device)}>Ajustar altura ao conteúdo</button>
         {device !== 'desktop' && (
           <div className="pe-tools">
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.layout('adapt')}>Ajustar do computador (proporcional)</button>
@@ -493,7 +496,7 @@ export function PageInspector({ doc, device, meta, api, categories }) {
         )}
         {device !== 'desktop' && <p className="muted small">Pontos de partida: depois é só arrastar cada elemento. Dá para desfazer com Ctrl+Z.</p>}
       </Section>
-      {doc.kind === 'catalog' && <CatalogSection doc={doc} api={api} categories={categories} />}
+      {doc.kind === 'catalog' && <CatalogSection doc={doc} api={api} categories={categories} meta={meta} />}
       <Section title="Pesquisa (Google) e compartilhamento">
         <TextField label="Título da página" value={doc.seo.title} onChange={(v) => api.patchSeo({ title: v }, 'seo:title')} maxLength={120} id="seo-title" />
         <TextField label="Descrição curta" value={doc.seo.description} onChange={(v) => api.patchSeo({ description: v }, 'seo:desc')} multiline rows={3} maxLength={300} id="seo-desc" />

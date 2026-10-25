@@ -35,7 +35,7 @@ export const CATALOG_DISPLAY = [['category', 'Em ordem de categorias'], ['mixed'
 export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e9eef5', bgAngle: 135, bgAnimate: 'none' };
 export const CATALOG_DEFAULTS = () => ({
   display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
-  addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '',
+  addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
 });
 
 // ---------------------------------------------------------------- padrões de cada tipo

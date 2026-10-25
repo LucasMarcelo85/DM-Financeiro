@@ -7,7 +7,7 @@ import { recountUnread, retentionCutoff } from './audit.js';
 // Faxina periódica do banco:
 //  - mensagens da auditoria com mais de 60 dias são apagadas (junto com as fotos/áudios delas), para o banco não encher;
 //  - conversas que ficaram vazias (sem mensagens, sem anotação e sem etiqueta) também saem;
-//  - pedidos do catálogo com mais de 10 dias são apagados;
+//  - pedidos do catálogo com mais de 20 dias são apagados;
 //  - códigos de confirmação vencidos são removidos;
 //  - os planos são relidos do banco (caso outra instância do sistema tenha alterado).
 const EVERY_MS = 60 * 60 * 1000; // a cada hora
@@ -41,7 +41,7 @@ export async function purgeOldAuditMessages(now = Date.now()) {
   return removed;
 }
 
-// Pedidos do catálogo com mais de 10 dias saem do banco.
+// Pedidos do catálogo, inclusive os arquivados, saem do banco após 20 dias.
 export async function purgeOldOrders(now = Date.now()) {
   const r = await prisma.order.deleteMany({ where: { createdAt: { lt: new Date(now - config.orderRetentionDays * DAY) } } });
   return r.count;
