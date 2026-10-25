@@ -78,7 +78,7 @@ Para cadastrar domínios personalizados automaticamente, configure também `EASY
   - **PDF / Imprimir** usa o diálogo do navegador ("Salvar como PDF"); **Exportar** baixa o modelo em `.json`.
   - Imagens são reduzidas no navegador e ficam dentro do contrato (limite de ~9 MB por contrato). O servidor valida e limpa o documento (`server/utils/contract.js`) e limita a quantidade de modelos por plano.
   - As fontes vêm do Google Fonts (`client/index.html`); se mudar a lista, atualize também `FONTS` em `client/src/lib/contract/model.js` e `FONT_KEYS` em `server/utils/contract.js`.
-- **Produtos e serviços:** as imagens são reduzidas no navegador e aceitam PNG, JPG, WebP, GIF e HEIC/HEIF. Em *Produtos e serviços > Organizar categorias e opções*, cada usuário salva categorias, tipos de variação e nomes de preço para reutilizar; os nomes e valores de variações e preços também podem ser personalizados em cada item.
+- **Produtos e serviços:** as imagens são reduzidas no navegador e aceitam PNG, JPG, WebP, GIF e HEIC/HEIF. Em *Produtos e serviços > Organizar categorias e opções*, cada usuário salva categorias, tipos de variação e nomes de preço para reutilizar. Cada variação descreve uma característica (como cor ou tamanho), sem preço próprio; o valor opcional é informado na forma de preço, cujo nome é personalizável.
 - Usa o formato da Evolution API v2. Se a sua for a v1, ajuste os corpos das requisições em `server/services/evolution.js`.
 
 ## Auditoria de conversas

@@ -82,7 +82,7 @@ export async function createOrder(userSlug, body = {}) {
     if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
     const priceOption = it.priceOptionId ? p.priceOptions.find((x) => x.id === Number(it.priceOptionId)) : null;
     if (it.priceOptionId && !priceOption) throw new AppError(400, 'Uma forma de preço escolhida não existe mais. Atualize a página.');
-    const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+    const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
   }

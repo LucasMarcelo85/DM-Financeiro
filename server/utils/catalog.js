@@ -36,7 +36,7 @@ export function decodeProductImage(src) {
 }
 
 // ---------- Produto / serviço ----------
-// `images`: [{ id }] (mantém uma imagem que já existe) ou [{ data: 'data:image/...' }] (nova), com `label` (variação) e `priceCents` opcionais.
+// `images`: [{ id }] (mantém uma imagem que já existe) ou [{ data: 'data:image/...' }] (nova), com `label` (variação).
 export function cleanProduct(b = {}) {
   const kind = PRODUCT_KINDS.has(b.kind) ? b.kind : 'produto';
   const name = line(b.name, 120);
@@ -52,7 +52,10 @@ export function cleanProduct(b = {}) {
     if (option.id !== undefined && (!Number.isInteger(option.id) || option.id < 1)) throw new AppError(400, 'Identificador de forma de preço inválido.');
     const label = line(option.label, 40);
     if (!label) throw new AppError(400, 'Informe o nome de cada forma de preço.');
-    return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents: intIn(option.priceCents, 0, MAX_PRICE, `Preço de ${label}`) };
+    const priceCents = option.priceCents === null || option.priceCents === undefined || option.priceCents === ''
+      ? null
+      : intIn(option.priceCents, 0, MAX_PRICE, `Preço de ${label}`);
+    return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents };
   });
   const rawImages = Array.isArray(b.images) ? b.images : [];
   if (rawImages.length < 1) throw new AppError(400, 'Adicione pelo menos uma imagem.');
@@ -62,8 +65,7 @@ export function cleanProduct(b = {}) {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');
     const label = line(im.label, 40);
     if (varied && !label) throw new AppError(400, `Dê um nome à variação da imagem ${i + 1} (ex.: cor ou tamanho).`);
-    const price = im.priceCents === null || im.priceCents === undefined || im.priceCents === '' ? null : intIn(im.priceCents, 0, MAX_PRICE, 'Preço da variação');
-    const out = { label: varied ? label : '', priceCents: varied ? price : null };
+    const out = { label: varied ? label : '', priceCents: null };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');

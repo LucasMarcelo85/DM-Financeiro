@@ -212,7 +212,7 @@ export const minPrice = (p) => {
   const values = [
     ...(p.priceCents > 0 ? [p.priceCents] : []),
     ...(p.images || []).filter((i) => i.priceCents !== null).map((i) => i.priceCents),
-    ...(p.priceOptions || []).map((option) => option.priceCents),
+    ...(p.priceOptions || []).filter((option) => option.priceCents !== null).map((option) => option.priceCents),
   ];
   return values.length ? Math.min(...values) : 0;
 };

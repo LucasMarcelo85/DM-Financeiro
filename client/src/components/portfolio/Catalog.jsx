@@ -36,7 +36,7 @@ export function priced(items, products) {
     const img = p.images.find((i) => i.id === it.imageId) || null;
     const priceOption = p.priceOptions.find((option) => option.id === it.priceOptionId) || null;
     const staleSelection = Boolean((it.imageId && !img) || (it.priceOptionId && !priceOption));
-    const unit = staleSelection ? 0 : priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+    const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     lines.push({ ...it, p, img, priceOption, staleSelection, unit, total: unit * it.qty });
   }
   return { lines, subtotal: lines.reduce((s, l) => s + l.total, 0), count: lines.reduce((s, l) => s + l.qty, 0) };
@@ -57,7 +57,7 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
   const [qty, setQty] = useState(1);
   const img = p.images[idx] || p.images[0];
   const priceOption = p.priceOptions.find((option) => option.id === priceOptionId) || null;
-  const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+  const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -86,7 +86,7 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
             <label className="cat-price-options">
               <span>Forma de preço</span>
               <select value={priceOptionId || ''} onChange={(e) => setPriceOptionId(Number(e.target.value))}>
-                {p.priceOptions.map((option) => <option key={option.id} value={option.id}>{option.label} — {brl(option.priceCents)}</option>)}
+                {p.priceOptions.map((option) => <option key={option.id} value={option.id}>{option.priceCents === null ? `${option.label} — Sob consulta` : `${option.label} — ${brl(option.priceCents)}`}</option>)}
               </select>
             </label>
           )}

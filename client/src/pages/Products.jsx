@@ -104,8 +104,8 @@ export default function Products() {
                 <span className="pr-cat">{p.category}<em>{p.kind === 'servico' ? 'Serviço' : 'Produto'}</em></span>
                 <strong title={p.name}>{p.name}</strong>
                 <span className="pr-price">
-                  {p.priceOptions.length
-                    ? `A partir de ${brl(Math.min(...p.priceOptions.map((option) => option.priceCents)))}`
+                  {p.priceOptions.some((option) => option.priceCents !== null)
+                    ? `A partir de ${brl(Math.min(...p.priceOptions.filter((option) => option.priceCents !== null).map((option) => option.priceCents)))}`
                     : p.priceCents ? brl(p.priceCents) : 'Sob consulta'}
                 </span>
                 {p.priceOptions.length > 0 && <small className="muted">{p.priceOptions.length} formas de preço</small>}
@@ -152,12 +152,12 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     id: option.id,
     key: `price-${option.id}`,
     label: option.label,
-    price: centsToMasked(option.priceCents),
+    price: option.priceCents === null ? '' : centsToMasked(option.priceCents),
   })));
   const [active, setActive] = useState(product ? product.active : true);
   const [varied, setVaried] = useState((product?.images.length || 0) > 1);
   const [variationType, setVariationType] = useState('');
-  const [images, setImages] = useState(() => (product?.images || []).map((i) => ({ key: `i${i.id}`, id: i.id, url: i.url, label: i.label, price: i.priceCents === null ? '' : centsToMasked(i.priceCents) })));
+  const [images, setImages] = useState(() => (product?.images || []).map((i) => ({ key: `i${i.id}`, id: i.id, url: i.url, label: i.label })));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -175,7 +175,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     try {
       const { src } = await prepareProductImage(file);
       setImages((list) => {
-        const item = { key: `n${Date.now()}${Math.random()}`, data: src, url: src, label: '', price: '' };
+        const item = { key: `n${Date.now()}${Math.random()}`, data: src, url: src, label: '' };
         if (imageIndex !== null && list[imageIndex]) return list.map((x, n) => (n === imageIndex ? { ...x, id: undefined, data: src, url: src } : x));
         return [...list, item].slice(0, allowMultiple ? MAX_IMAGES : 1);
       });
@@ -192,11 +192,11 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     if (varied && visible.length < 2) return setError('Com variações, coloque pelo menos 2 imagens (ou desmarque “Tem variações”).');
     if (varied && visible.some((i) => !i.label.trim())) return setError('Dê um nome a cada variação (ex.: cor ou tamanho).');
     if (varied && visible.some((i) => `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}`.length > 40)) return setError('O tipo e o valor da variação juntos devem ter até 40 caracteres.');
-    if (priceOptions.some((option) => !option.label.trim() || option.price === '')) return setError('Preencha o nome e o preço de cada forma de preço ou remova a linha vazia.');
+    if (priceOptions.some((option) => !option.label.trim())) return setError('Informe o nome de cada forma de preço ou remova a linha vazia.');
     const body = {
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
-      priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: moneyToCents(option.price) })),
-      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}` : '', priceCents: varied && i.price !== '' ? moneyToCents(i.price) : null })),
+      priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: option.price === '' ? null : moneyToCents(option.price) })),
+      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}` : '', priceCents: null })),
     };
     setBusy(true);
     try {
@@ -225,11 +225,11 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
         </div>
         <fieldset className="field pr-price-options">
           <legend>Formas de preço (opcional)</legend>
-          <small>O nome é livre: use varejo, atacado, mensal, semestral, anual ou qualquer outro. O cliente escolhe no catálogo.</small>
+          <small>Cadastre uma forma de preço opcional. O nome é livre e o valor também pode ficar em branco, por exemplo para orçamento sob consulta.</small>
           {priceOptions.map((option, index) => (
             <div className="pr-price-option" key={option.key}>
               <input className="input" list="pr-price-labels" value={option.label} maxLength={40} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, label: e.target.value } : item)))} placeholder="Nome personalizado" aria-label={`Nome da forma de preço ${index + 1}`} />
-              <label className="pr-option-price"><span>R$</span><input className="input" inputMode="numeric" value={option.price} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, price: maskMoney(e.target.value) } : item)))} placeholder="0,00" aria-label={`Preço da forma ${index + 1}`} /></label>
+              <label className="pr-option-price"><span>R$</span><input className="input" inputMode="numeric" value={option.price} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, price: maskMoney(e.target.value) } : item)))} placeholder="Opcional" aria-label={`Preço da forma ${index + 1}`} /></label>
               <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceOptions((list) => list.filter((_, n) => n !== index))} aria-label={`Remover forma de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
             </div>
           ))}
@@ -239,9 +239,10 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
         <label className="field"><span>Descrição</span><textarea className="input" rows={3} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
 
         <fieldset className="field pr-images">
-          <legend>{varied ? `Imagens e variações (até ${MAX_IMAGES})` : 'Imagem *'}</legend>
-          <label className="pe-check"><input type="checkbox" checked={varied} onChange={(e) => setVaried(e.target.checked)} /><span>Tem variações (cor, tamanho...) — cada variação com a sua imagem</span></label>
-          {varied && <label className="field"><span>Tipo de variação</span><input className="input" list="pr-variation-types" value={variationType} maxLength={40} onChange={(e) => setVariationType(e.target.value)} placeholder="Ex.: Cor, tamanho ou litros" /><datalist id="pr-variation-types">{(preferences?.variationTypes || []).map((label) => <option key={label} value={label} />)}</datalist><small>Você pode escrever qualquer tipo. Salve tipos frequentes em “Organizar categorias e opções”.</small></label>}
+          <legend>Fotos do produto</legend>
+          <small>Adicione uma imagem principal ou ative variações para cadastrar fotos identificadas por cor, tamanho, litros ou outro atributo.</small>
+          <label className="pe-check"><input type="checkbox" checked={varied} onChange={(e) => setVaried(e.target.checked)} /><span>Este produto tem variações com fotos próprias</span></label>
+          {varied && <label className="field"><span>O que varia?</span><input className="input" list="pr-variation-types" value={variationType} maxLength={40} onChange={(e) => setVariationType(e.target.value)} placeholder="Ex.: Cor, tamanho ou litros" /><datalist id="pr-variation-types">{(preferences?.variationTypes || []).map((label) => <option key={label} value={label} />)}</datalist><small>Depois, informe o valor em cada foto (ex.: Azul, M ou 2 litros). O preço é definido acima em “Formas de preço”.</small></label>}
           <div className="pr-slots">
             {visible.map((im, i) => (
               <div key={im.key} className="pr-slot">
@@ -249,7 +250,6 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
                 {varied && (
                   <>
                     <input className="input input-sm" placeholder={variationType ? `Valor (${variationType})` : 'Valor da variação'} value={im.label} maxLength={40} onChange={(e) => setImg(i, { label: e.target.value })} aria-label={`Valor da variação ${i + 1}`} />
-                    <input className="input input-sm" inputMode="numeric" placeholder="Preço próprio (opcional)" value={im.price} onChange={(e) => setImg(i, { price: maskMoney(e.target.value) })} aria-label={`Preço da variação ${i + 1}`} />
                   </>
                 )}
                 {(varied || visible.length > 1) && <button type="button" className="link-btn" onClick={() => setImages((l) => l.filter((_, n) => n !== i))}>Remover</button>}
