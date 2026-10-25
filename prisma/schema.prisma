@@ -100,6 +100,7 @@ model User {
   products        Product[]
   orders          Order[]
   catalogSettings CatalogSettings?
+  productPreferences ProductPreferences?
 
   @@map("users")
 }
@@ -538,6 +539,18 @@ model ProductPriceOption {
 
   @@index([productId, position])
   @@map("product_price_options")
+}
+
+model ProductPreferences {
+  userId        Int      @id @map("user_id")
+  categories    String[] @default([])
+  variationTypes String[] @default(["Cor", "Tamanho", "Litros"])
+  priceLabels   String[] @default(["Varejo", "Atacarejo", "Atacado", "Mensal", "Semestral", "Anual"]) @map("price_labels")
+  updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("product_preferences")
 }
 
 // Configuração do catálogo do usuário (entregas e frete). O token do SuperFrete fica criptografado e NUNCA vai para a página pública.

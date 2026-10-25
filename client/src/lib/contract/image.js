@@ -4,7 +4,7 @@
 const ACCEPT = /^image\/(png|jpeg|webp|gif)$/;
 const MAX_FILE = 15 * 1024 * 1024;
 const TARGET_CHARS = 1_200_000; // ~900 KB de imagem
-export const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif';
+export const IMAGE_ACCEPT = 'image/png,image/jpeg,image/webp,image/gif,image/heic,image/heif,.heic,.heif';
 
 function readAsDataURL(blob) {
   return new Promise((resolve, reject) => {

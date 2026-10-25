@@ -10,6 +10,28 @@ const imgSelect = { select: { id: true, position: true, label: true, priceCents:
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
+const defaultPreferences = {
+  categories: [],
+  variationTypes: ['Cor', 'Tamanho', 'Litros'],
+  priceLabels: ['Varejo', 'Atacarejo', 'Atacado', 'Mensal', 'Semestral', 'Anual'],
+};
+
+function cleanPreferenceList(value, label, maxItems, maxLength) {
+  if (!Array.isArray(value)) throw new AppError(400, `A lista de ${label} é inválida.`);
+  if (value.length > maxItems) throw new AppError(400, `Use no máximo ${maxItems} itens em ${label}.`);
+  const seen = new Set();
+  return value.map((item) => {
+    if (typeof item !== 'string') throw new AppError(400, `Um item da lista de ${label} é inválido.`);
+    return item.replace(/\s+/g, ' ').trim().slice(0, maxLength);
+  })
+    .filter((item) => {
+      const key = item.toLocaleLowerCase('pt-BR');
+      if (!item || seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    })
+    .slice(0, maxItems);
+}
 
 async function owned(req) {
   const id = Number(req.params.id);
@@ -31,12 +53,36 @@ router.get('/', async (req, res) => {
   if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' } }, { category: { contains: q, mode: 'insensitive' } }];
   if (req.query.category) where.category = String(req.query.category);
   if (req.query.kind === 'produto' || req.query.kind === 'servico') where.kind = req.query.kind;
-  const [rows, count, cats] = await Promise.all([
+  const [rows, count, cats, savedPreferences] = await Promise.all([
     prisma.product.findMany({ where, orderBy: [{ category: 'asc' }, { name: 'asc' }], include: productInclude, take: 500 }),
     prisma.product.count({ where: { userId: req.user.id } }),
     prisma.product.findMany({ where: { userId: req.user.id }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
+    prisma.productPreferences.findUnique({ where: { userId: req.user.id } }),
   ]);
-  res.json({ products: rows.map(dto), count, limit: limitsFor(req.user).catalogProducts, categories: cats.map((c) => c.category).filter(Boolean) });
+  const preferences = {
+    ...defaultPreferences,
+    ...(savedPreferences ? {
+      categories: savedPreferences.categories,
+      variationTypes: savedPreferences.variationTypes,
+      priceLabels: savedPreferences.priceLabels,
+    } : {}),
+  };
+  preferences.categories = [...new Set([...preferences.categories, ...cats.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+  res.json({ products: rows.map(dto), count, limit: limitsFor(req.user).catalogProducts, categories: preferences.categories, preferences });
+});
+
+router.put('/preferences', async (req, res) => {
+  const preferences = {
+    categories: cleanPreferenceList(req.body?.categories, 'categorias', 100, 60),
+    variationTypes: cleanPreferenceList(req.body?.variationTypes, 'tipos de variação', 30, 40),
+    priceLabels: cleanPreferenceList(req.body?.priceLabels, 'formas de preço', 30, 40),
+  };
+  const saved = await prisma.productPreferences.upsert({
+    where: { userId: req.user.id },
+    create: { userId: req.user.id, ...preferences },
+    update: preferences,
+  });
+  res.json({ preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels } });
 });
 
 router.get('/:id', async (req, res) => {

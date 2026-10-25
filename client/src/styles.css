@@ -1086,6 +1086,14 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pr-actions { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.6rem 0.7rem; }
 .pr-switch { flex: 1; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
 .pr-form { gap: 0.9rem; }
+.pr-preferences-action { display: flex; justify-content: flex-end; margin: -0.6rem 0 0.8rem; }
+.pr-preferences { gap: 0.75rem; }
+.pr-preferences > p { margin: 0; }
+.pr-preference-group { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.7rem; }
+.pr-preference-add { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: 0.4rem; }
+.pr-preference-chips { display: flex; flex-wrap: wrap; align-items: center; gap: 0.35rem; margin-top: 0.6rem; }
+.pr-preference-chip { border: 1px solid #b6cdf0; border-radius: 999px; background: #eef4fd; color: var(--blue); padding: 0.3rem 0.65rem; font: inherit; font-size: 0.85rem; cursor: pointer; }
+.pr-preference-chip:hover { border-color: var(--red-d); color: var(--red-d); background: var(--red-soft); }
 .pr-price-options { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.8rem; }
 .pr-price-options > small { color: var(--muted); }
 .pr-price-option { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.6fr) auto; align-items: center; gap: 0.5rem; }

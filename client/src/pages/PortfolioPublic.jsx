@@ -7,8 +7,9 @@ import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
-export default function PortfolioPublic() {
-  const { userSlug, pageSlug } = useParams();
+export default function PortfolioPublic({ fixedUser = '' }) {
+  const { userSlug: routeUserSlug, pageSlug } = useParams();
+  const userSlug = fixedUser || routeUserSlug;
   const [state, setState] = useState({ loading: true, page: null, owner: null, products: [], store: null });
 
   useEffect(() => {

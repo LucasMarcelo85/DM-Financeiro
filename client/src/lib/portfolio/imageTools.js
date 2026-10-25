@@ -160,8 +160,31 @@ export async function pickColor(src, fx, fy) {
 // Foto de produto: reduz para caber (lado maior até `maxDim`) e fica abaixo do limite de peso do servidor.
 // Usa WebP quando o navegador cria WebP; senão JPEG (ou PNG se tiver transparência).
 export async function prepareProductImage(file, { maxDim = 1000, maxBytes = 800 * 1024 } = {}) {
-  if (!/^image\/(png|jpeg|webp|gif)$/.test(file.type)) throw new Error('Use uma imagem PNG, JPG, WebP ou GIF.');
-  const url = URL.createObjectURL(file);
+  if (file.size > 50 * 1024 * 1024) throw new Error('A imagem é muito grande. Escolha um arquivo de até 50 MB.');
+  const header = new Uint8Array(await file.slice(0, 16).arrayBuffer());
+  const brand = String.fromCharCode(...header.slice(8, 12));
+  const heifBrand = header.length >= 12 && String.fromCharCode(...header.slice(4, 8)) === 'ftyp' && /^(heic|heix|hevc|hevx|mif1|msf1)$/.test(brand);
+  const extensionType = /\.(png)$/i.test(file.name || '') ? 'image/png'
+    : /\.(jpe?g)$/i.test(file.name || '') ? 'image/jpeg'
+      : /\.(webp)$/i.test(file.name || '') ? 'image/webp'
+        : /\.(gif)$/i.test(file.name || '') ? 'image/gif' : '';
+  const isHeic = /image\/hei[cf]/i.test(file.type) || /\.(heic|heif)$/i.test(file.name || '') || heifBrand;
+  let source = file;
+  let sourceType = file.type === 'image/jpg' ? 'image/jpeg' : file.type || extensionType;
+  if (isHeic) {
+    try {
+      const { default: heic2any } = await import('heic2any');
+      const converted = await heic2any({ blob: file, toType: 'image/jpeg', quality: 0.9 });
+      source = Array.isArray(converted) ? converted[0] : converted;
+      sourceType = 'image/jpeg';
+    } catch {
+      throw new Error('Não foi possível converter esta imagem HEIC. Salve-a como JPG ou PNG e tente novamente.');
+    }
+  }
+  if (!/^image\/(png|jpeg|webp|gif)$/.test(sourceType)) {
+    throw new Error('Formato de imagem não reconhecido. Use PNG, JPG, WebP, GIF ou HEIC.');
+  }
+  const url = URL.createObjectURL(source);
   try {
     const img = await loadImage(url);
     let dim = maxDim;
@@ -169,10 +192,10 @@ export async function prepareProductImage(file, { maxDim = 1000, maxBytes = 800 
       const k = Math.min(1, dim / Math.max(img.naturalWidth, img.naturalHeight));
       const c = makeCanvas(img.naturalWidth * k, img.naturalHeight * k);
       const ctx = c.getContext('2d');
-      if (file.type === 'image/jpeg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
+      if (sourceType === 'image/jpeg') { ctx.fillStyle = '#fff'; ctx.fillRect(0, 0, c.width, c.height); }
       ctx.drawImage(img, 0, 0, c.width, c.height);
       for (const [type, q] of [['image/webp', 0.84], ['image/jpeg', 0.84], ['image/png', 1]]) {
-        if (type === 'image/jpeg' && file.type !== 'image/jpeg' && hasAlpha(ctx, c)) continue; // JPEG apagaria a transparência
+        if (type === 'image/jpeg' && sourceType !== 'image/jpeg' && hasAlpha(ctx, c)) continue; // JPEG apagaria a transparência
         const out = c.toDataURL(type, q);
         if (!out.startsWith(`data:${type}`)) continue; // o navegador não sabe criar esse formato
         if (Math.floor((out.length - out.indexOf(',') - 1) * 0.75) <= maxBytes) return { src: out, w: c.width, h: c.height };

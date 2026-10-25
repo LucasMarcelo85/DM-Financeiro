@@ -19,6 +19,7 @@ export default function Products() {
   const [kind, setKind] = useState('');
   const [editing, setEditing] = useState(null); // null | 'new' | produto
   const [confirmDel, setConfirmDel] = useState(null);
+  const [managePreferences, setManagePreferences] = useState(false);
   const alive = useRef(true);
   useEffect(() => () => { alive.current = false; }, []);
 
@@ -54,6 +55,7 @@ export default function Products() {
         </div>
         <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo</button>
       </header>
+      {data && <div className="pr-preferences-action"><button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Organizar categorias e opções</button></div>}
 
       {blocked && (
         <div className="banner banner-amber">
@@ -120,7 +122,13 @@ export default function Products() {
         </ul>
       )}
 
-      {editing && <ProductForm product={editing === 'new' ? null : editing} categories={data?.categories || []} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {editing && <ProductForm product={editing === 'new' ? null : editing} categories={data?.categories || []} preferences={data?.preferences} onClose={() => setEditing(null)} onSaved={() => { setEditing(null); load(); }} />}
+      {managePreferences && <ProductPreferencesModal preferences={data?.preferences} onClose={() => setManagePreferences(false)} onSaved={(preferences) => {
+        setData((current) => current ? { ...current, preferences } : current);
+        setManagePreferences(false);
+        toast('Opções salvas.');
+        load();
+      }} />}
       {confirmDel && (
         <Modal title="Excluir este item?" onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
@@ -132,7 +140,7 @@ export default function Products() {
 }
 
 // ---------------------------------------------------------------- formulário
-function ProductForm({ product, categories, onClose, onSaved }) {
+function ProductForm({ product, categories, preferences, onClose, onSaved }) {
   const toast = useToast();
   const editing = Boolean(product);
   const [kind, setKind] = useState(product?.kind || 'produto');
@@ -148,6 +156,7 @@ function ProductForm({ product, categories, onClose, onSaved }) {
   })));
   const [active, setActive] = useState(product ? product.active : true);
   const [varied, setVaried] = useState((product?.images.length || 0) > 1);
+  const [variationType, setVariationType] = useState('');
   const [images, setImages] = useState(() => (product?.images || []).map((i) => ({ key: `i${i.id}`, id: i.id, url: i.url, label: i.label, price: i.priceCents === null ? '' : centsToMasked(i.priceCents) })));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -182,11 +191,12 @@ function ProductForm({ product, categories, onClose, onSaved }) {
     if (!visible.length) return setError('Adicione pelo menos uma imagem.');
     if (varied && visible.length < 2) return setError('Com variações, coloque pelo menos 2 imagens (ou desmarque “Tem variações”).');
     if (varied && visible.some((i) => !i.label.trim())) return setError('Dê um nome a cada variação (ex.: cor ou tamanho).');
+    if (varied && visible.some((i) => `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}`.length > 40)) return setError('O tipo e o valor da variação juntos devem ter até 40 caracteres.');
     if (priceOptions.some((option) => !option.label.trim() || option.price === '')) return setError('Preencha o nome e o preço de cada forma de preço ou remova a linha vazia.');
     const body = {
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
       priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: moneyToCents(option.price) })),
-      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? i.label.trim() : '', priceCents: varied && i.price !== '' ? moneyToCents(i.price) : null })),
+      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}` : '', priceCents: varied && i.price !== '' ? moneyToCents(i.price) : null })),
     };
     setBusy(true);
     try {
@@ -215,14 +225,15 @@ function ProductForm({ product, categories, onClose, onSaved }) {
         </div>
         <fieldset className="field pr-price-options">
           <legend>Formas de preço (opcional)</legend>
-          <small>Cadastre opções como varejo, atacado, mensal, semestral ou anual. O cliente escolhe uma no catálogo.</small>
+          <small>O nome é livre: use varejo, atacado, mensal, semestral, anual ou qualquer outro. O cliente escolhe no catálogo.</small>
           {priceOptions.map((option, index) => (
             <div className="pr-price-option" key={option.key}>
-              <input className="input" value={option.label} maxLength={40} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, label: e.target.value } : item)))} placeholder="Ex.: Varejo, Mensal" aria-label={`Nome da forma de preço ${index + 1}`} />
+              <input className="input" list="pr-price-labels" value={option.label} maxLength={40} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, label: e.target.value } : item)))} placeholder="Nome personalizado" aria-label={`Nome da forma de preço ${index + 1}`} />
               <label className="pr-option-price"><span>R$</span><input className="input" inputMode="numeric" value={option.price} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, price: maskMoney(e.target.value) } : item)))} placeholder="0,00" aria-label={`Preço da forma ${index + 1}`} /></label>
               <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceOptions((list) => list.filter((_, n) => n !== index))} aria-label={`Remover forma de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
             </div>
           ))}
+          <datalist id="pr-price-labels">{(preferences?.priceLabels || []).map((label) => <option key={label} value={label} />)}</datalist>
           {priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPriceOptions((list) => [...list, { key: `price-new-${Date.now()}-${Math.random()}`, label: '', price: '' }])}><Icon name="plus" size={16} /> Adicionar forma de preço</button>}
         </fieldset>
         <label className="field"><span>Descrição</span><textarea className="input" rows={3} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
@@ -230,13 +241,14 @@ function ProductForm({ product, categories, onClose, onSaved }) {
         <fieldset className="field pr-images">
           <legend>{varied ? `Imagens e variações (até ${MAX_IMAGES})` : 'Imagem *'}</legend>
           <label className="pe-check"><input type="checkbox" checked={varied} onChange={(e) => setVaried(e.target.checked)} /><span>Tem variações (cor, tamanho...) — cada variação com a sua imagem</span></label>
+          {varied && <label className="field"><span>Tipo de variação</span><input className="input" list="pr-variation-types" value={variationType} maxLength={40} onChange={(e) => setVariationType(e.target.value)} placeholder="Ex.: Cor, tamanho ou litros" /><datalist id="pr-variation-types">{(preferences?.variationTypes || []).map((label) => <option key={label} value={label} />)}</datalist><small>Você pode escrever qualquer tipo. Salve tipos frequentes em “Organizar categorias e opções”.</small></label>}
           <div className="pr-slots">
             {visible.map((im, i) => (
               <div key={im.key} className="pr-slot">
                 <button type="button" className="pr-slot-img" onClick={() => pick(i)} disabled={uploading} aria-label={`Trocar a imagem ${i + 1}`} title="Trocar imagem"><img src={im.url} alt="" /></button>
                 {varied && (
                   <>
-                    <input className="input input-sm" placeholder="Nome da variação" value={im.label} maxLength={40} onChange={(e) => setImg(i, { label: e.target.value })} aria-label={`Nome da variação ${i + 1}`} />
+                    <input className="input input-sm" placeholder={variationType ? `Valor (${variationType})` : 'Valor da variação'} value={im.label} maxLength={40} onChange={(e) => setImg(i, { label: e.target.value })} aria-label={`Valor da variação ${i + 1}`} />
                     <input className="input input-sm" inputMode="numeric" placeholder="Preço próprio (opcional)" value={im.price} onChange={(e) => setImg(i, { price: maskMoney(e.target.value) })} aria-label={`Preço da variação ${i + 1}`} />
                   </>
                 )}
@@ -249,12 +261,72 @@ function ProductForm({ product, categories, onClose, onSaved }) {
               </button>
             )}
           </div>
-          <small>A imagem é reduzida automaticamente para carregar rápido. Formatos: PNG, JPG, WebP.</small>
+          <small>A imagem é reduzida automaticamente. Formatos: PNG, JPG, WebP, GIF ou HEIC/HEIF (fotos de alguns celulares).</small>
         </fieldset>
         <label className="pe-check"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /><span>Ativo (aparece no catálogo)</span></label>
         {error && <p className="form-error" role="alert">{error}</p>}
       </div>
       <input ref={fileRef} type="file" accept={IMAGE_ACCEPT} hidden onChange={(e) => { const f = e.target.files?.[0]; e.target.value = ''; onFile(f); }} />
+    </Modal>
+  );
+}
+
+function ProductPreferencesModal({ preferences, onClose, onSaved }) {
+  const toast = useToast();
+  const defaults = {
+    categories: [],
+    variationTypes: ['Cor', 'Tamanho', 'Litros'],
+    priceLabels: ['Varejo', 'Atacarejo', 'Atacado', 'Mensal', 'Semestral', 'Anual'],
+    ...preferences,
+  };
+  const [lists, setLists] = useState(defaults);
+  const [drafts, setDrafts] = useState({ categories: '', variationTypes: '', priceLabels: '' });
+  const [busy, setBusy] = useState(false);
+  const sections = [
+    ['categories', 'Categorias', 'Ex.: Roupas, Bebidas, Consultoria'],
+    ['variationTypes', 'Tipos de variação', 'Ex.: Cor, Tamanho, Litros, Material'],
+    ['priceLabels', 'Nomes de preço', 'Ex.: Varejo, Atacado, Mensal, Anual'],
+  ];
+
+  function add(key) {
+    const value = drafts[key].replace(/\s+/g, ' ').trim();
+    if (!value) return;
+    setLists((current) => current[key].some((item) => item.toLocaleLowerCase('pt-BR') === value.toLocaleLowerCase('pt-BR'))
+      ? current
+      : { ...current, [key]: [...current[key], value] });
+    setDrafts((current) => ({ ...current, [key]: '' }));
+  }
+
+  async function save() {
+    setBusy(true);
+    try {
+      const result = await api.put('/products/preferences', lists);
+      onSaved(result.preferences);
+    } catch (e) {
+      toast(e.message, 'error');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Organizar categorias e opções" onClose={busy ? () => {} : onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar opções'}</button></>}>
+      <div className="form pr-preferences">
+        <p className="muted">Crie listas para agilizar os próximos cadastros. Você também pode digitar uma opção diferente diretamente no produto.</p>
+        {sections.map(([key, title, placeholder]) => (
+          <fieldset className="field pr-preference-group" key={key}>
+            <legend>{title}</legend>
+            <div className="pr-preference-add">
+              <input className="input" value={drafts[key]} maxLength={key === 'categories' ? 60 : 40} placeholder={placeholder} onChange={(e) => setDrafts((current) => ({ ...current, [key]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(key); } }} />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => add(key)}>Adicionar</button>
+            </div>
+            <div className="pr-preference-chips">
+              {lists[key].map((value) => <button type="button" className="pr-preference-chip" key={value} onClick={() => setLists((current) => ({ ...current, [key]: current[key].filter((item) => item !== value) }))} title={`Remover ${value}`}>{value}<span aria-hidden="true"> ×</span></button>)}
+              {!lists[key].length && <small className="muted">Nenhuma opção salva.</small>}
+            </div>
+          </fieldset>
+        ))}
+      </div>
     </Modal>
   );
 }
