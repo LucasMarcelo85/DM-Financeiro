@@ -10,15 +10,26 @@ import { track } from '../../lib/portfolio/pixel.js';
 // ---------------------------------------------------------------- carrinho (guardado no aparelho do cliente)
 export function useCart(slug) {
   const key = `dm:cart:${slug}`;
-  const [items, setItems] = useState(() => { try { return JSON.parse(localStorage.getItem(key)) || []; } catch { return []; } });
+  const [items, setItems] = useState(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(key)) || [];
+      const merged = new Map();
+      for (const item of saved) {
+        const id = `${item.productId}:${item.imageId || 0}:0`;
+        const old = merged.get(id);
+        merged.set(id, { id, productId: item.productId, imageId: item.imageId || null, qty: Math.min(99, (old?.qty || 0) + (Number(item.qty) || 1)) });
+      }
+      return [...merged.values()];
+    } catch { return []; }
+  });
   useEffect(() => { try { localStorage.setItem(key, JSON.stringify(items)); } catch { /* sem armazenamento: o carrinho vale só nesta visita */ } }, [key, items]);
-  const idOf = (productId, imageId, priceOptionId) => `${productId}:${imageId || 0}:${priceOptionId || 0}`;
+  const idOf = (productId, imageId) => `${productId}:${imageId || 0}:0`;
   return {
     items,
-    add: (productId, imageId, priceOptionId, qty = 1) => setItems((l) => {
-      const id = idOf(productId, imageId, priceOptionId);
+    add: (productId, imageId, _priceOptionId, qty = 1) => setItems((l) => {
+      const id = idOf(productId, imageId);
       const f = l.find((x) => x.id === id);
-      return f ? l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, x.qty + qty) } : x)) : [...l, { id, productId, imageId: imageId || null, priceOptionId: priceOptionId || null, qty: Math.min(99, qty) }];
+      return f ? l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, x.qty + qty) } : x)) : [...l, { id, productId, imageId: imageId || null, qty: Math.min(99, qty) }];
     }),
     setQty: (id, qty) => setItems((l) => (qty < 1 ? l.filter((x) => x.id !== id) : l.map((x) => (x.id === id ? { ...x, qty: Math.min(99, qty) } : x)))),
     remove: (id) => setItems((l) => l.filter((x) => x.id !== id)),
@@ -34,8 +45,10 @@ export function priced(items, products) {
     const p = byId.get(it.productId);
     if (!p) continue;
     const img = p.images.find((i) => i.id === it.imageId) || null;
-    const priceOption = p.priceOptions.find((option) => option.id === it.priceOptionId) || null;
-    const staleSelection = Boolean((it.imageId && !img) || (it.priceOptionId && !priceOption));
+    const staleSelection = Boolean(it.imageId && !img);
+    const priceOption = [...p.priceOptions]
+      .filter((option) => (option.minQuantity || 1) <= it.qty)
+      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
     const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     lines.push({ ...it, p, img, priceOption, staleSelection, unit, total: unit * it.qty });
   }
@@ -53,10 +66,11 @@ const Qty = ({ value, onChange, label }) => (
 // ---------------------------------------------------------------- início: busca, categorias e produtos
 function ProductModal({ p, addLabel, onAdd, onClose }) {
   const [idx, setIdx] = useState(0);
-  const [priceOptionId, setPriceOptionId] = useState(p.priceOptions[0]?.id || null);
   const [qty, setQty] = useState(1);
   const img = p.images[idx] || p.images[0];
-  const priceOption = p.priceOptions.find((option) => option.id === priceOptionId) || null;
+  const priceOption = [...p.priceOptions]
+    .filter((option) => (option.minQuantity || 1) <= qty)
+    .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
   const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -82,20 +96,17 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
               ))}
             </div>
           )}
-          {p.priceOptions.length > 0 && (
-            <label className="cat-price-options">
-              <span>Forma de preço</span>
-              <select value={priceOptionId || ''} onChange={(e) => setPriceOptionId(Number(e.target.value))}>
-                {p.priceOptions.map((option) => <option key={option.id} value={option.id}>{option.priceCents === null ? `${option.label} — Sob consulta` : `${option.label} — ${brl(option.priceCents)}`}</option>)}
-              </select>
-            </label>
-          )}
+          {p.priceOptions.length > 0 && <div className="cat-price-options" aria-label="Valores por quantidade">
+            <strong>Descontos por quantidade</strong>
+            {p.priceOptions.map((option) => <span key={option.id}>{option.label} a partir de {option.minQuantity || 1} un. — {option.priceCents === null ? 'Sob consulta' : `${brl(option.priceCents)} cada`}</span>)}
+            <small>O valor correspondente é aplicado automaticamente no carrinho.</small>
+          </div>}
           {p.description && <p className="cat-desc">{p.description}</p>}
           <div className="cat-buy">
             <strong className="cat-price">{unit > 0 ? brl(unit) : 'Sob consulta'}</strong>
             <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(99, n)))} label="Quantidade" />
           </div>
-          <button type="button" className="cat-btn" onClick={() => { onAdd(p, img, priceOption, qty); onClose(); }}>{addLabel}</button>
+          <button type="button" className="cat-btn" onClick={() => { onAdd(p, img, qty); onClose(); }}>{addLabel}</button>
         </div>
       </div>
     </div>
@@ -123,9 +134,12 @@ export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
   }, [shown, cfg.display]);
 
   const { count, subtotal } = priced(cart.items, products);
-  const add = (p, img, priceOption, qty) => {
-    cart.add(p.id, p.images.length > 1 ? img?.id : null, priceOption?.id, qty);
-    const unit = priceOption?.priceCents ?? (img && img.priceCents !== null ? img.priceCents : p.priceCents);
+  const add = (p, img, qty) => {
+    cart.add(p.id, p.images.length > 1 ? img?.id : null, null, qty);
+    const tier = [...p.priceOptions]
+      .filter((option) => (option.minQuantity || 1) <= qty)
+      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0];
+    const unit = tier ? tier.priceCents || 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
@@ -168,17 +182,26 @@ export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
 
 // ---------------------------------------------------------------- carrinho e finalização
 const cepMask = (v) => { const d = v.replace(/\D/g, '').slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
-const TYPES = [['excursao', 'Excursão', 'Você informa o galpão; o frete é combinado com a loja.'], ['motoboy', 'Motoboy', 'Entrega na sua cidade por motoboy.'], ['correios', 'Correios', 'Envio pelos Correios (PAC, SEDEX...).']];
+const TYPES = [['retirada', 'Retirada', 'Retire o pedido no endereço da loja.'], ['motoboy', 'Motoboy', 'Entrega na sua cidade por motoboy.'], ['excursao', 'Excursão', 'Você informa o galpão; o frete é combinado com a loja.'], ['correios', 'Correios', 'Envio pelos Correios (PAC, SEDEX...).']];
+const loadCustomer = (slug) => {
+  try {
+    const value = JSON.parse(localStorage.getItem(`dm:checkout:${slug}`));
+    return value && typeof value === 'object' ? value : {};
+  } catch { return {}; }
+};
 
 export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) {
   const cfg = doc.catalog;
   const { lines, subtotal } = priced(cart.items, products);
-  const enabled = TYPES.filter(([k]) => store[k === 'excursao' ? 'excursion' : k]?.enabled); // a configuração chama a excursão de "excursion"
-  const [name, setName] = useState('');
-  const [phone, setPhone] = useState('');
-  const [type, setType] = useState(enabled[0]?.[0] || '');
-  const [exc, setExc] = useState({ warehouse: '', city: '', address: '' });
-  const [addr, setAddr] = useState({ zip: '', street: '', number: '', district: '', city: '', state: '', complement: '' });
+  const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : store[key])?.enabled);
+  const [saved] = useState(() => loadCustomer(slug));
+  const skipNextSave = useRef(false);
+  const [customerRevision, setCustomerRevision] = useState(0);
+  const [name, setName] = useState(saved.name || '');
+  const [phone, setPhone] = useState(saved.phone || '');
+  const [type, setType] = useState(enabled.some(([key]) => key === saved.type) ? saved.type : enabled[0]?.[0] || '');
+  const [exc, setExc] = useState(saved.exc || { warehouse: '', city: '', address: '' });
+  const [addr, setAddr] = useState(saved.addr || { zip: '', street: '', number: '', district: '', city: '', state: '', complement: '' });
   const [quote, setQuote] = useState(null); // { options, provider }
   const [serviceId, setServiceId] = useState('');
   const [quoting, setQuoting] = useState(false);
@@ -188,7 +211,24 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
   const tracked = useRef(false);
+  const clearSavedCustomer = () => {
+    try { localStorage.removeItem(`dm:checkout:${slug}`); } catch { /* Dados locais indisponíveis. */ }
+    skipNextSave.current = true;
+    setCustomerRevision((revision) => revision + 1);
+    setName('');
+    setPhone('');
+    setType(enabled[0]?.[0] || '');
+    setExc({ warehouse: '', city: '', address: '' });
+    setAddr({ zip: '', street: '', number: '', district: '', city: '', state: '', complement: '' });
+  };
 
+  useEffect(() => {
+    if (skipNextSave.current) {
+      skipNextSave.current = false;
+      return;
+    }
+    try { localStorage.setItem(`dm:checkout:${slug}`, JSON.stringify({ name, phone, type, exc, addr })); } catch { /* Dados mantidos apenas durante esta visita. */ }
+  }, [slug, name, phone, type, exc, addr, customerRevision]);
   useEffect(() => { if (pixelOn && lines.length && !tracked.current) { tracked.current = true; track('InitiateCheckout', { value: subtotal / 100 }); } }, [pixelOn, lines.length, subtotal]);
   useEffect(() => { setQuote(null); setQuoteErr(''); setServiceId(''); }, [type, addr.zip, addr.street, addr.city, addr.number, subtotal]);
 
@@ -228,15 +268,19 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (name.trim().length < 2) return setError('Informe o seu nome.');
     if (phone.replace(/\D/g, '').length < 10) return setError('Informe o seu telefone com DDD.');
     if (!type) return setError('Escolha a forma de entrega.');
+    if (type === 'retirada' && !store.pickup?.enabled) return setError('A retirada não está disponível nesta loja.');
     if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return setError('Excursão: informe o nome do galpão, a cidade e o endereço do galpão.');
     if (type === 'motoboy' && !canQuote) return setError('Motoboy: informe o CEP ou o endereço de entrega.');
     if (type === 'correios' && !zipOk) return setError('Correios: informe o CEP de destino.');
     if (needsQuote && !option) return setError('Calcule o frete antes de finalizar.');
     setBusy(true);
     try {
-      const delivery = type === 'excursao' ? { type, ...exc } : type === 'motoboy' ? { type, ...addr } : { type, zip: addr.zip, number: addr.number, complement: addr.complement, serviceId };
+      const delivery = type === 'retirada' ? { type }
+        : type === 'excursao' ? { type, ...exc }
+          : type === 'motoboy' ? { type, ...addr }
+            : { type, zip: addr.zip, number: addr.number, complement: addr.complement, serviceId };
       const r = await api.post(`/webhooks/orders/${encodeURIComponent(slug)}`, {
-        customer: { name, phone }, delivery, notes, items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, priceOptionId: l.priceOptionId, qty: l.qty })),
+        customer: { name, phone }, delivery, notes, items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, qty: l.qty })),
       });
       if (pixelOn) track('Purchase', { value: r.order.totalCents / 100, transaction: r.order.code });
       cart.clear();
@@ -261,18 +305,22 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const minimumItems = Number(store.checkout?.minItems) || 1;
   const minimumSubtotal = Number(store.checkout?.minSubtotalCents) || 0;
   const itemCount = lines.reduce((total, line) => total + line.qty, 0);
-  const meetsMinimum = itemCount >= minimumItems && subtotal >= minimumSubtotal;
+  const itemsMet = itemCount >= minimumItems;
+  const subtotalMet = subtotal >= minimumSubtotal;
+  const meetsMinimum = itemsMet && subtotalMet;
+  const progress = Math.round(Math.min(1, minimumItems > 0 ? itemCount / minimumItems : 1, minimumSubtotal > 0 ? subtotal / minimumSubtotal : 1) * 100);
   return (
     <section className={`cat-cart is-${cfg.cartLayout || 'standard'}`}>
       <button type="button" className="cat-back" onClick={onBack}>← Continuar comprando</button>
       <h1>{cfg.cartTitle}</h1>
+      {cfg.cartButtonLabel && cfg.cartButtonUrl && <a className="cat-btn cat-btn-custom" href={cfg.cartButtonUrl} target="_blank" rel="noopener noreferrer">{cfg.cartButtonLabel}</a>}
       {!lines.length ? <p className="cat-empty">Seu carrinho está vazio.</p> : (
         <form className="cat-form" onSubmit={submit} noValidate>
           <ul className="cat-lines">
             {lines.map((l) => (
               <li key={l.id}>
                 <span className="cat-line-img">{(l.img || l.p.images[0]) && <img src={(l.img || l.p.images[0]).url} alt="" />}</span>
-                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? brl(l.unit) : 'Sob consulta'}</small>}</span>
+                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · a partir de {l.priceOption.minQuantity || 1} un.</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>
                 <button type="button" className="cat-line-x" onClick={() => cart.remove(l.id)} aria-label={`Remover ${l.p.name}`}>×</button>
@@ -281,6 +329,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           </ul>
 
           <h2>Seus dados</h2>
+          <p className="cat-saved-hint">Seus dados de contato e endereço são salvos apenas neste aparelho para agilizar os próximos pedidos. <button type="button" onClick={clearSavedCustomer}>Apagar dados salvos</button></p>
           <div className="cat-fields">
             <label><span>Nome *</span><input value={name} onChange={(e) => setName(e.target.value)} maxLength={120} autoComplete="name" /></label>
             <label><span>Telefone (WhatsApp) *</span><input value={phone} onChange={(e) => setPhone(maskPhone(e.target.value))} inputMode="tel" placeholder="(85) 99999-9999" autoComplete="tel" /></label>
@@ -298,6 +347,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             </div>
           )}
 
+          {type === 'retirada' && <div className="cat-pickup-info"><IconSvg name="map-pin" size={22} /><span><strong>{store.pickup?.name || store.storeName || 'Retirada na loja'}</strong><small>{store.pickup?.address}</small></span></div>}
           {type === 'excursao' && (
             <div className="cat-fields">
               <label><span>Nome do galpão *</span><input value={exc.warehouse} onChange={(e) => setExc({ ...exc, warehouse: e.target.value })} maxLength={120} /></label>
@@ -354,9 +404,16 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             <span>Frete <strong>{type === 'excursao' ? 'a combinar' : shipping === null ? '—' : brl(shipping)}</strong></span>
             <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>
           </div>
-          {!meetsMinimum && <p className="cat-muted cat-checkout-rule">Para finalizar, o pedido precisa ter {minimumItems > 1 ? `pelo menos ${minimumItems} itens` : 'ao menos 1 item'}{minimumSubtotal > 0 ? ` e subtotal mínimo de ${brl(minimumSubtotal)}` : ''}.</p>}
+          {!meetsMinimum && <div className="cat-checkout-progress" role="status" aria-live="polite">
+            <div className="cat-checkout-progress-head"><strong>Quase lá!</strong><span>{progress}%</span></div>
+            <div className="cat-progress-track"><span style={{ width: `${progress}%` }} /></div>
+            <ul>
+              {!itemsMet && <li>Adicione mais {minimumItems - itemCount} {minimumItems - itemCount === 1 ? 'item' : 'itens'} para atingir o mínimo de {minimumItems}.</li>}
+              {!subtotalMet && <li>Faltam {brl(minimumSubtotal - subtotal)} para atingir o valor mínimo.</li>}
+            </ul>
+          </div>}
           {error && <p className="cat-error" role="alert">{error}</p>}
-          <button className="cat-btn" disabled={busy || !enabled.length || !meetsMinimum || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>
+          <button className={`cat-btn cat-submit${!meetsMinimum ? ' is-locked' : ''}`} disabled={busy || !enabled.length || !meetsMinimum || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : !meetsMinimum ? 'Continue adicionando para finalizar' : 'Finalizar pedido'}</button>
         </form>
       )}
     </section>

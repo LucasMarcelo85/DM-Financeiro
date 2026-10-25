@@ -68,7 +68,7 @@ export async function createOrder(userSlug, body = {}) {
   if (customerName.length < 2) throw new AppError(400, 'Informe o seu nome.');
   if (!phone) throw new AppError(400, 'Informe o seu telefone com DDD, por exemplo (85) 99999-9999.');
 
-  // 2) Itens: preço sempre vem do banco (o que o navegador mandar de preço é ignorado).
+  // 2) Itens: preço e faixa por quantidade são sempre recalculados no servidor.
   const rawItems = Array.isArray(body.items) ? body.items.slice(0, 60) : [];
   if (!rawItems.length) throw new AppError(400, 'O carrinho está vazio.');
   const requestedCount = rawItems.reduce((sum, item) => sum + (Number.isInteger(Number(item?.qty)) && Number(item.qty) > 0 ? Number(item.qty) : 0), 0);
@@ -83,8 +83,9 @@ export async function createOrder(userSlug, body = {}) {
     if (!p || !Number.isInteger(qty) || qty < 1 || qty > 99) throw new AppError(400, 'Um dos itens do carrinho não está mais disponível. Atualize a página.');
     const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : null;
     if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
-    const priceOption = it.priceOptionId ? p.priceOptions.find((x) => x.id === Number(it.priceOptionId)) : null;
-    if (it.priceOptionId && !priceOption) throw new AppError(400, 'Uma forma de preço escolhida não existe mais. Atualize a página.');
+    const priceOption = [...p.priceOptions]
+      .filter((option) => (option.minQuantity || 1) <= qty)
+      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
     const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
@@ -97,7 +98,10 @@ export async function createOrder(userSlug, body = {}) {
   const type = String(d.type || '');
   let delivery;
   let shippingCents = 0;
-  if (type === 'excursao') {
+  if (type === 'retirada') {
+    if (!cfg.pickup?.enabled) throw new AppError(400, 'Esta loja não oferece retirada.');
+    delivery = { type, name: cfg.pickup.name || cfg.storeName || 'Retirada na loja', address: cfg.pickup.address };
+  } else if (type === 'excursao') {
     if (!cfg.excursion.enabled) throw new AppError(400, 'Esta loja não entrega por excursão.');
     const warehouse = line(d.warehouse, 120);
     const city = line(d.city, 80);
@@ -126,7 +130,9 @@ export async function createOrder(userSlug, body = {}) {
   const notes = typeof body.notes === 'string' ? body.notes.replace(/\r/g, '').trim().slice(0, 500) : '';
 
   // 4) Grava o pedido e o cliente juntos (o telefone é único por usuário: se já existe, só completa o endereço).
-  const addr = type === 'excursao'
+  const addr = type === 'retirada'
+    ? { street: delivery.address, complement: delivery.name }
+    : type === 'excursao'
     ? { street: delivery.address, city: delivery.city, state: delivery.state || null, complement: `Galpão: ${delivery.warehouse}` }
     : { zip: delivery.zip || null, street: delivery.street || null, number: delivery.number || null, complement: delivery.complement || null, district: delivery.district || null, city: delivery.city || null, state: delivery.state || null };
   const clean = Object.fromEntries(Object.entries(addr).filter(([, v]) => v));
@@ -157,7 +163,7 @@ export async function createOrder(userSlug, body = {}) {
 
 export const orderDTO = (o) => ({
   id: o.id, code: o.code, customerName: o.customerName, customerPhone: o.customerPhone, deliveryType: o.deliveryType, delivery: o.delivery, items: o.items,
-  subtotalCents: o.subtotalCents, shippingCents: o.shippingCents, totalCents: o.totalCents, notes: o.notes, status: o.status, createdAt: o.createdAt.getTime(),
+  subtotalCents: o.subtotalCents, shippingCents: o.shippingCents, totalCents: o.totalCents, notes: o.notes, status: o.status, createdAt: o.createdAt.getTime(), deletedAt: o.deletedAt?.getTime() || null,
 });
 
 export { publicProduct };

@@ -445,6 +445,8 @@ function CatalogSection({ doc, api, categories, meta }) {
       <TextField label="Título da página do carrinho" value={c.cartTitle} onChange={set('cartTitle')} maxLength={60} id="cc-cart" />
       <Select label="Layout do carrinho" value={c.cartLayout} options={[['standard', 'Profissional'], ['compact', 'Compacto'], ['split', 'Resumo em destaque']]} onChange={set('cartLayout')} />
       <TextField label="Identificador do link do carrinho" value={c.cartLink} onChange={(v) => set('cartLink')(v.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24))} maxLength={24} id="cc-cart-link" hint={`Link direto: ${pageUrl(meta.path, meta.customUrl)}?${c.cartLink || 'carrinho'}=1`} />
+      <TextField label="Botão ou link extra no carrinho (opcional)" value={c.cartButtonLabel} onChange={set('cartButtonLabel')} maxLength={40} id="cc-cart-button-label" placeholder="Ex.: Ver ofertas" />
+      <TextField label="Endereço do botão extra" value={c.cartButtonUrl} onChange={set('cartButtonUrl')} maxLength={500} id="cc-cart-button-url" placeholder="https://..." hint="Aceita links http ou https. O botão aparece no carrinho." />
       <TextField label="Aviso na finalização (opcional)" value={c.checkoutNote} onChange={set('checkoutNote')} multiline rows={2} maxLength={300} id="cc-note" />
       <button type="button" className="btn btn-ghost btn-sm" onClick={api.openCatalogSettings}>Configurar entregas e frete</button>
     </Section>

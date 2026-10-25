@@ -534,6 +534,7 @@ model ProductPriceOption {
   productId  Int    @map("product_id")
   label      String
   priceCents Int?   @map("price_cents")
+  minQuantity Int   @default(1) @map("min_quantity")
   position   Int    @default(0)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

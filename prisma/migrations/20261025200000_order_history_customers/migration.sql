@@ -18,3 +18,8 @@ CREATE UNIQUE INDEX "order_customer_profiles_user_id_customer_phone_key" ON "ord
 CREATE INDEX "order_customer_profiles_user_id_updated_at_idx" ON "order_customer_profiles"("user_id", "updated_at");
 
 ALTER TABLE "order_customer_profiles" ADD CONSTRAINT "order_customer_profiles_user_id_fkey" FOREIGN KEY ("user_id") REFERENCES "users"("id") ON DELETE CASCADE ON UPDATE CASCADE;
+
+INSERT INTO "order_customer_profiles" ("user_id", "customer_phone", "customer_name")
+SELECT DISTINCT ON ("user_id", "customer_phone") "user_id", "customer_phone", "customer_name"
+FROM "orders"
+ORDER BY "user_id", "customer_phone", "created_at" DESC;

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
-import { CartPage, CatalogHome, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
+import { CartPage, CatalogHome, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 
@@ -56,6 +56,7 @@ function PublicPage({ page, products, store, slug }) {
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
   const cart = useCart(slug);
   const [cartOpen, goCart] = useCartView(doc.catalog.cartLink);
+  const { count: cartCount } = priced(cart.items, products);
   const pixelOn = Boolean(doc.pixel.meta || doc.pixel.google || doc.pixel.tiktok);
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
@@ -67,7 +68,7 @@ function PublicPage({ page, products, store, slug }) {
       <ClipDefs />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
-          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} onLink={onLink} onCart={isCatalog ? () => goCart(true) : undefined} />
+          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} onLink={onLink} onCart={isCatalog ? () => goCart(true) : undefined} cartCount={cartCount} />
         </main>
       )}
       {isCatalog && !showCart && <CatalogHome doc={doc} products={products} cart={cart} onOpenCart={() => goCart(true)} pixelOn={pixelOn} />}

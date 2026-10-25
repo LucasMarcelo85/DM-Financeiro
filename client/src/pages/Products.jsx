@@ -11,6 +11,15 @@ import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 // Cadastro de produtos e serviços: usados no catálogo digital e nos cartões de produtos do portfólio.
 const MAX_IMAGES = 4;
 
+function productPriceLabel(product) {
+  if (product.priceCents > 0) return brl(product.priceCents);
+  const tier = [...product.priceOptions]
+    .filter((option) => option.priceCents !== null)
+    .sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1))[0];
+  if (tier) return `A partir de ${brl(tier.priceCents)} · ${tier.minQuantity || 1} un.`;
+  return 'Sob consulta';
+}
+
 export default function Products() {
   const toast = useToast();
   const [data, setData] = useState(null);
@@ -103,11 +112,7 @@ export default function Products() {
               <div className="pr-body">
                 <span className="pr-cat">{p.category}<em>{p.kind === 'servico' ? 'Serviço' : 'Produto'}</em></span>
                 <strong title={p.name}>{p.name}</strong>
-                <span className="pr-price">
-                  {p.priceOptions.some((option) => option.priceCents !== null)
-                    ? `A partir de ${brl(Math.min(...p.priceOptions.filter((option) => option.priceCents !== null).map((option) => option.priceCents)))}`
-                    : p.priceCents ? brl(p.priceCents) : 'Sob consulta'}
-                </span>
+                <span className="pr-price">{productPriceLabel(p)}</span>
                 {p.priceOptions.length > 0 && <small className="muted">{p.priceOptions.length} formas de preço</small>}
               </div>
               <div className="pr-actions">
@@ -153,6 +158,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     key: `price-${option.id}`,
     label: option.label,
     price: option.priceCents === null ? '' : centsToMasked(option.priceCents),
+    minQuantity: String(option.minQuantity || 1),
   })));
   const [active, setActive] = useState(product ? product.active : true);
   const [varied, setVaried] = useState((product?.images.length || 0) > 1);
@@ -193,9 +199,10 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     if (varied && visible.some((i) => !i.label.trim())) return setError('Dê um nome a cada variação (ex.: cor ou tamanho).');
     if (varied && visible.some((i) => `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}`.length > 40)) return setError('O tipo e o valor da variação juntos devem ter até 40 caracteres.');
     if (priceOptions.some((option) => !option.label.trim())) return setError('Informe o nome de cada forma de preço ou remova a linha vazia.');
+    if (priceOptions.some((option) => !/^\d+$/.test(option.minQuantity) || Number(option.minQuantity) < 1 || Number(option.minQuantity) > 999)) return setError('Informe a quantidade mínima de cada faixa entre 1 e 999.');
     const body = {
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
-      priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: option.price === '' ? null : moneyToCents(option.price) })),
+      priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: option.price === '' ? null : moneyToCents(option.price), minQuantity: Number(option.minQuantity) || 1 })),
       images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}` : '', priceCents: null })),
     };
     setBusy(true);
@@ -225,16 +232,17 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
         </div>
         <fieldset className="field pr-price-options">
           <legend>Formas de preço (opcional)</legend>
-          <small>Cadastre uma forma de preço opcional. O nome é livre e o valor também pode ficar em branco, por exemplo para orçamento sob consulta.</small>
+          <small>Crie faixas de preço por quantidade. No carrinho, o sistema aplica automaticamente a faixa atingida — o cliente não escolhe um preço. O valor pode ficar em branco para “sob consulta”.</small>
           {priceOptions.map((option, index) => (
             <div className="pr-price-option" key={option.key}>
               <input className="input" list="pr-price-labels" value={option.label} maxLength={40} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, label: e.target.value } : item)))} placeholder="Nome personalizado" aria-label={`Nome da forma de preço ${index + 1}`} />
+              <label className="pr-option-quantity"><span>A partir de</span><input className="input" inputMode="numeric" value={option.minQuantity} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, minQuantity: e.target.value.replace(/\D/g, '').slice(0, 3) } : item)))} aria-label={`Quantidade mínima da faixa ${index + 1}`} /><span>un.</span></label>
               <label className="pr-option-price"><span>R$</span><input className="input" inputMode="numeric" value={option.price} onChange={(e) => setPriceOptions((list) => list.map((item, n) => (n === index ? { ...item, price: maskMoney(e.target.value) } : item)))} placeholder="Opcional" aria-label={`Preço da forma ${index + 1}`} /></label>
               <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceOptions((list) => list.filter((_, n) => n !== index))} aria-label={`Remover forma de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
             </div>
           ))}
           <datalist id="pr-price-labels">{(preferences?.priceLabels || []).map((label) => <option key={label} value={label} />)}</datalist>
-          {priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPriceOptions((list) => [...list, { key: `price-new-${Date.now()}-${Math.random()}`, label: '', price: '' }])}><Icon name="plus" size={16} /> Adicionar forma de preço</button>}
+          {priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPriceOptions((list) => [...list, { key: `price-new-${Date.now()}-${Math.random()}`, label: '', price: '', minQuantity: String(Math.min(999, Math.max(1, ...list.map((item) => Number(item.minQuantity) || 1)) + 1)) }])}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
         </fieldset>
         <label className="field"><span>Descrição</span><textarea className="input" rows={3} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
 

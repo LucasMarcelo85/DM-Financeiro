@@ -12,9 +12,9 @@ const router = Router();
 function orderWhere(userId, filters = {}, { archived = false, includeStatus = true, includeText = true } = {}) {
   const where = { userId, deletedAt: archived ? { not: null } : null };
   if (includeStatus && (filters.status === 'novo' || filters.status === 'atendido')) where.status = filters.status;
-  if (filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
+  if (filters.deliveryType === 'retirada' || filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
   const days = Number(filters.days);
-  if (days === 7 || days === config.orderRetentionDays) where.createdAt = { gte: new Date(Date.now() - days * 86400000) };
+  if (days === 7 || days === config.orderRetentionDays) where[archived ? 'deletedAt' : 'createdAt'] = { gte: new Date(Date.now() - days * 86400000) };
   const q = includeText ? String(filters.q || '').trim() : '';
   if (q) where.OR = [{ customerName: { contains: q, mode: 'insensitive' } }, { customerPhone: { contains: q.replace(/\D/g, '') || '§' } }, { code: { contains: q.toUpperCase() } }];
   return where;

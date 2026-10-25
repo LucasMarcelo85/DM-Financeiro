@@ -7,7 +7,7 @@ import { recountUnread, retentionCutoff } from './audit.js';
 // Faxina periódica do banco:
 //  - mensagens da auditoria com mais de 60 dias são apagadas (junto com as fotos/áudios delas), para o banco não encher;
 //  - conversas que ficaram vazias (sem mensagens, sem anotação e sem etiqueta) também saem;
-//  - pedidos do catálogo com mais de 20 dias são apagados;
+//  - pedidos arquivados há mais de 20 dias são apagados;
 //  - códigos de confirmação vencidos são removidos;
 //  - os planos são relidos do banco (caso outra instância do sistema tenha alterado).
 const EVERY_MS = 60 * 60 * 1000; // a cada hora
@@ -43,7 +43,8 @@ export async function purgeOldAuditMessages(now = Date.now()) {
 
 // Pedidos do catálogo, inclusive os arquivados, saem do banco após 20 dias.
 export async function purgeOldOrders(now = Date.now()) {
-  const r = await prisma.order.deleteMany({ where: { createdAt: { lt: new Date(now - config.orderRetentionDays * DAY) } } });
+  const cutoff = new Date(now - config.orderRetentionDays * DAY);
+  const r = await prisma.order.deleteMany({ where: { deletedAt: { lt: cutoff } } });
   return r.count;
 }
 
@@ -54,7 +55,7 @@ export async function runMaintenance() {
     const removed = await purgeOldAuditMessages();
     if (removed) console.log(`[manutenção] ${removed} mensagens da auditoria com mais de ${config.auditRetentionDays} dias foram apagadas.`);
     const orders = await purgeOldOrders();
-    if (orders) console.log(`[manutenção] ${orders} pedidos com mais de ${config.orderRetentionDays} dias foram apagados.`);
+    if (orders) console.log(`[manutenção] ${orders} pedidos arquivados há mais de ${config.orderRetentionDays} dias foram apagados.`);
     await prisma.verificationCode.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     await loadPlans();
   } catch (e) {

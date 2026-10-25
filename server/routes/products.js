@@ -7,7 +7,7 @@ import { cleanProduct, publicProduct } from '../utils/catalog.js';
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
 const imgSelect = { select: { id: true, position: true, label: true, priceCents: true }, orderBy: { position: 'asc' } };
-const optionSelect = { select: { id: true, position: true, label: true, priceCents: true }, orderBy: { position: 'asc' } };
+const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
 const defaultPreferences = {
@@ -130,9 +130,9 @@ router.patch('/:id', async (req, res) => {
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {
       if (option.id !== undefined) {
-        await tx.productPriceOption.update({ where: { id: option.id }, data: { label: option.label, priceCents: option.priceCents, position } });
+        await tx.productPriceOption.update({ where: { id: option.id }, data: { label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, position } });
       } else {
-        await tx.productPriceOption.create({ data: { productId: current.id, label: option.label, priceCents: option.priceCents, position } });
+        await tx.productPriceOption.create({ data: { productId: current.id, label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, position } });
       }
     }
     return tx.product.update({ where: { id: current.id }, data, include: productInclude });

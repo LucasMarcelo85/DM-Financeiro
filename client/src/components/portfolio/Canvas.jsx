@@ -127,13 +127,13 @@ function ImageView({ el, mode }) {
   );
 }
 
-function IconView({ el, box }) {
+function IconView({ el, box, cartCount }) {
   const s = Math.min(box.w, box.h);
   const bgRadius = el.bg === 'circle' ? '50%' : el.bg === 'rounded' ? '24%' : 0;
   return (
     <div className={`pv-icon${el.shadow !== 'none' && el.bg !== 'none' ? ` sh-${el.shadow}` : ''}`}
       style={{ background: el.bg === 'none' ? 'transparent' : el.bgColor, borderRadius: bgRadius, border: el.bg !== 'none' && el.borderW ? `${el.borderW}px solid ${el.borderColor}` : undefined, '--gc': el.bgColor }}>
-      <IconSvg name={el.name} size={el.bg === 'none' ? s : s * 0.56} color={el.color} />
+      {['cart', 'bag'].includes(el.name) ? <CartGlyph name={el.name} size={el.bg === 'none' ? s : s * 0.56} count={cartCount} /> : <IconSvg name={el.name} size={el.bg === 'none' ? s : s * 0.56} color={el.color} />}
     </div>
   );
 }
@@ -166,13 +166,17 @@ function ShapeView({ el }) {
   );
 }
 
-function ButtonView({ el, box, mode, onCart, onLink }) {
+function CartGlyph({ name, size, count = 0 }) {
+  return <span className="pv-cart-glyph"><IconSvg name={name} size={size} />{count > 0 && <i aria-label={`${count} itens no carrinho`}>{count > 99 ? '99+' : count}</i>}</span>;
+}
+
+function ButtonView({ el, box, mode, onCart, onLink, cartCount }) {
   const href = linkHref(el.link);
   const style = {
     '--c1': el.color, '--c2': el.color2, '--tc': el.textColor || readableOn(el.color), '--rad': `${el.radius}px`,
     fontFamily: fontCss(el.font), fontWeight: el.weight, fontSize: box.fs,
   };
-  const Icon = el.icon ? <IconSvg name={el.icon} size="1.15em" /> : null;
+  const Icon = el.icon ? (['cart', 'bag'].includes(el.icon) ? <CartGlyph name={el.icon} size="1.15em" count={cartCount} /> : <IconSvg name={el.icon} size="1.15em" />) : null;
   const cls = `pv-btn is-${el.style}${mode === 'edit' && !href ? ' is-nolink' : ''}`;
   const body = <>{el.iconPos !== 'right' && Icon}<span>{el.label || 'Botão'}</span>{el.iconPos === 'right' && Icon}</>;
   const opensCart = mode === 'public' && onCart && ['cart', 'bag'].includes(el.icon);
@@ -197,6 +201,17 @@ function VideoView({ el, mode }) {
 
 export function ProductCard({ p, cardStyle = 'soft', price = true, action }) {
   const img = p.images[0];
+  const firstTier = [...(p.priceOptions || [])]
+    .filter((option) => option.priceCents !== null)
+    .sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1))[0];
+  const imagePrice = (p.images || []).filter((image) => image.priceCents !== null).sort((a, b) => a.priceCents - b.priceCents)[0];
+  const displayedPrice = p.priceCents > 0
+    ? { cents: p.priceCents, label: '' }
+    : imagePrice
+      ? { cents: imagePrice.priceCents, label: 'a partir de ' }
+      : firstTier
+        ? { cents: firstTier.priceCents, label: `a partir de ${firstTier.minQuantity || 1} un. · ` }
+        : null;
   return (
     <div className={`pv-card cs-${cardStyle}`}>
       <div className="pv-card-img">
@@ -206,7 +221,7 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action }) {
       <div className="pv-card-body">
         <span className="pv-card-cat">{p.category}</span>
         <span className="pv-card-name">{p.name}</span>
-        {price && minPrice(p) > 0 && <span className="pv-card-price">{p.priceOptions.length > 0 || p.images.length > 1 && p.images.some((i) => i.priceCents !== null) ? 'a partir de ' : ''}{brl(minPrice(p))}</span>}
+        {price && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
         {action}
       </div>
     </div>
@@ -239,7 +254,7 @@ function ProductsView({ el, device, products, mode }) {
 }
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
-function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, replay = 0 }) {
+function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, cartCount, replay = 0 }) {
   const box = boxOf(el, device);
   const ref = useRef(null);
   const a = el.anim;
@@ -259,12 +274,17 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   let linked = null;
   if (el.t === 'text') { content = <TextView el={el} box={box} />; linked = el.link; }
   else if (el.t === 'image') { content = <ImageView el={el} mode={mode} />; linked = el.link; }
-  else if (el.t === 'icon') { content = <IconView el={el} box={box} />; linked = el.link; }
+  else if (el.t === 'icon') {
+    content = <IconView el={el} box={box} cartCount={cartCount} />;
+    if (mode === 'public' && onCart && ['cart', 'bag'].includes(el.name)) {
+      content = <button type="button" className="pv-icon-cart-action" onClick={() => onCart()} aria-label="Abrir carrinho">{content}</button>;
+    } else linked = el.link;
+  }
   else if (el.t === 'shape') { content = <ShapeView el={el} />; linked = el.link; }
   else if (el.t === 'video') content = <VideoView el={el} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
   else if (el.t === 'button') {
-    const b = ButtonView({ el, box, mode, onCart, onLink });
+    const b = ButtonView({ el, box, mode, onCart, onLink, cartCount });
     if (mode === 'public' && !b.href && !b.button) return null; // botão sem link não aparece na página pública
     content = mode === 'public'
       ? b.button || <a className={b.cls} style={b.style} href={b.href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{b.body}</a>
@@ -313,14 +333,14 @@ export function PageCredit({ theme }) {
 }
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
-export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, onLink, onCart, replay = 0, children, minHeight }) {
+export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, onLink, onCart, cartCount = 0, replay = 0, children, minHeight }) {
   const W = DESIGN_W[device];
   const H = Math.max(minHeight || 0, pageHeight(doc, device));
   return (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
       <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
         {doc.elements.map((el, i) => (
-          <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1} onLink={onLink} onCart={onCart} replay={replay} />
+          <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1} onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} />
         ))}
         {children}
       </div>

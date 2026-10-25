@@ -36,6 +36,7 @@ export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e
 export const CATALOG_DEFAULTS = () => ({
   display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
   addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
+  cartButtonLabel: '', cartButtonUrl: '',
 });
 
 // ---------------------------------------------------------------- padrões de cada tipo

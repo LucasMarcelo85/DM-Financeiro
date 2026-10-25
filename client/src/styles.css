@@ -1015,6 +1015,8 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-modal-img { background: #eef2f6; aspect-ratio: 1 / 1; overflow: hidden; }
 .cat-modal-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .cat-modal-body { display: grid; gap: 0.8rem; align-content: start; padding: 1.2rem; }
+.cat-price-options { display: grid; gap: 0.25rem; padding: 0.75rem; border: 1px solid color-mix(in srgb, var(--p) 28%, transparent); border-radius: 10px; background: color-mix(in srgb, var(--p) 7%, var(--bg)); font-size: 0.85rem; }
+.cat-price-options small { opacity: 0.7; }
 .cat-modal-body h2 { margin: 0; font-family: var(--hf); font-size: 1.5rem; }
 .cat-x { position: absolute; right: 10px; top: 8px; z-index: 2; width: 2.2rem; height: 2.2rem; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .92); color: #14202e; font-size: 1.5rem; line-height: 1; cursor: pointer; }
 .cat-vars { display: flex; gap: 0.5rem; flex-wrap: wrap; }
@@ -1036,6 +1038,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-cart h1 { font-family: var(--hf); margin: 0.4rem 0 1rem; }
 .cat-cart h2 { font-family: var(--hf); font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 .cat-back { border: 0; background: none; color: var(--p); font: 700 0.95rem var(--bf, system-ui); cursor: pointer; padding: 0.3rem 0; }
+.cat-btn-custom { width: auto; margin: 0 0 0.9rem; padding: 0.65rem 1rem; font-size: 0.9rem; }
 .cat-cart { max-width: 46rem; }
 .cat-form { display: grid; gap: 1rem; }
 .cat-lines { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.6rem; }
@@ -1047,6 +1050,11 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-line-x { border: 0; background: none; color: inherit; opacity: 0.55; font-size: 1.4rem; cursor: pointer; }
 @media (max-width: 560px) { .cat-lines li { grid-template-columns: 48px 1fr 28px; } .cat-lines li .cat-qty, .cat-lines li .cat-line-total { grid-column: 2; justify-self: start; } .cat-line-x { grid-column: 3; grid-row: 1; } }
 .cat-fields { display: grid; gap: 0.7rem; grid-template-columns: 1fr 1fr; }
+.cat-saved-hint { margin: -0.5rem 0 0.6rem; color: var(--muted); font-size: 0.8rem; }
+.cat-saved-hint button { padding: 0; border: 0; background: none; color: var(--p); text-decoration: underline; font: inherit; cursor: pointer; }
+.cat-pickup-info { display: flex; gap: 0.7rem; align-items: flex-start; padding: 0.85rem; border: 1px solid color-mix(in srgb, var(--p) 30%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--p) 8%, var(--bg)); }
+.cat-pickup-info > span { display: grid; gap: 0.2rem; }
+.cat-pickup-info small { white-space: pre-wrap; opacity: 0.8; }
 @media (max-width: 560px) { .cat-fields { grid-template-columns: 1fr; } }
 .cat-fields label, .cat-notes { display: grid; gap: 0.25rem; font-size: 0.85rem; font-weight: 600; }
 .cat-fields .wide { grid-column: 1 / -1; }
@@ -1067,6 +1075,13 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-totals { display: grid; gap: 0.3rem; margin: 1.2rem 0 1rem; padding: 0.9rem 1rem; border-radius: 12px; background: color-mix(in srgb, var(--tx) 6%, transparent); }
 .cat-totals span { display: flex; justify-content: space-between; }
 .cat-grand { font-size: 1.2rem; padding-top: 0.4rem; border-top: 1.5px solid color-mix(in srgb, var(--tx) 18%, transparent); }
+.cat-checkout-progress { display: grid; gap: 0.45rem; padding: 0.9rem 1rem; border: 1px solid color-mix(in srgb, var(--p) 38%, transparent); border-radius: 12px; background: color-mix(in srgb, var(--p) 8%, var(--bg)); }
+.cat-checkout-progress-head { display: flex; justify-content: space-between; gap: 0.5rem; }
+.cat-progress-track { height: 0.55rem; overflow: hidden; border-radius: 99px; background: color-mix(in srgb, var(--tx) 15%, transparent); }
+.cat-progress-track span { display: block; height: 100%; border-radius: inherit; background: var(--p); transition: width 350ms ease; }
+.cat-checkout-progress ul { display: grid; gap: 0.2rem; margin: 0; padding-left: 1.15rem; font-size: 0.86rem; }
+.cat-submit.is-locked:disabled { opacity: 0.82; background: color-mix(in srgb, var(--p) 48%, var(--bg)); border-color: transparent; color: var(--tx); }
+.cat-submit:not(:disabled) { box-shadow: 0 5px 18px color-mix(in srgb, var(--p) 35%, transparent); }
 .cat-done { text-align: center; display: grid; justify-items: center; gap: 0.6rem; padding-top: 3rem; }
 .cat-done .cat-btn { max-width: 24rem; }
 
@@ -1097,7 +1112,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pr-preference-chip:hover { border-color: var(--red-d); color: var(--red-d); background: var(--red-soft); }
 .pr-price-options { border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.8rem; }
 .pr-price-options > small { color: var(--muted); }
-.pr-price-option { display: grid; grid-template-columns: minmax(0, 1fr) minmax(8rem, 0.6fr) auto; align-items: center; gap: 0.5rem; }
+.pr-price-option { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(8rem, 0.6fr) auto; align-items: center; gap: 0.5rem; }
 .pr-option-price { position: relative; }
 .pr-option-price span { position: absolute; left: 0.75rem; top: 50%; transform: translateY(-50%); color: var(--muted); font-size: 0.85rem; }
 .pr-option-price .input { padding-left: 2.3rem; }
@@ -1108,7 +1123,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pr-slot-img:disabled { opacity: 0.6; cursor: progress; }
 .pr-slot-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pr-slot-add { place-items: center; justify-items: center; min-height: 7rem; border: 2px dashed #b7c3d1; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.82rem; font-weight: 600; }
-@media (max-width: 36rem) { .pr-price-option { grid-template-columns: minmax(0, 1fr) auto; } .pr-option-price { grid-column: 1; } .pr-price-option .icon-btn { grid-column: 2; grid-row: 1 / span 2; } }
+@media (max-width: 36rem) { .pr-price-option { grid-template-columns: minmax(0, 1fr) auto; } .pr-option-quantity, .pr-option-price { grid-column: 1; } .pr-price-option .icon-btn { grid-column: 2; grid-row: 1 / span 3; } }
 
 /* ---------- Pedidos ---------- */
 .od-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
@@ -1148,6 +1163,14 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .od-customer-main i { padding: 0.12rem 0.4rem; border-radius: 999px; background: var(--primary-soft, #eef2ff); color: var(--primary); font-size: 0.72rem; font-style: normal; }
 .od-customer-main small { color: var(--muted); }
 .od-customer-link { padding: 0; border: 0; background: transparent; color: var(--primary); font: inherit; font-weight: 700; cursor: pointer; }
+.nav-icon-notice { position: relative; display: inline-flex; }
+.nav-icon-notice i { position: absolute; top: -0.55rem; right: -0.75rem; min-width: 1.05rem; height: 1.05rem; display: grid; place-items: center; padding-inline: 0.08rem; border: 2px solid var(--sidebar, #14202e); border-radius: 999px; background: #d92d20; color: #fff; font-size: 0.58rem; font-style: normal; font-weight: 800; line-height: 1; }
+.pv-cart-glyph { position: relative; display: inline-flex; align-items: center; justify-content: center; }
+.pv-cart-glyph i { position: absolute; top: -0.65em; right: -0.8em; min-width: 1.3em; height: 1.3em; display: grid; place-items: center; padding: 0 0.15em; border-radius: 999px; background: #d92d20; color: white; font: 800 0.55em/1 system-ui, sans-serif; font-style: normal; }
+.pv-icon-cart-action { display: grid; place-items: center; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: inherit; cursor: pointer; }
+.pr-option-quantity { display: inline-flex; align-items: center; gap: 0.35rem; }
+.pr-option-quantity span { white-space: nowrap; font-size: 0.78rem; color: var(--muted); }
+.pr-option-quantity .input { width: 4rem; text-align: center; }
 .od-customer-orders { display: grid; gap: 0.4rem; list-style: none; padding: 0; }
 .od-customer-orders li { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: center; gap: 0.7rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .od-customer-orders details { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }

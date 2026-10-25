@@ -7,7 +7,7 @@ import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 
 const DAY = 86400000;
-const TYPE = { excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
+const TYPE = { retirada: 'Retirada', excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
 const timeSince = (timestamp) => {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes === 0) return 'agora';
@@ -19,6 +19,7 @@ const timeSince = (timestamp) => {
 
 function deliveryText(o) {
   const d = o.delivery || {};
+  if (o.deliveryType === 'retirada') return `${d.name || 'Retirada na loja'} · ${d.address || 'Endereço não informado'}`;
   if (o.deliveryType === 'excursao') return `Galpão ${d.warehouse} · ${d.address}, ${d.city}`;
   const addr = [d.street, d.number, d.district, d.city && `${d.city}${d.state ? `/${d.state}` : ''}`].filter(Boolean).join(', ');
   if (o.deliveryType === 'motoboy') return `${addr || 'Endereço não informado'}${d.zip ? ` · CEP ${d.zip}` : ''}${d.km ? ` · ${String(d.km).replace('.', ',')} km${d.approx ? ' (aprox.)' : ''}` : ''}`;
@@ -126,7 +127,7 @@ export default function Orders() {
             <option value="20">Últimos 20 dias</option>
           </select>
           {tab !== 'customers' && <select className="input" value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)} aria-label="Forma de entrega">
-            <option value="">Todas as entregas</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
+            <option value="">Todas as entregas</option><option value="retirada">Retirada</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
           </select>}
           {tab === 'orders' && sel.size > 0 && <button className="btn btn-danger btn-sm" onClick={() => setConfirm({ ids: [...sel] })}>Excluir {plural(sel.size, 'selecionado', 'selecionados')}</button>}
           {tab === 'orders' && data?.total > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ all: true })}>Arquivar todos</button>}
@@ -156,7 +157,7 @@ export default function Orders() {
       ) : (
         <ul className={`od-list${isLog ? ' is-log' : ''}`}>
           {data.orders.map((o) => {
-            const daysLeft = Math.max(0, Math.ceil((o.createdAt + data.retentionDays * DAY - Date.now()) / DAY));
+            const daysLeft = Math.max(0, Math.ceil(((o.deletedAt || o.createdAt) + data.retentionDays * DAY - Date.now()) / DAY));
             const wa = `https://wa.me/${o.customerPhone}?text=${encodeURIComponent(`Olá, ${o.customerName}! Sobre o seu pedido ${o.code}:`)}`;
             return (
               <li key={o.id} className={`od-card ${o.status === 'novo' ? 'is-new' : ''}`}>
@@ -165,7 +166,7 @@ export default function Orders() {
                   <strong className="od-code">#{o.code}</strong>
                   <span className={`pill ${o.status === 'novo' ? 'pill-partial' : 'pill-sent'}`}>{o.status === 'novo' ? 'Novo' : 'Atendido'}</span>
                   <span className="tag">{TYPE[o.deliveryType]}</span>
-                  <span className="muted small od-date">{dateTimeBR(o.createdAt)} · {isLog ? `apaga em ${plural(daysLeft, 'dia', 'dias')}` : `log expira em ${plural(daysLeft, 'dia', 'dias')}`}</span>
+                  <span className="muted small od-date">{dateTimeBR(o.createdAt)}{isLog ? ` · apaga em ${plural(daysLeft, 'dia', 'dias')}` : ''}</span>
                 </div>
                 <div className="od-cust"><button type="button" className="od-customer-link" onClick={() => openCustomer(o.customerPhone)}>{o.customerName}</button><a href={wa} target="_blank" rel="noopener noreferrer">{formatStoredPhone(o.customerPhone)}</a></div>
                 <p className="od-deliv">{deliveryText(o)}</p>
@@ -175,7 +176,7 @@ export default function Orders() {
                 {!isLog && <div className="od-actions">
                   <a className="btn btn-primary btn-sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16} /> Chamar no WhatsApp</a>
                   <button className="btn btn-ghost btn-sm" onClick={() => setDone(o)}><Icon name="check" size={16} /> {o.status === 'novo' ? 'Marcar como atendido' : 'Voltar para novo'}</button>
-                  <button className="icon-btn icon-btn-danger" onClick={() => setConfirm({ ids: [o.id] })} aria-label={`Arquivar pedido ${o.code}`} title="Arquivar"><Icon name="trash" size={17} /></button>
+                  <button className="icon-btn" onClick={() => setConfirm({ ids: [o.id] })} aria-label={`Arquivar pedido ${o.code}`} title="Arquivar"><Icon name="archive" size={17} /></button>
                 </div>}
               </li>
             );

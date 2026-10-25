@@ -12,6 +12,7 @@ const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 const toForm = (c) => ({
   storeName: c.storeName, whatsapp: c.whatsapp ? maskPhone(c.whatsapp) : '',
   checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
+  pickup: { ...c.pickup },
   excursion: { ...c.excursion },
   motoboy: { ...c.motoboy, fixed: centsToMasked(c.motoboy.fixedCents), perKm: centsToMasked(c.motoboy.perKmCents), min: centsToMasked(c.motoboy.minCents), maxKm: num(c.motoboy.maxKm), originZip: cepMask(c.motoboy.originZip) },
   correios: { ...c.correios, originZip: cepMask(c.correios.originZip), heightCm: num(c.correios.heightCm), widthCm: num(c.correios.widthCm), lengthCm: num(c.correios.lengthCm), weightG: num(c.correios.weightG) },
@@ -20,6 +21,7 @@ const toForm = (c) => ({
 const toConfig = (f) => ({
   storeName: f.storeName, whatsapp: f.whatsapp.replace(/\D/g, ''),
   checkout: { minItems: Number(f.checkout.minItems) || 1, minSubtotalCents: moneyToCents(f.checkout.minSubtotal) },
+  pickup: f.pickup,
   excursion: { enabled: f.excursion.enabled },
   motoboy: {
     enabled: f.motoboy.enabled, mode: f.motoboy.mode, fixedCents: moneyToCents(f.motoboy.fixed), perKmCents: moneyToCents(f.motoboy.perKm), minCents: moneyToCents(f.motoboy.min),
@@ -92,6 +94,14 @@ export default function CatalogSettings({ onClose, onSaved }) {
           </div>
         </fieldset>
         <p className="muted small">Marque as formas de entrega que você oferece. O cliente sempre informa <strong>nome</strong> e <strong>telefone</strong>.</p>
+
+        <fieldset className="cs-box">
+          <Check label="Retirada no local" checked={f.pickup.enabled} onChange={(v) => setF((x) => ({ ...x, pickup: { ...x.pickup, enabled: v } }))} />
+          {f.pickup.enabled && <>
+            <TextField label="Nome do local (opcional)" value={f.pickup.name} onChange={(v) => setF((x) => ({ ...x, pickup: { ...x.pickup, name: v } }))} maxLength={80} id="cs-pickup-name" placeholder={f.storeName || 'Loja'} />
+            <TextField label="Endereço ou instruções para retirada *" value={f.pickup.address} onChange={(v) => setF((x) => ({ ...x, pickup: { ...x.pickup, address: v } }))} maxLength={240} id="cs-pickup-address" multiline rows={2} />
+          </>}
+        </fieldset>
 
         <fieldset className="cs-box">
           <Check label="Excursão" checked={f.excursion.enabled} onChange={(v) => setF((x) => ({ ...x, excursion: { enabled: v } }))} />

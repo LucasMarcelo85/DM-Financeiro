@@ -1,6 +1,7 @@
-import { useEffect } from 'react';
+import { useEffect, useState } from 'react';
 import { NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
+import { api } from '../api.js';
 import Icon from './Icon.jsx';
 import PlanBadge from './PlanBadge.jsx';
 import PinPrompt from './PinPrompt.jsx';
@@ -33,6 +34,7 @@ export function Brand({ light }) {
 export default function Layout() {
   const { user, logout, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
+  const [openOrders, setOpenOrders] = useState(0);
   const base = NAV.filter((i) => i.feature !== 'catalog' || (user.limits?.catalogProducts ?? 0) > 0); // Produtos e Pedidos só nos planos com catálogo digital
   const items = user.role === 'admin'
     ? [...base, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
@@ -41,6 +43,17 @@ export default function Layout() {
   const tab = tabOfPath(pathname);
   const locked = isTabLocked(user, pinUnlocked, tab);
   const blocked = !user.access.hasAccess;
+
+  useEffect(() => {
+    if ((user.limits?.catalogProducts ?? 0) < 1) return undefined;
+    let alive = true;
+    const refresh = () => api.get('/catalog/orders')
+      .then((r) => { if (alive) setOpenOrders(r.fresh || 0); })
+      .catch((e) => console.error('[menu] não foi possível atualizar o contador de pedidos:', e.message));
+    refresh();
+    const timer = setInterval(refresh, 30000);
+    return () => { alive = false; clearInterval(timer); };
+  }, [user.limits?.catalogProducts]);
 
   // No celular a barra de baixo rola: mantém o item da página atual à vista.
   useEffect(() => {
@@ -67,7 +80,9 @@ export default function Layout() {
               </span>
             ) : (
               <NavLink key={item.to} to={item.to} end={item.end} className={({ isActive }) => `nav-link ${isActive ? 'is-active' : ''}`}>
-                <Icon name={item.icon} />
+                {item.to === '/pedidos' && openOrders > 0
+                  ? <span className="nav-icon-notice"><Icon name={item.icon} /><i>{openOrders > 99 ? '99+' : openOrders}</i></span>
+                  : <Icon name={item.icon} />}
                 <span>{item.label}</span>
               </NavLink>
             )
