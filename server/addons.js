@@ -27,13 +27,13 @@ export async function loadAddons() {
   for (const r of rows) if (next.has(r.resource)) next.set(r.resource, { resource: r.resource, enabled: r.enabled, packUnits: r.packUnits, priceCents: r.priceCents, maxPacks: r.maxPacks });
   settings = next;
   const map = new Map();
-  for (const a of owned) map.set(a.userId, [...(map.get(a.userId) || []), { id: a.id, resource: a.resource, units: a.units, paidUntil: a.paidUntil.getTime() }]);
+  for (const a of owned) map.set(a.userId, [...(map.get(a.userId) || []), { id: a.id, resource: a.resource, units: a.units, priceCents: a.priceCents, paidUntil: a.paidUntil.getTime() }]);
   byUser = map;
 }
 
 async function reloadUser(userId, db = prisma) {
   const rows = await db.userAddon.findMany({ where: { userId } });
-  byUser = new Map(byUser).set(userId, rows.map((a) => ({ id: a.id, resource: a.resource, units: a.units, paidUntil: a.paidUntil.getTime() })));
+  byUser = new Map(byUser).set(userId, rows.map((a) => ({ id: a.id, resource: a.resource, units: a.units, priceCents: a.priceCents, paidUntil: a.paidUntil.getTime() })));
 }
 
 export const listAddonSettings = () => ADDON_KEYS.map((k) => settingDTO(settings.get(k)));
@@ -61,6 +61,13 @@ export function extraUnits(userId, resource, now = Date.now()) {
 
 export const extrasFor = (userId) => Object.fromEntries(ADDON_KEYS.map((k) => [k, extraUnits(userId, k)]));
 
+// Valor mensal de uma compra: o combinado com o usuário ou, sem ele, pacotes × valor do pacote em "Gerir planos".
+export function addonMonthlyCents(a) {
+  if (a.priceCents != null) return a.priceCents;
+  const s = settings.get(a.resource) || DEFAULTS(a.resource);
+  return Math.max(1, Math.round(a.units / s.packUnits)) * s.priceCents;
+}
+
 // Compras do usuário que ainda valem ou venceram há pouco, com os dias restantes (para avisar e permitir pagar antes).
 export function addonPurchases(userId, now = Date.now()) {
   return (byUser.get(userId) || [])
@@ -79,8 +86,7 @@ export function priceAddonItems(userId, items) {
       const a = owned.get(Number(it.addonId));
       if (!a) throw new AppError(404, 'Limite extra não encontrado.');
       const s = settings.get(a.resource);
-      const packs = Math.max(1, Math.round(a.units / s.packUnits));
-      const cents = packs * s.priceCents;
+      const cents = addonMonthlyCents(a);
       total += cents;
       return { resource: a.resource, units: a.units, addonId: a.id, cents };
     }

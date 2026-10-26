@@ -27,7 +27,8 @@ function deliveryText(o) {
   return `${d.service || 'Correios'} · CEP ${d.zip}${d.days ? ` · prazo até ${d.days.max} dias` : ''}${addr ? ` · ${addr}` : ''}`;
 }
 
-export default function Orders() {
+export default function Orders({ allow }) {
+  const can = (key) => !allow || allow.includes(key);
   const toast = useToast();
   const [data, setData] = useState(null);
   const [customers, setCustomers] = useState(null);
@@ -36,7 +37,7 @@ export default function Orders() {
   const [status, setStatus] = useState('');
   const [period, setPeriod] = useState('20');
   const [deliveryType, setDeliveryType] = useState('');
-  const [tab, setTab] = useState('orders');
+  const [tab, setTab] = useState(() => (can('pedidos') ? 'orders' : can('clientes') ? 'customers' : 'log'));
   const [sel, setSel] = useState(new Set());
   const [confirm, setConfirm] = useState(null);
   const [settings, setSettings] = useState(false);
@@ -100,9 +101,9 @@ export default function Orders() {
       <StoreBar />
 
       <nav className="od-tabs" aria-label="Área de pedidos">
-        <button type="button" className={tab === 'orders' ? 'is-on' : ''} onClick={() => { setTab('orders'); setSel(new Set()); }}>Pedidos {data && <span>{data.fresh} novos</span>}</button>
-        <button type="button" className={tab === 'customers' ? 'is-on' : ''} onClick={() => { setTab('customers'); setSel(new Set()); }}>Clientes</button>
-        <button type="button" className={tab === 'log' ? 'is-on' : ''} onClick={() => { setTab('log'); setSel(new Set()); }}>Arquivados {data && <span>{data.archived}</span>}</button>
+        {can('pedidos') && <button type="button" className={tab === 'orders' ? 'is-on' : ''} onClick={() => { setTab('orders'); setSel(new Set()); }}>Pedidos {data && <span>{data.fresh} novos</span>}</button>}
+        {can('clientes') && <button type="button" className={tab === 'customers' ? 'is-on' : ''} onClick={() => { setTab('customers'); setSel(new Set()); }}>Clientes</button>}
+        {can('arquivados') && <button type="button" className={tab === 'log' ? 'is-on' : ''} onClick={() => { setTab('log'); setSel(new Set()); }}>Arquivados {data && <span>{data.archived}</span>}</button>}
       </nav>
 
       {tab === 'orders' && data && (
@@ -132,7 +133,7 @@ export default function Orders() {
             <option value="">Todas as entregas</option><option value="retirada">Retirada</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
           </select>}
           {tab === 'orders' && sel.size > 0 && !isShopMode() && <button className="btn btn-danger btn-sm" onClick={() => setConfirm({ ids: [...sel] })}>Excluir {plural(sel.size, 'selecionado', 'selecionados')}</button>}
-          {tab === 'orders' && data?.total > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ all: true })}>Arquivar todos</button>}
+          {tab === 'orders' && data?.total > 0 && !isShopMode() && <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ all: true })}>Arquivar todos</button>}
         </div>
       )}
 

@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api, getActiveStore, setActiveStore } from '../api.js';
+import { api, getActiveStore, isShopMode, setActiveStore } from '../api.js';
 import BuyMore from './BuyMore.jsx';
 import { useToast } from './Toast.jsx';
 
@@ -17,7 +17,7 @@ export default function StoreBar({ manage = false }) {
   }).catch(() => setData({ stores: [], limit: 0 }));
   useEffect(() => { load(); }, []); // eslint-disable-line react-hooks/exhaustive-deps
 
-  if (!data || (!data.limit && !data.stores.length)) return null;
+  if (!data || (!data.limit && !data.stores.length) || isShopMode()) return null;
 
   const pick = (id) => { setActiveStore(id); window.location.reload(); };
 

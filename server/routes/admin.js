@@ -1,12 +1,14 @@
 ﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { PLAN_ID_RE, PLAN_TABS, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan, saveTrial, trialSettings } from '../plans.js';
+import { PLAN_ID_RE, PLAN_TABS, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, periodDays, planName, priceCents, savePlan, saveTrial, trialSettings } from '../plans.js';
 import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/access.js';
 import * as evo from '../services/evolution.js';
 import { removeDomainFromEasypanel } from '../services/easypanel.js';
 import { forgetDomain } from '../services/domains.js';
-import { listAddonSettings, saveAddonSettings } from '../addons.js';
+import { ADDON_DAYS, ADDON_KEYS, ADDON_RESOURCES, addonMonthlyCents, listAddonSettings, refreshUserAddons, saveAddonSettings } from '../addons.js';
+import { settle } from './billing.js';
+import crypto from 'node:crypto';
 
 const router = Router();
 
@@ -39,6 +41,134 @@ router.get('/users', async (_req, res) => {
   ]);
   const byUser = new Map(events.map((e) => [e.userId, e]));
   res.json({ users: users.map((u) => ({ ...adminView(u, byUser.get(u.id)), instanceCount: u._count.instances, contactCount: u._count.contacts })) });
+});
+
+// ---------- Cobrança e limites individuais ----------
+const DAY_MS = 86_400_000;
+const cents = (v, label) => {
+  const n = Math.round(Number(v));
+  if (!Number.isFinite(n) || n < 0 || n > 100_000_000) throw new AppError(400, `${label} inválido.`);
+  return n;
+};
+const optCents = (v, label) => (v === null || v === '' || v === undefined ? null : cents(v, label));
+
+async function billingView(user) {
+  await refreshUserAddons(user.id);
+  const payments = await prisma.payment.findMany({ where: { userId: user.id }, orderBy: { id: 'desc' }, take: 20 });
+  const owned = await prisma.userAddon.findMany({ where: { userId: user.id }, orderBy: { paidUntil: 'asc' } });
+  const now = Date.now();
+  const addons = owned.map((a) => {
+    const live = a.paidUntil.getTime() > now;
+    return {
+      id: a.id, resource: a.resource, label: ADDON_RESOURCES[a.resource]?.label || a.resource, units: a.units,
+      paidUntil: a.paidUntil.getTime(), active: live, custom: a.priceCents != null,
+      monthlyCents: addonMonthlyCents({ resource: a.resource, units: a.units, priceCents: a.priceCents }),
+    };
+  });
+  const planMonthly = user.planPriceCents ?? priceCents(user.plan, 'mensal');
+  return {
+    plan: user.plan, planName: planName(user.plan), planMonthlyCents: planMonthly, planCustom: user.planPriceCents != null, planListCents: priceCents(user.plan, 'mensal'),
+    accessUntil: ms(user.accessUntil),
+    addons,
+    nextTotalCents: planMonthly + addons.filter((a) => a.active).reduce((s, a) => s + a.monthlyCents, 0),
+    resources: ADDON_KEYS.map((k) => ({ key: k, label: ADDON_RESOURCES[k].label })),
+    payments: payments.map((p) => ({ id: p.id, kind: p.kind, plan: p.plan, days: p.days, amountCents: p.amountCents, status: p.status, items: p.items, createdAt: p.createdAt.getTime(), paidAt: ms(p.paidAt) })),
+  };
+}
+
+router.get('/users/:id/billing', async (req, res) => {
+  res.json(await billingView(await target(req)));
+});
+
+// Valor mensal combinado só com este usuário (vazio volta ao valor do plano).
+router.put('/users/:id/plan-price', async (req, res) => {
+  const user = nonAdmin(await target(req));
+  await prisma.user.update({ where: { id: user.id }, data: { planPriceCents: optCents(req.body?.priceCents, 'Valor') } });
+  res.json(await billingView(await target(req)));
+});
+
+// Dá um limite extra a este usuário sem cobrar agora (ou com valor próprio para as renovações).
+router.post('/users/:id/addons', async (req, res) => {
+  const user = nonAdmin(await target(req));
+  const b = req.body || {};
+  if (!ADDON_KEYS.includes(b.resource)) throw new AppError(400, 'Escolha o recurso.');
+  const units = Number(b.units);
+  const days = Number(b.days);
+  if (!Number.isInteger(units) || units < 1 || units > 100000) throw new AppError(400, 'Quantidade inválida.');
+  if (!Number.isInteger(days) || days < 1 || days > 3650) throw new AppError(400, 'Dias inválidos.');
+  await prisma.userAddon.create({ data: { userId: user.id, resource: b.resource, units, priceCents: optCents(b.priceCents, 'Valor'), paidUntil: new Date(Date.now() + days * DAY_MS) } });
+  res.json(await billingView(user));
+});
+
+router.patch('/users/:id/addons/:addonId', async (req, res) => {
+  const user = nonAdmin(await target(req));
+  const addon = await prisma.userAddon.findFirst({ where: { id: Number(req.params.addonId), userId: user.id } });
+  if (!addon) throw new AppError(404, 'Limite não encontrado.');
+  const b = req.body || {};
+  const data = {};
+  if (b.units !== undefined) {
+    const units = Number(b.units);
+    if (!Number.isInteger(units) || units < 1 || units > 100000) throw new AppError(400, 'Quantidade inválida.');
+    data.units = units;
+  }
+  if (b.priceCents !== undefined) data.priceCents = optCents(b.priceCents, 'Valor');
+  if (b.addDays !== undefined) {
+    const d = Number(b.addDays);
+    if (!Number.isInteger(d) || d < -3650 || d > 3650) throw new AppError(400, 'Dias inválidos.');
+    data.paidUntil = new Date(Math.max(Date.now(), addon.paidUntil.getTime()) + d * DAY_MS);
+  }
+  await prisma.userAddon.update({ where: { id: addon.id }, data });
+  res.json(await billingView(user));
+});
+
+router.delete('/users/:id/addons/:addonId', async (req, res) => {
+  const user = nonAdmin(await target(req));
+  await prisma.userAddon.deleteMany({ where: { id: Number(req.params.addonId), userId: user.id } });
+  res.json(await billingView(user));
+});
+
+// Cria uma cobrança pendente (do plano ou da renovação de um limite) com o valor que o admin definir.
+router.post('/users/:id/charges', async (req, res) => {
+  const user = nonAdmin(await target(req));
+  const b = req.body || {};
+  const amountCents = cents(b.amountCents, 'Valor');
+  if (amountCents < 100) throw new AppError(400, 'O valor mínimo é R$ 1,00.');
+  const orderNsu = `dm-${user.id}-${crypto.randomUUID()}`;
+  if (b.addonId != null) {
+    const addon = await prisma.userAddon.findFirst({ where: { id: Number(b.addonId), userId: user.id } });
+    if (!addon) throw new AppError(404, 'Limite não encontrado.');
+    await prisma.payment.create({ data: { userId: user.id, orderNsu, kind: 'addon', plan: user.plan, period: 'mensal', days: ADDON_DAYS, amountCents, items: [{ addonId: addon.id, resource: addon.resource, units: addon.units }] } });
+  } else {
+    await prisma.payment.create({ data: { userId: user.id, orderNsu, plan: user.plan, period: 'mensal', days: periodDays('mensal'), amountCents } });
+  }
+  res.json(await billingView(user));
+});
+
+router.put('/payments/:id', async (req, res) => {
+  const payment = await prisma.payment.findUnique({ where: { id: Number(req.params.id) } });
+  if (!payment) throw new AppError(404, 'Cobrança não encontrada.');
+  if (payment.status !== 'pending') throw new AppError(400, 'Só dá para alterar cobranças pendentes.');
+  const amountCents = cents(req.body?.amountCents, 'Valor');
+  if (amountCents < 100) throw new AppError(400, 'O valor mínimo é R$ 1,00.');
+  await prisma.payment.update({ where: { id: payment.id }, data: { amountCents } });
+  res.json(await billingView(await prisma.user.findUnique({ where: { id: payment.userId } })));
+});
+
+// Marca como paga (ex.: pagou por Pix fora do sistema) e libera os dias do plano ou do limite.
+router.post('/payments/:id/mark-paid', async (req, res) => {
+  const payment = await prisma.payment.findUnique({ where: { id: Number(req.params.id) } });
+  if (!payment) throw new AppError(404, 'Cobrança não encontrada.');
+  if (payment.status !== 'pending') throw new AppError(400, 'Esta cobrança já foi paga.');
+  await settle(payment, {});
+  res.json(await billingView(await prisma.user.findUnique({ where: { id: payment.userId } })));
+});
+
+router.delete('/payments/:id', async (req, res) => {
+  const payment = await prisma.payment.findUnique({ where: { id: Number(req.params.id) } });
+  if (!payment) throw new AppError(404, 'Cobrança não encontrada.');
+  if (payment.status !== 'pending') throw new AppError(400, 'Cobranças pagas não podem ser canceladas.');
+  await prisma.payment.delete({ where: { id: payment.id } });
+  res.json(await billingView(await prisma.user.findUnique({ where: { id: payment.userId } })));
 });
 
 // Dar acesso mensal (+30 dias) ou de teste (dias configuráveis no painel). As duas ficam no histórico e podem ser retrocedidas.

@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
+import UserBilling from '../components/UserBilling.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { dateBR, dateTimeBR, digits, formatDoc, formatStoredPhone } from '../lib/format.js';
 
@@ -35,6 +36,7 @@ export default function Admin() {
   const [busyId, setBusyId] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmUndo, setConfirmUndo] = useState(null);
+  const [billingUser, setBillingUser] = useState(null);
 
   const load = useCallback(() => {
     api.get('/admin/users').then((r) => setUsers(r.users)).catch((e) => toast(e.message, 'error'));
@@ -142,6 +144,9 @@ export default function Admin() {
                 <div className="user-actions">
                   {!isAdmin && (
                     <>
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => setBillingUser(u)}>
+                        <Icon name="money" size={16} /> Cobrança e limites
+                      </button>
                       <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant`), 'Acesso mensal liberado (+30 dias).')}>
                         <Icon name="calendar" size={16} /> Dar acesso mensal
                       </button>
@@ -165,6 +170,8 @@ export default function Admin() {
           })}
         </ul>
       )}
+
+      {billingUser && <UserBilling user={billingUser} onClose={() => setBillingUser(null)} onChanged={load} />}
 
       {confirmUndo && (
         <Modal title="Retroceder a última liberação?" onClose={() => setConfirmUndo(null)}

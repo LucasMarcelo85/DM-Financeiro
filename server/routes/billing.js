@@ -13,7 +13,7 @@ export const webhookRouter = Router();
 
 // Marca o pagamento como pago e libera os dias. Seguro para rodar mais de uma vez:
 // só quem conseguir virar "pending" -> "paid" libera o acesso.
-async function settle(payment, { slug, transactionNsu, receiptUrl }) {
+export async function settle(payment, { slug, transactionNsu, receiptUrl }) {
   return prisma.$transaction(async (tx) => {
     const claimed = await tx.payment.updateMany({
       where: { id: payment.id, status: 'pending' },
@@ -57,7 +57,8 @@ billingRouter.post('/checkout', async (req, res) => {
   }
   const plan = isPlan(req.body?.plan) ? req.body.plan : req.user.plan;
   const period = isPeriod(req.body?.period) ? req.body.period : 'mensal';
-  const amountCents = priceCents(plan, period);
+  const custom = req.user.planPriceCents != null && plan === req.user.plan;
+  const amountCents = custom ? req.user.planPriceCents * PERIODS[period].charged : priceCents(plan, period);
   const days = periodDays(period);
   const orderNsu = `dm-${req.user.id}-${crypto.randomUUID()}`;
 

@@ -1155,6 +1155,14 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pr-slot { display: grid; gap: 0.35rem; align-content: start; }
 .pr-slot-img { padding: 0; border: 2px solid var(--line); border-radius: 10px; overflow: hidden; background: #eef2f6; aspect-ratio: 1 / 1; cursor: pointer; }
 .pr-slot-img:disabled { opacity: 0.6; cursor: progress; }
+.pr-var-list { display: grid; gap: 0.7rem; margin: 0.6rem 0; }
+.pr-var-card { display: grid; grid-template-columns: 7.5rem 1fr; gap: 0.8rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: 12px; background: #fff; align-items: start; }
+.pr-var-fields { display: grid; gap: 0.5rem; min-width: 0; }
+.pr-var-color { display: flex; gap: 0.5rem; align-items: center; flex-wrap: wrap; }
+.pr-var-color input[type='color'] { width: 2.2rem; height: 2.2rem; padding: 0; border: 2px solid var(--line); border-radius: 50%; background: none; cursor: pointer; }
+.pr-var-color input[type='color'].is-empty { opacity: 0.45; }
+.pr-var-color .input { flex: 1; min-width: 7rem; }
+@media (max-width: 480px) { .pr-var-card { grid-template-columns: 5.5rem 1fr; } }
 .pr-slot-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
 .pr-slot-add { place-items: center; justify-items: center; min-height: 7rem; border: 2px dashed #b7c3d1; border-radius: 10px; background: transparent; color: var(--muted); cursor: pointer; font: inherit; font-size: 0.82rem; font-weight: 600; }
 @media (max-width: 36rem) { .pr-price-option { grid-template-columns: minmax(0, 1fr) auto; } .pr-option-quantity, .pr-option-price { grid-column: 1; } .pr-price-option .icon-btn { grid-column: 2; grid-row: 1 / span 3; } }

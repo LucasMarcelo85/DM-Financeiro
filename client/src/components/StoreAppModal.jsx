@@ -4,12 +4,28 @@ import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
 
+const PERM_LABELS = [['produtos', 'Produtos (cadastrar, editar e desativar)'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'], ['arquivados', 'Arquivados']];
+const ALL_PERMS = PERM_LABELS.map(([k]) => k);
+
+function PermChecks({ value, onChange, disabled }) {
+  return (
+    <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
+      {PERM_LABELS.map(([key, label]) => (
+        <label key={key} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
+          <input type="checkbox" disabled={disabled} checked={value.includes(key)}
+            onChange={(e) => onChange(e.target.checked ? [...value, key] : value.filter((k) => k !== key))} /> {label}
+        </label>
+      ))}
+    </div>
+  );
+}
+
 // "Criar app" da loja: nome, cor, link de instalação e os acessos dos lojistas.
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A' });
-  const [nu, setNu] = useState({ name: '', login: '', password: '' });
+  const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS });
   const [busy, setBusy] = useState(false);
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
@@ -64,14 +80,17 @@ export default function StoreAppModal({ storeId, onClose }) {
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
             {data.users.map((u) => (
-              <li key={u.id} style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
-                <strong>{u.name}</strong> <code>{u.login}</code>
-                <span className={`pill ${u.active ? 'pill-sent' : 'pill-failed'}`}>{u.active ? 'Ativo' : 'Desativado'}</span>
-                <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { active: !u.active }))}>{u.active ? 'Desativar' : 'Ativar'}</button>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { const p = window.prompt(`Nova senha para ${u.name} (mínimo 6 caracteres):`); if (p) run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { password: p }), 'Senha alterada.'); }}>Nova senha</button>
-                  <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
-                </span>
+              <li key={u.id} style={{ display: 'grid', gap: 6, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
+                <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                  <strong>{u.name}</strong> <code>{u.login}</code>
+                  <span className={`pill ${u.active ? 'pill-sent' : 'pill-failed'}`}>{u.active ? 'Ativo' : 'Desativado'}</span>
+                  <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { active: !u.active }))}>{u.active ? 'Desativar' : 'Ativar'}</button>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { const p = window.prompt(`Nova senha para ${u.name} (mínimo 6 caracteres):`); if (p) run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { password: p }), 'Senha alterada.'); }}>Nova senha</button>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
+                  </span>
+                </div>
+                <PermChecks value={u.perms} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
               </li>
             ))}
           </ul>
@@ -80,8 +99,10 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="Nome do lojista" maxLength={80} aria-label="Nome do lojista" />
             <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
             <input className="input" type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="Senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Senha" />
-            <button className="btn btn-primary" disabled={busy || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6}
-              onClick={() => run(async () => { await api.post(`/stores/${storeId}/app/users`, nu); setNu({ name: '', login: '', password: '' }); }, 'Acesso criado.')}>Criar acesso</button>
+            <strong className="small">O que este acesso pode usar:</strong>
+            <PermChecks value={nu.perms} onChange={(perms) => setNu({ ...nu, perms })} />
+            <button className="btn btn-primary" disabled={busy || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.length}
+              onClick={() => run(async () => { await api.post(`/stores/${storeId}/app/users`, nu); setNu({ name: '', login: '', password: '', perms: ALL_PERMS }); }, 'Acesso criado.')}>Criar acesso</button>
           </div>
         </div>
       )}

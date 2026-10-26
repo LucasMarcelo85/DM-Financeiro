@@ -71,6 +71,7 @@ model User {
   passwordHash String    @map("password_hash")
   role         Role      @default(usuario)
   plan         String    @default("bronze") // id de um plano da tabela plan_settings
+  planPriceCents Int?    @map("plan_price_cents") // valor MENSAL combinado só com este usuário (null = valor do plano)
   trialEndsAt  DateTime  @map("trial_ends_at")
   accessUntil  DateTime? @map("access_until")
   createdAt    DateTime  @default(now()) @map("created_at")
@@ -501,6 +502,7 @@ model UserAddon {
   userId    Int      @map("user_id")
   resource  String
   units     Int
+  priceCents Int?    @map("price_cents") // valor MENSAL combinado só para esta compra (null = valor configurado em "Gerir planos")
   paidUntil DateTime @map("paid_until")
   createdAt DateTime @default(now()) @map("created_at")
 
@@ -573,6 +575,9 @@ model ProductImage {
   productId  Int    @map("product_id")
   position   Int    @default(0)
   label      String @default("")
+  size       String @default("")
+  color      String @default("")
+  colorHex   String @default("") @map("color_hex")
   priceCents Int?   @map("price_cents")
   mime       String
   data       Bytes
@@ -678,6 +683,7 @@ model StoreUser {
   login        String
   passwordHash String   @map("password_hash")
   active       Boolean  @default(true)
+  perms        String   @default("produtos,pedidos,clientes,arquivados")
   createdAt    DateTime @default(now()) @map("created_at")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)

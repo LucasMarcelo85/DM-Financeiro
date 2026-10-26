@@ -3,7 +3,7 @@ import { AppError, normalizePhone, onlyDigits } from './helpers.js';
 // Validação (lista branca) de produtos, configuração do catálogo e pedidos. Nada além do que está aqui chega ao banco.
 
 export const PRODUCT_KINDS = new Set(['produto', 'servico']);
-export const MAX_PRODUCT_IMAGES = 4;
+export const MAX_PRODUCT_IMAGES = 12;
 export const MAX_PRODUCT_PRICE_OPTIONS = 12;
 export const MAX_PRODUCT_IMAGE_BYTES = 900 * 1024;
 const MAX_PRICE = 10_000_000; // R$ 100.000,00
@@ -64,9 +64,12 @@ export function cleanProduct(b = {}) {
   const varied = rawImages.length > 1;
   const images = rawImages.map((im, i) => {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');
-    const label = line(im.label, 40);
-    if (varied && !label) throw new AppError(400, `Dê um nome à variação da imagem ${i + 1} (ex.: cor ou tamanho).`);
-    const out = { label: varied ? label : '', priceCents: null };
+    const size = varied ? line(im.size, 20) : '';
+    const color = varied ? line(im.color, 20) : '';
+    const colorHex = varied && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
+    const label = varied ? ([color, size].filter(Boolean).join(' · ') || line(im.label, 40)) : '';
+    if (varied && !label) throw new AppError(400, `Informe a cor ou o tamanho da variação ${i + 1}.`);
+    const out = { label, size, color, colorHex, priceCents: null };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');
@@ -167,6 +170,6 @@ export function publicCatalogConfig(cfg) {
 
 export const publicProduct = (p) => ({
   id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
-  images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, priceCents: i.priceCents, url: `/api/public/product-image/${i.id}` })),
+  images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, size: i.size || '', color: i.color || '', colorHex: i.colorHex || '', priceCents: i.priceCents, url: `/api/public/product-image/${i.id}` })),
   priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1 })),
 });

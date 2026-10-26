@@ -157,7 +157,14 @@ router.post('/:id/domain/check', async (req, res) => {
 
 // ---------- Aplicativo do lojista ----------
 const MAX_APP_USERS = 10;
-const userDTO = (u) => ({ id: u.id, name: u.name, login: u.login, active: u.active, createdAt: u.createdAt });
+const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados'];
+const cleanPerms = (v) => {
+  const list = Array.isArray(v) ? v : [];
+  const out = APP_PERMS.filter((p) => list.includes(p));
+  if (!out.length) throw new AppError(400, 'Escolha pelo menos uma área que o lojista poderá usar.');
+  return out.join(',');
+};
+const userDTO = (u) => ({ id: u.id, name: u.name, login: u.login, active: u.active, perms: u.perms.split(',').filter(Boolean), createdAt: u.createdAt });
 const cleanPassword = (v) => {
   const p = String(v ?? '');
   if (p.length < 6 || p.length > 72) throw new AppError(400, 'A senha precisa ter de 6 a 72 caracteres.');
@@ -186,10 +193,11 @@ router.post('/:id/app/users', async (req, res) => {
   const name = String(req.body?.name ?? '').trim().slice(0, 80);
   const login = String(req.body?.login ?? '').trim().toLowerCase().slice(0, 80);
   if (!name || !login) throw new AppError(400, 'Informe o nome e o usuário de acesso.');
+  const perms = cleanPerms(req.body?.perms ?? APP_PERMS);
   const passwordHash = await bcrypt.hash(cleanPassword(req.body?.password), 10);
   if ((await prisma.storeUser.count({ where: { storeId: store.id } })) >= MAX_APP_USERS) throw new AppError(403, `Limite de ${MAX_APP_USERS} acessos por loja.`);
   try {
-    const u = await prisma.storeUser.create({ data: { storeId: store.id, name, login, passwordHash } });
+    const u = await prisma.storeUser.create({ data: { storeId: store.id, name, login, passwordHash, perms } });
     res.status(201).json({ user: userDTO(u) });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Já existe um acesso com esse usuário nesta loja.');
@@ -202,6 +210,7 @@ router.patch('/:id/app/users/:uid', async (req, res) => {
   const data = {};
   if (req.body?.name !== undefined) data.name = String(req.body.name).trim().slice(0, 80) || undefined;
   if (typeof req.body?.active === 'boolean') data.active = req.body.active;
+  if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms);
   if (req.body?.password) data.passwordHash = await bcrypt.hash(cleanPassword(req.body.password), 10);
   const r = await prisma.storeUser.updateMany({ where: { id: Number(req.params.uid) || 0, storeId: store.id }, data });
   if (!r.count) throw new AppError(404, 'Acesso não encontrado.');

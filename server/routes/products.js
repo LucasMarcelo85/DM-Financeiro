@@ -7,7 +7,7 @@ import { storeScope } from '../utils/store.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, label: true, priceCents: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, label: true, size: true, color: true, colorHex: true, priceCents: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
@@ -101,7 +101,7 @@ router.post('/', async (req, res) => {
       ...data,
       userId: req.user.id,
       storeId: await storeScope(req),
-      images: { create: images.map((im, position) => ({ position, label: im.label, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data })) },
+      images: { create: images.map((im, position) => ({ position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data })) },
       priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
     },
     include: productInclude,
@@ -127,8 +127,8 @@ router.patch('/:id', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
-      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, label: im.label, priceCents: im.priceCents } });
-      else await tx.productImage.create({ data: { productId: current.id, position, label: im.label, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data } });
+      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents } });
+      else await tx.productImage.create({ data: { productId: current.id, position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {

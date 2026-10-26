@@ -56,7 +56,7 @@ router.post('/login', async (req, res) => {
   const ok = await bcrypt.compare(password, su?.passwordHash || DUMMY_HASH);
   if (!su || !ok || !su.active) throw new AppError(401, 'Usuário ou senha incorretos.', 'UNAUTHENTICATED');
   const token = jwt.sign({ su: su.id, k: 'shop' }, config.jwtSecret, { expiresIn: `${TOKEN_DAYS}d` });
-  res.json({ token, user: { name: su.name }, app: { name: appName(store), color: appColor(store) } });
+  res.json({ token, ...meDTO(su, store) });
 });
 
 async function shopAuth(req, _res, next) {
@@ -75,30 +75,38 @@ async function shopAuth(req, _res, next) {
   req.user = su.store.user;
   req.forcedStore = su.store.id;
   req.shopUser = su;
+  req.shopPerms = su.perms.split(',').filter(Boolean);
   next();
 }
+
+const needPerm = (...any) => (req, _res, next) => {
+  if (!any.some((p) => req.shopPerms.includes(p))) throw new AppError(403, 'Seu acesso não libera esta área.', 'FORBIDDEN');
+  next();
+};
 
 const needTab = (tab) => (req, _res, next) => {
   if (!limitsFor(req.user).tabs.includes(tab)) throw new AppError(403, 'Esta área não está disponível no plano da loja.', 'TAB_NOT_IN_PLAN');
   next();
 };
 
+const meDTO = (su, store) => ({ user: { name: su.name, perms: su.perms.split(',').filter(Boolean) }, app: { name: appName(store), color: appColor(store) } });
+
 router.get('/me', shopAuth, (req, res) => {
-  const store = req.shopUser.store;
-  res.json({ user: { name: req.shopUser.name }, app: { name: appName(store), color: appColor(store) } });
+  res.json(meDTO(req.shopUser, req.shopUser.store));
 });
 
 // Lojista cadastra, edita e desativa produtos, mas não exclui nem muda preferências da conta.
-router.use('/products', shopAuth, needTab('produtos'), (req, _res, next) => {
+router.use('/products', shopAuth, needPerm('produtos'), needTab('produtos'), (req, _res, next) => {
   if (req.method === 'DELETE' || req.path.startsWith('/preferences') && req.method !== 'GET') throw new AppError(403, 'O aplicativo não permite esta ação.', 'FORBIDDEN');
   next();
 }, productRoutes);
 
-// Pedidos, clientes e arquivados: só consulta.
+// Pedidos, clientes e arquivados: só consulta (e marcar pedido como atendido), cada área conforme o acesso criado pelo dono.
 router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   const allowed = /^\/(orders|customers)(\/|$)/.test(req.path) && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path)));
   if (!allowed) throw new AppError(403, 'O aplicativo só permite consultar pedidos e clientes e marcar pedidos como atendidos.', 'FORBIDDEN');
-  next();
+  const area = req.path.startsWith('/customers') ? 'clientes' : req.path === '/orders' && req.query.view === 'log' ? 'arquivados' : 'pedidos';
+  needPerm(area)(req, _res, next);
 }, catalogRoutes);
 
 export default router;

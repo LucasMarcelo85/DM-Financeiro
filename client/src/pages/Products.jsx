@@ -11,7 +11,7 @@ import { brl, centsToMasked, maskMoney, moneyToCents, plural } from '../lib/form
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 
 // Cadastro de produtos e serviços: usados no catálogo digital e nos cartões de produtos do portfólio.
-const MAX_IMAGES = 4;
+const MAX_IMAGES = 12;
 
 function productPriceLabel(product) {
   if (product.priceCents > 0) return brl(product.priceCents);
@@ -167,8 +167,10 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
   })));
   const [active, setActive] = useState(product ? product.active : true);
   const [varied, setVaried] = useState((product?.images.length || 0) > 1);
-  const [variationType, setVariationType] = useState('');
-  const [images, setImages] = useState(() => (product?.images || []).map((i) => ({ key: `i${i.id}`, id: i.id, url: i.url, label: i.label })));
+  const [images, setImages] = useState(() => (product?.images || []).map((i) => ({
+    key: `i${i.id}`, id: i.id, url: i.url,
+    color: i.color || (!i.size ? i.label : ''), colorHex: i.colorHex || '', size: i.size || '',
+  })));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -186,7 +188,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     try {
       const { src } = await prepareProductImage(file);
       setImages((list) => {
-        const item = { key: `n${Date.now()}${Math.random()}`, data: src, url: src, label: '' };
+        const item = { key: `n${Date.now()}${Math.random()}`, data: src, url: src, color: '', colorHex: '', size: '' };
         if (imageIndex !== null && list[imageIndex]) return list.map((x, n) => (n === imageIndex ? { ...x, id: undefined, data: src, url: src } : x));
         return [...list, item].slice(0, allowMultiple ? MAX_IMAGES : 1);
       });
@@ -201,14 +203,13 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
     if (!category.trim()) return setError('Informe a categoria.');
     if (!visible.length) return setError('Adicione pelo menos uma imagem.');
     if (varied && visible.length < 2) return setError('Com variações, coloque pelo menos 2 imagens (ou desmarque “Tem variações”).');
-    if (varied && visible.some((i) => !i.label.trim())) return setError('Dê um nome a cada variação (ex.: cor ou tamanho).');
-    if (varied && visible.some((i) => `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}`.length > 40)) return setError('O tipo e o valor da variação juntos devem ter até 40 caracteres.');
+    if (varied && visible.some((i) => !i.color.trim() && !i.size.trim())) return setError('Informe a cor ou o tamanho de cada variação.');
     if (priceOptions.some((option) => !option.label.trim())) return setError('Informe o nome de cada forma de preço ou remova a linha vazia.');
     if (priceOptions.some((option) => !/^\d+$/.test(option.minQuantity) || Number(option.minQuantity) < 1 || Number(option.minQuantity) > 999)) return setError('Informe a quantidade mínima de cada faixa entre 1 e 999.');
     const body = {
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
       priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: option.price === '' ? null : moneyToCents(option.price), minQuantity: Number(option.minQuantity) || 1 })),
-      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), label: varied ? `${variationType.trim() ? `${variationType.trim()}: ` : ''}${i.label.trim()}` : '', priceCents: null })),
+      images: visible.map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), ...(varied ? { color: i.color.trim(), colorHex: i.colorHex, size: i.size.trim() } : {}), priceCents: null })),
     };
     setBusy(true);
     try {
@@ -252,28 +253,54 @@ function ProductForm({ product, categories, preferences, onClose, onSaved }) {
         <label className="field"><span>Descrição</span><textarea className="input" rows={3} maxLength={2000} value={description} onChange={(e) => setDescription(e.target.value)} /></label>
 
         <fieldset className="field pr-images">
-          <legend>Fotos do produto</legend>
-          <small>Adicione uma imagem principal ou ative variações para cadastrar fotos identificadas por cor, tamanho, litros ou outro atributo.</small>
-          <label className="pe-check"><input type="checkbox" checked={varied} onChange={(e) => setVaried(e.target.checked)} /><span>Este produto tem variações com fotos próprias</span></label>
-          {varied && <label className="field"><span>O que varia?</span><input className="input" list="pr-variation-types" value={variationType} maxLength={40} onChange={(e) => setVariationType(e.target.value)} placeholder="Ex.: Cor, tamanho ou litros" /><datalist id="pr-variation-types">{(preferences?.variationTypes || []).map((label) => <option key={label} value={label} />)}</datalist><small>Depois, informe o valor em cada foto (ex.: Azul, M ou 2 litros). O preço é definido acima em “Formas de preço”.</small></label>}
-          <div className="pr-slots">
-            {visible.map((im, i) => (
-              <div key={im.key} className="pr-slot">
-                <button type="button" className="pr-slot-img" onClick={() => pick(i)} disabled={uploading} aria-label={`Trocar a imagem ${i + 1}`} title="Trocar imagem"><img src={im.url} alt="" /></button>
-                {varied && (
-                  <>
-                    <input className="input input-sm" placeholder={variationType ? `Valor (${variationType})` : 'Valor da variação'} value={im.label} maxLength={40} onChange={(e) => setImg(i, { label: e.target.value })} aria-label={`Valor da variação ${i + 1}`} />
-                  </>
-                )}
-                {(varied || visible.length > 1) && <button type="button" className="link-btn" onClick={() => setImages((l) => l.filter((_, n) => n !== i))}>Remover</button>}
-              </div>
-            ))}
-            {visible.length < (varied ? MAX_IMAGES : 1) && (
-              <button type="button" className="pr-slot pr-slot-add" onClick={() => pick(null)} disabled={uploading}>
-                <Icon name="plus" size={22} /><span>{uploading ? 'Enviando...' : 'Adicionar imagem'}</span>
-              </button>
-            )}
-          </div>
+          <legend>Fotos e variações</legend>
+          <label className="pe-check"><input type="checkbox" checked={varied} onChange={(e) => setVaried(e.target.checked)} /><span>Este produto tem variações (cor e/ou tamanho)</span></label>
+          <small>{varied
+            ? 'Cada variação tem a sua foto, e você informa a cor, o tamanho ou os dois. O preço segue a regra definida acima em “Formas de preço”.'
+            : 'Sem variações, basta uma foto principal. Marque a opção acima se o produto tem cores ou tamanhos diferentes.'}</small>
+          {varied ? (
+            <div className="pr-var-list">
+              {visible.map((im, i) => (
+                <div key={im.key} className="pr-var-card">
+                  <button type="button" className="pr-slot-img" onClick={() => pick(i)} disabled={uploading} aria-label={`Trocar a foto da variação ${i + 1}`} title="Trocar foto"><img src={im.url} alt="" /></button>
+                  <div className="pr-var-fields">
+                    <strong className="small">Variação {i + 1}</strong>
+                    <label className="field"><span>Cor</span>
+                      <span className="pr-var-color">
+                        <input type="color" value={im.colorHex || '#cccccc'} onChange={(e) => setImg(i, { colorHex: e.target.value })} aria-label={`Escolher a cor da variação ${i + 1}`} className={im.colorHex ? '' : 'is-empty'} />
+                        <input className="input input-sm" list="pr-colors" value={im.color} maxLength={20} onChange={(e) => setImg(i, { color: e.target.value })} placeholder="Ex.: Azul" />
+                        {im.colorHex && <button type="button" className="link-btn" onClick={() => setImg(i, { colorHex: '' })}>Sem amostra</button>}
+                      </span>
+                    </label>
+                    <label className="field"><span>Tamanho</span>
+                      <input className="input input-sm" list="pr-sizes" value={im.size} maxLength={20} onChange={(e) => setImg(i, { size: e.target.value })} placeholder="Ex.: M, 42 ou 2 litros" />
+                    </label>
+                    <button type="button" className="link-btn" onClick={() => setImages((l) => l.filter((_, n) => n !== i))}>Remover variação</button>
+                  </div>
+                </div>
+              ))}
+              {visible.length < MAX_IMAGES && (
+                <button type="button" className="btn btn-ghost" onClick={() => pick(null)} disabled={uploading}>
+                  <Icon name="plus" size={16} /> {uploading ? 'Enviando...' : 'Adicionar variação com foto'}
+                </button>
+              )}
+              <datalist id="pr-colors">{['Preto', 'Branco', 'Cinza', 'Azul', 'Vermelho', 'Verde', 'Amarelo', 'Rosa', 'Roxo', 'Laranja', 'Marrom', 'Bege'].map((c) => <option key={c} value={c} />)}</datalist>
+              <datalist id="pr-sizes">{['PP', 'P', 'M', 'G', 'GG', 'XG', 'Único', '36', '38', '40', '42', '44'].map((s) => <option key={s} value={s} />)}</datalist>
+            </div>
+          ) : (
+            <div className="pr-slots">
+              {visible.map((im, i) => (
+                <div key={im.key} className="pr-slot">
+                  <button type="button" className="pr-slot-img" onClick={() => pick(i)} disabled={uploading} aria-label="Trocar a imagem" title="Trocar imagem"><img src={im.url} alt="" /></button>
+                </div>
+              ))}
+              {!visible.length && (
+                <button type="button" className="pr-slot pr-slot-add" onClick={() => pick(null)} disabled={uploading}>
+                  <Icon name="plus" size={22} /><span>{uploading ? 'Enviando...' : 'Adicionar imagem'}</span>
+                </button>
+              )}
+            </div>
+          )}
           <small>A imagem é reduzida automaticamente. Formatos: PNG, JPG, WebP, GIF ou HEIC/HEIF (fotos de alguns celulares).</small>
         </fieldset>
         <label className="pe-check"><input type="checkbox" checked={active} onChange={(e) => setActive(e.target.checked)} /><span>Ativo (aparece no catálogo)</span></label>

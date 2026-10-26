@@ -15,9 +15,18 @@ export default function ShopApp() {
   const [info, setInfo] = useState(null);
   const [missing, setMissing] = useState(false);
   const [authed, setAuthed] = useState(Boolean(getShopToken()));
-  const [tab, setTab] = useState('produtos');
+  const [perms, setPerms] = useState(null);
+  const [tab, setTab] = useState('');
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!authed) { setPerms(null); return; }
+    api.get('/shop-app/me').then((r) => {
+      setPerms(r.user.perms);
+      setTab(r.user.perms.includes('produtos') ? 'produtos' : 'pedidos');
+    }).catch(() => {});
+  }, [authed]);
 
   useEffect(() => {
     api.get(`/shop-app/info${q}`).then(setInfo).catch(() => setMissing(true));
@@ -71,19 +80,23 @@ export default function ShopApp() {
     );
   }
 
+  const tabs = TABS.filter(([key]) => (key === 'produtos' ? perms?.includes('produtos') : ['pedidos', 'clientes', 'arquivados'].some((p) => perms?.includes(p))));
+
   return (
     <>
       <header style={bar}>
         <strong style={{ fontSize: 18 }}>{info.name}</strong>
         <nav style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
-          {TABS.map(([key, label]) => (
+          {tabs.length > 1 && tabs.map(([key, label]) => (
             <button key={key} type="button" className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </nav>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShopToken(null); setAuthed(false); }}>Sair</button>
       </header>
       <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
-        {tab === 'produtos' ? <Products /> : <Orders />}
+        {!perms ? <p className="muted">Carregando...</p>
+          : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
+            : tab === 'produtos' ? <Products /> : <Orders allow={perms} />}
       </main>
     </>
   );
