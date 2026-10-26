@@ -157,19 +157,21 @@ export async function quoteCorreios({ token = config.geo.superfreteToken, sandbo
       });
     } catch (e) {
       console.error('[superfrete] sem resposta:', e?.message);
-      return { res: null, rows: [] };
+      return { res: null, rows: [], data: null };
     }
     const data = await res.json().catch(() => null);
     const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
     if (!res.ok || !rows.length) console.error('[superfrete] falha', res.status, JSON.stringify(data)?.slice(0, 300));
-    return { res, rows };
+    return { res, rows, data };
   };
-  let { res, rows: resultRows } = await call(insuranceCents > 0);
+  let { res, rows: resultRows, data } = await call(insuranceCents > 0);
   // Se a simulação com seguro falhar (valor declarado recusado), tenta de novo sem seguro.
-  if ((!res || !res.ok || !resultRows.length) && res?.status !== 401 && res?.status !== 403) ({ res, rows: resultRows } = await call(false));
+  if ((!res || !res.ok || !resultRows.length) && res?.status !== 401 && res?.status !== 403) ({ res, rows: resultRows, data } = await call(false));
+  const reason = String(data?.message || data?.error || (data?.errors && JSON.stringify(data.errors)) || '').replace(/\s+/g, ' ').slice(0, 160);
+  const detail = reason ? ` (${reason})` : '';
   if (!res) throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
-  if (res.status === 401 || res.status === 403) throw new AppError(502, 'As credenciais do SuperFrete foram recusadas. Avise o administrador do sistema.', 'SHIPPING_TOKEN');
-  if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, 'Não foi possível simular o frete para esse CEP. Confira o CEP de destino.', 'SHIPPING_UNAVAILABLE');
+  if (res.status === 401 || res.status === 403) throw new AppError(502, `O SuperFrete recusou o token${sandbox ? ' (modo teste ligado: use o token do ambiente de testes ou desligue o modo teste)' : ' (confira se o token é de produção)'}. Avise o administrador.${detail}`, 'SHIPPING_TOKEN');
+  if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, `Não foi possível simular o frete para esse CEP${detail}. Confira o CEP de destino e as medidas do pacote.`, 'SHIPPING_UNAVAILABLE');
   const options = resultRows
     .filter((o) => o && !o.error && o.id !== undefined)
     .map((o) => {
