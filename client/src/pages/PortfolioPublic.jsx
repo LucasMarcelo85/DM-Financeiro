@@ -55,7 +55,7 @@ function PublicPage({ page, products, store, slug, credit }) {
   const { device, scale } = usePageScale();
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
   const cart = useCart(slug);
-  const [cartOpen, goCart] = useCartView(doc.catalog.cartLink);
+  const [cartOpen, goCart] = useCartView(doc.catalog?.cartLink);
   const { count: cartCount } = priced(cart.items, products);
   const pixelOn = Boolean(doc.pixel.meta || doc.pixel.google || doc.pixel.tiktok);
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
