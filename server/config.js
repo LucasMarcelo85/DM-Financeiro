@@ -89,7 +89,7 @@ export const config = {
   // A tela oferece os filtros de 7, 30 e 60 dias.
   auditRetentionDays: 60,
   // Por quanto tempo o código PIN fica "destravado" depois de digitado.
-  pinUnlockMinutes: 30,
+  pinUnlockMinutes: 5,
   // API oficial do WhatsApp (Meta Cloud API).
   meta: {
     graphUrl: trimSlash(env.META_GRAPH_URL) || 'https://graph.facebook.com',

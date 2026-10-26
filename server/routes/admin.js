@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { PLAN_ID_RE, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan } from '../plans.js';
+import { PLAN_ID_RE, PLAN_TABS, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan, saveTrial, trialSettings } from '../plans.js';
 import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/access.js';
 import * as evo from '../services/evolution.js';
 import { removeDomainFromEasypanel } from '../services/easypanel.js';
@@ -40,7 +40,7 @@ router.get('/users', async (_req, res) => {
   res.json({ users: users.map((u) => ({ ...adminView(u, byUser.get(u.id)), instanceCount: u._count.instances, contactCount: u._count.contacts })) });
 });
 
-// Dar acesso mensal (+30 dias) ou de teste (+3 dias). As duas ficam no histórico e podem ser retrocedidas.
+// Dar acesso mensal (+30 dias) ou de teste (dias configuráveis no painel). As duas ficam no histórico e podem ser retrocedidas.
 router.post('/users/:id/grant', async (req, res) => {
   const user = nonAdmin(await target(req));
   const { user: updated, event } = await grantAccess(user.id, 'mensal', req.user);
@@ -113,18 +113,44 @@ function planFields(b) {
     auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
     contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
     portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
-    catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos do catálogo (0 = sem catálogo digital)'),
+    catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos/serviços do catálogo (0 = sem catálogo digital)'),
     auditSend: b.auditSend,
+    tabs: (() => {
+      if (!Array.isArray(b.tabs) || b.tabs.some((t) => !PLAN_TABS.includes(t))) throw new AppError(400, 'Escolha as abas liberadas no plano.');
+      return PLAN_TABS.filter((t) => b.tabs.includes(t));
+    })(),
+  };
+}
+
+function trialFields(b) {
+  if (typeof b.auditSend !== 'boolean') throw new AppError(400, 'Informe se o teste pode responder conversas pela auditoria (sim ou não).');
+  return {
+    days: intIn(b.days, 1, 60, 'Dias de teste grátis'),
+    instances: intIn(b.instances, 0, 1000, 'WhatsApps para cobranças e lembretes'),
+    auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
+    contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
+    portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
+    catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos/serviços do catálogo (0 = sem catálogo digital)'),
+    auditSend: b.auditSend,
+    tabs: (() => {
+      if (!Array.isArray(b.tabs) || b.tabs.some((t) => !PLAN_TABS.includes(t))) throw new AppError(400, 'Escolha as abas liberadas no teste grátis.');
+      return PLAN_TABS.filter((t) => b.tabs.includes(t));
+    })(),
   };
 }
 
 async function plansView() {
   const counts = await prisma.user.groupBy({ by: ['plan'], where: { role: 'usuario' }, _count: { _all: true } });
   const byPlan = new Map(counts.map((c) => [c.plan, c._count._all]));
-  return { plans: listPlans().map((p) => ({ ...p, userCount: byPlan.get(p.id) || 0 })), periods: listPeriods() };
+  return { plans: listPlans().map((p) => ({ ...p, userCount: byPlan.get(p.id) || 0 })), periods: listPeriods(), trial: trialSettings() };
 }
 
 router.get('/plans', async (_req, res) => {
+  res.json(await plansView());
+});
+
+router.put('/trial', async (req, res) => {
+  await saveTrial(trialFields(req.body || {}));
   res.json(await plansView());
 });
 

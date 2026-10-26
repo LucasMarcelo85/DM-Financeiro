@@ -66,7 +66,7 @@ export default function Orders() {
     setConfirm(null);
     try {
       const r = await api.post('/catalog/orders/bulk-delete', c.all ? { all: true, days: period, status, deliveryType, q } : { ids: c.ids });
-      toast(`${plural(r.removed, 'pedido enviado ao log', 'pedidos enviados ao log')}.`);
+      toast(`${plural(r.removed, 'pedido enviado para arquivados', 'pedidos enviados para arquivados')}.`);
       setSel(new Set());
       load();
     } catch (e) { toast(e.message, 'error'); }
@@ -92,7 +92,7 @@ export default function Orders() {
       <header className="page-head head-row">
         <div>
           <h1>Pedidos e clientes</h1>
-          <p className="muted">Acompanhe as vendas, clientes e o histórico. Pedidos removidos ficam no log por até {data?.retentionDays || 20} dias.</p>
+          <p className="muted">Acompanhe as vendas, clientes e o histórico. Pedidos removidos ficam em Arquivados por até {data?.retentionDays || 20} dias.</p>
         </div>
         <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>
       </header>
@@ -100,7 +100,7 @@ export default function Orders() {
       <nav className="od-tabs" aria-label="Área de pedidos">
         <button type="button" className={tab === 'orders' ? 'is-on' : ''} onClick={() => { setTab('orders'); setSel(new Set()); }}>Pedidos {data && <span>{data.fresh} novos</span>}</button>
         <button type="button" className={tab === 'customers' ? 'is-on' : ''} onClick={() => { setTab('customers'); setSel(new Set()); }}>Clientes</button>
-        <button type="button" className={tab === 'log' ? 'is-on' : ''} onClick={() => { setTab('log'); setSel(new Set()); }}>Log {data && <span>{data.archived}</span>}</button>
+        <button type="button" className={tab === 'log' ? 'is-on' : ''} onClick={() => { setTab('log'); setSel(new Set()); }}>Arquivados {data && <span>{data.archived}</span>}</button>
       </nav>
 
       {tab === 'orders' && data && (
@@ -151,7 +151,7 @@ export default function Orders() {
       ) : data === null ? <p className="muted">Carregando...</p> : data.orders.length === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="receipt" size={32} /></span>
-          <h2>{isLog ? 'Log vazio' : data.total ? 'Nada encontrado' : 'Nenhum pedido ainda'}</h2>
+          <h2>{isLog ? 'Arquivados vazios' : data.total ? 'Nada encontrado' : 'Nenhum pedido ainda'}</h2>
           <p>{isLog ? `Pedidos arquivados aparecem aqui e são apagados após ${data.retentionDays} dias.` : data.total ? 'Tente outra busca ou filtro.' : 'Quando um cliente finalizar um pedido no seu catálogo, ele aparece aqui. Configure as entregas em “Entregas e frete”.'}</p>
         </section>
       ) : (
@@ -189,7 +189,7 @@ export default function Orders() {
       {confirm && (
         <Modal title={confirm.all ? 'Arquivar todos os pedidos?' : 'Arquivar pedido(s)?'} onClose={() => setConfirm(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirm(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => doDelete(confirm)}>Arquivar</button></>}>
-          <p>{confirm.all ? 'Todos os pedidos que correspondem aos filtros ativos vão para o log.' : `${plural(confirm.ids.length, 'pedido vai para o log', 'pedidos vão para o log')}.`} O histórico fica disponível por até {data?.retentionDays || 20} dias e os dados dos clientes são mantidos.</p>
+          <p>{confirm.all ? 'Todos os pedidos que correspondem aos filtros ativos vão para Arquivados.' : `${plural(confirm.ids.length, 'pedido vai para Arquivados', 'pedidos vão para Arquivados')}.`} O histórico fica disponível por até {data?.retentionDays || 20} dias e os dados dos clientes são mantidos.</p>
         </Modal>
       )}
     </>

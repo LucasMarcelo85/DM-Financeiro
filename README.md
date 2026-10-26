@@ -1,6 +1,6 @@
 # DM Financeiro
 
-SaaS para enviar **cobranças** e **lembretes** pelo WhatsApp (via Evolution API), com teste grátis de 3 dias e cobrança do plano por link da InfinitePay.
+SaaS para enviar **cobranças** e **lembretes** pelo WhatsApp (via Evolution API), com teste grátis configurável e cobrança do plano por link da InfinitePay.
 
 **Stack:** Node.js + Express + **PostgreSQL com Prisma** (backend) · React + Vite (frontend).
 
@@ -33,7 +33,7 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 
 ## O que o sistema faz
 
-- **Cadastro:** pessoa física (CPF) ou jurídica (CNPJ), validados. Toda conta entra com role `usuario` e 3 dias grátis.
+- **Cadastro:** pessoa física (CPF) ou jurídica (CNPJ), validados. Toda conta entra com role `usuario` e teste grátis pelos dias configurados no painel admin.
 - **Planos** (valor mensal; configurável em `PLAN_*_PRICE`):
 
   | | Bronze | Prata | Ouro |
@@ -114,7 +114,7 @@ Cada conexão (de **cobranças** ou de **auditoria**) pode usar **QR Code** (Evo
 Tela **Portfólio** (menu, logo abaixo de Auditoria): o usuário cria páginas públicas com a própria marca e envia o link.
 
 - **Editor** (`client/src/pages/PortfolioEditor.jsx`, no mesmo estilo do de contratos): cor e fontes do tema, **banner**, **logo**, **imagem**, **galeria**, **vídeo** (YouTube, Vimeo ou arquivo `.mp4`/`.webm` por link https), **títulos e textos**, **botões com link** (site, WhatsApp, telefone ou e-mail), divisor e espaço. Arrastar para reordenar, desfazer/refazer, salvamento automático e visualização como no celular ou no computador. Começa em branco ou por um modelo pronto.
-- **Domínio próprio:** em *Portfólio > Domínio próprio* o usuário cadastra o domínio dele (ex.: `usuario.com.br`). A página principal passa a abrir em `usuario.com.br` e as demais em `usuario.com.br/<página>`, em vez de `sistema.com.br/<usuário>` (o endereço antigo continua funcionando). O IP do servidor vem da variável `SERVER_IP` do `.env`: o usuário cria no DNS dele um registro **tipo A** (nome `@`, e `www` se quiser) apontando para esse IP e clica em *Verificar agora*. O domínio só passa a atender depois que o DNS aponta para `SERVER_IP` (ou é um CNAME para o `APP_URL`); sem `SERVER_IP` o domínio é aceito sem conferir. Em domínio próprio só as rotas públicas do portfólio respondem (sem login nem painel).
+- **Domínio próprio:** em *Portfólio > Domínio próprio* o usuário cadastra o domínio dele (ex.: `usuario.com.br`). A página principal passa a abrir em `usuario.com.br` e as demais em `usuario.com.br/<página>`, em vez de `sistema.com.br/<usuário>` (o endereço antigo continua funcionando). O IP do servidor vem da variável `SERVER_IP` do `.env`: o usuário cria no DNS dele um registro **tipo A** (nome `@`, e `www` se quiser) apontando para esse IP e clica em *Verificar agora*. O domínio só passa a atender depois que o DNS aponta para `SERVER_IP` (ou é um CNAME para o `APP_URL`); sem `SERVER_IP` o domínio é aceito sem conferir. Em domínio próprio só as rotas públicas do portfólio respondem (sem login nem painel). Durante o teste grátis, esse recurso fica bloqueado.
   - **HTTPS:** o servidor não emite certificados. Na EasyPanel, adicione o domínio do usuário na aba *Domínios* do serviço (o Traefik emite o certificado). Com Caddy, use `on_demand_tls { ask https://SISTEMA/api/public/domain-check }`: a rota responde 200 só para domínio verificado.
   - **Cloudflare:** com a nuvem laranja (proxy) o registro A não mostra o IP do servidor e a verificação falha; use a nuvem cinza (somente DNS).
 - **Endereço:** `dominio/<nome completo ou razão social>` abre a **página principal**; as demais ficam em `dominio/<nome>/<página>`. O endereço do usuário é criado na primeira página, sem acento e em minúsculas (`Padaria São João Ltda.` vira `padaria-sao-joao-ltda`), e **não muda mais**, para os links já enviados não quebrarem. Se outro usuário já tiver o mesmo nome, vira `-2`, `-3`. Nomes de telas do sistema (`admin`, `contratos`, `portfolio`...) são reservados.
@@ -136,5 +136,5 @@ No editor: botão **Variável** (paleta) e a lista no painel de propriedades ins
 ## Administração de usuários
 
 - A lista mostra o **telefone** (link para o WhatsApp) e a **última atividade**: a última vez que o usuário *alterou* algo (cadastrar, salvar, enviar, excluir...) e em que área. Só olhar telas ou atualizações automáticas não contam; a gravação é feita no máximo a cada 30 s.
-- **Dar acesso mensal** (+30 dias) e **Dar teste de 3 dias** (+3 dias de teste grátis) ficam registrados em `access_events`.
+- **Dar acesso mensal** (+30 dias) e **Dar teste** (+dias de teste configurados no painel admin) ficam registrados em `access_events`.
 - **Retroceder** desfaz a última liberação do administrador (uma por vez, da mais nova para a mais antiga). Se o usuário pagou depois, o pagamento é preservado: só saem os dias que o admin tinha dado.

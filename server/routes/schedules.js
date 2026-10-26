@@ -122,7 +122,7 @@ router.post('/', async (req, res) => {
   if (!instance) throw new AppError(409, 'Nenhum WhatsApp conectado. Conecte seu WhatsApp e tente de novo.', 'WHATSAPP_DISCONNECTED');
 
   const created = await prisma.schedule.create({ data: { ...base, nextDueDate: f.dueDate, status: 'concluida' }, include });
-  const { text, extra } = renderFor(created, contact, f.dueDate);
+  const { text, extra } = renderFor(created, contact, f.dueDate, req.user);
   let result;
   try {
     result = await deliver(instance, contact.phone, text, extra);
@@ -231,7 +231,7 @@ router.post('/:id/send-now', async (req, res) => {
   const { instance } = await pickOpenInstance(instanceCandidates(s, instances));
   if (!instance) throw new AppError(409, 'Nenhum WhatsApp conectado. Conecte seu WhatsApp e tente de novo.', 'WHATSAPP_DISCONNECTED');
 
-  const { text, extra } = renderFor(s, s.contact, s.nextDueDate ?? s.dueDate);
+  const { text, extra } = renderFor(s, s.contact, s.nextDueDate ?? s.dueDate, req.user);
   let result;
   try {
     result = await deliver(instance, s.contact.phone, text, extra);

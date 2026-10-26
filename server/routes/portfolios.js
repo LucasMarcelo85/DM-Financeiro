@@ -2,7 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { config } from '../config.js';
-import { limitsFor } from '../plans.js';
+import { isTrialUser, limitsFor } from '../plans.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
 import { isValidDomain, normalizeDomain } from '../utils/domain.js';
@@ -113,6 +113,7 @@ router.get('/', async (req, res) => {
 });
 
 router.put('/domain', async (req, res) => {
+  if (isTrialUser(req.user)) throw new AppError(403, 'Domínio próprio está bloqueado no teste grátis. Adquira um plano para liberar este recurso.', 'TRIAL_FEATURE_LOCKED');
   const raw = String(req.body?.domain ?? '').trim();
   const old = req.user.customDomain;
 
@@ -174,6 +175,7 @@ router.put('/domain', async (req, res) => {
 });
 
 router.post('/domain/check', async (req, res) => {
+  if (isTrialUser(req.user)) throw new AppError(403, 'Domínio próprio está bloqueado no teste grátis. Adquira um plano para liberar este recurso.', 'TRIAL_FEATURE_LOCKED');
   const domain = req.user.customDomain;
   if (!domain) throw new AppError(400, 'Cadastre um domínio primeiro.');
   try {

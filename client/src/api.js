@@ -6,12 +6,16 @@ export class ApiError extends Error {
   }
 }
 
+// Token de desbloqueio do PIN: fica só na memória desta tela (nunca em cookie nem localStorage), então atualizar a página ou abrir em outro aparelho pede o PIN de novo.
+let pinToken = null;
+export const setPinToken = (t) => { pinToken = t || null; };
+
 async function request(method, url, body) {
   let res;
   try {
     res = await fetch(`/api${url}`, {
       method,
-      headers: body !== undefined ? { 'Content-Type': 'application/json' } : undefined,
+      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(pinToken ? { 'X-Pin-Token': pinToken } : {}) },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       credentials: 'same-origin',
     });

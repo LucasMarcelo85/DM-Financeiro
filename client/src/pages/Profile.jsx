@@ -154,7 +154,7 @@ function PinSection() {
       <h2 className="card-title">Código PIN</h2>
       {!enabled && mode !== 'create' && (
         <>
-          <p className="muted">Crie um código PIN e escolha quais abas ficam protegidas. Quem não souber o código não consegue abrir essas abas.</p>
+          <p className="muted">Crie um código PIN e escolha quais abas ficam escondidas. Elas só aparecem no menu quando você clica no cadeado ao lado do seu nome e digita o código.</p>
           <div><button className="btn btn-primary" onClick={() => setMode('create')}><Icon name="lock" size={18} /> Criar código PIN</button></div>
         </>
       )}
@@ -226,16 +226,17 @@ function PinForm({ mode, onDone, onCancel }) {
         </label>
       </div>
       <fieldset className="field">
-        <legend>Quais abas serão protegidas pelo PIN?</legend>
+        <legend>Quais abas ficam escondidas e protegidas pelo PIN?</legend>
         <div className="pin-tabs">
           {options.map((t) => (
             <label key={t.key} className={`pin-tab ${tabs.includes(t.key) ? 'is-on' : ''}`}>
               <input type="checkbox" checked={tabs.includes(t.key)} onChange={() => toggle(t.key)} />
+              <Icon name={tabs.includes(t.key) ? 'lock' : 'eye'} size={15} />
               {t.label}
             </label>
           ))}
         </div>
-        <small>Só quem digitar o PIN consegue abrir as abas marcadas.</small>
+        <small>Abas com cadeado somem do menu. Para vê-las, clique no cadeado ao lado do seu nome e digite o PIN (valem por 5 minutos; atualizar a página ou entrar em outro aparelho pede o PIN de novo).</small>
       </fieldset>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="btn-row">

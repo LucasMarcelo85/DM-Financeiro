@@ -1,7 +1,7 @@
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { DAY } from '../utils/helpers.js';
-import { limitsFor, planColor, planName } from '../plans.js';
+import { limitsFor, planColor, planName, trialSettings } from '../plans.js';
 
 const ms = (d) => (d ? d.getTime() : 0);
 
@@ -57,12 +57,12 @@ export const eventDTO = (e) => ({
   id: e.id, kind: e.kind, days: e.days, adminName: e.adminName, createdAt: ms(e.createdAt), revertedAt: e.revertedAt ? ms(e.revertedAt) : null,
 });
 
-// kind 'mensal': soma 30 dias de acesso pago · kind 'teste': soma 3 dias de teste (os dias do teste grátis).
+// kind 'mensal': soma 30 dias de acesso pago · kind 'teste': soma os dias configurados para o teste grátis.
 export async function grantAccess(userId, kind, admin) {
   return prisma.$transaction(async (tx) => {
     const user = await tx.user.findUnique({ where: { id: userId } });
     const now = Date.now();
-    const days = kind === 'teste' ? config.trialDays : config.accessDays;
+    const days = kind === 'teste' ? trialSettings().days : config.accessDays;
     const data = kind === 'teste'
       ? { trialEndsAt: new Date(Math.max(now, ms(user.trialEndsAt)) + days * DAY) }
       : { accessUntil: new Date(Math.max(now, ms(user.accessUntil), ms(user.trialEndsAt)) + days * DAY) };

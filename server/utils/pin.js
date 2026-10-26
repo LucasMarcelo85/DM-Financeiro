@@ -7,25 +7,23 @@ import { AppError } from './helpers.js';
 // Abas do menu que o usuário pode proteger com o código PIN (mesmas chaves usadas pela tela: client/src/lib/pin.js).
 export const PIN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'plano', 'admin'];
 export const PIN_RE = /^\d{4,8}$/;
-export const PIN_COOKIE = 'dm_pin';
+export const PIN_HEADER = 'x-pin-token';
 
 // "Impressão digital" do PIN atual: se o PIN mudar ou for removido, o desbloqueio antigo deixa de valer.
 const fingerprint = (user) => crypto.createHash('sha256').update(user.pinHash || '').digest('hex').slice(0, 16);
-const cookieOptions = (maxAge) => ({ httpOnly: true, sameSite: 'lax', secure: config.appUrl.startsWith('https://'), maxAge, path: '/' });
 
-// Depois de digitar o PIN certo, a aba fica liberada por alguns minutos (cookie assinado, só do navegador de quem digitou).
-export function setPinCookie(res, user) {
+// Depois de digitar o PIN certo, as abas ficam liberadas por poucos minutos. O token assinado NÃO vai em cookie:
+// a tela guarda só na memória e o envia em cada chamada. Assim, atualizar a página ou abrir em outro aparelho pede o PIN de novo.
+export function issuePinUnlock(user) {
   const ttl = config.pinUnlockMinutes * 60_000;
-  const token = jwt.sign({ id: user.id, f: fingerprint(user) }, config.jwtSecret, { expiresIn: Math.floor(ttl / 1000) });
-  res.cookie(PIN_COOKIE, token, cookieOptions(ttl));
-  return Date.now() + ttl;
+  const pinToken = jwt.sign({ id: user.id, f: fingerprint(user) }, config.jwtSecret, { expiresIn: Math.floor(ttl / 1000) });
+  return { pinToken, pinUnlockedUntil: Date.now() + ttl };
 }
-export const clearPinCookie = (res) => res.clearCookie(PIN_COOKIE, { path: '/' });
 
-// Até quando o PIN está destravado neste navegador (ms) ou null se está travado / não há PIN.
+// Até quando o PIN está destravado nesta tela (ms) ou null se está travado / não há PIN.
 export function pinUnlockedUntil(req, user) {
   if (!user?.pinHash) return null;
-  const token = req.cookies?.[PIN_COOKIE];
+  const token = req.get(PIN_HEADER);
   if (!token) return null;
   try {
     const p = jwt.verify(token, config.jwtSecret);

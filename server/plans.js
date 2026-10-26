@@ -11,6 +11,10 @@ const DEFAULT_PLANS = [
   { id: 'prata', name: 'Prata', color: '#6f7c8c', sortOrder: 2, instances: 1, auditInstances: 3, contracts: 7, portfolios: 2, catalogProducts: 40, auditSend: false },
   { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, auditSend: true },
 ];
+// Abas do menu que o administrador pode liberar ou esconder em cada plano (Início, Plano e Perfil sempre aparecem).
+export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos'];
+const cleanTabs = (list) => (Array.isArray(list) ? PLAN_TABS.filter((t) => list.includes(t)) : [...PLAN_TABS]);
+const DEFAULT_TRIAL = { days: config.trialDays, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, auditSend: false, tabs: [...PLAN_TABS] };
 const seedPrice = (id) => Math.round((config.prices[id] ?? 49.9) * 100);
 
 export const PLAN_ID_RE = /^[a-z0-9][a-z0-9-]{1,29}$/;
@@ -37,14 +41,31 @@ const normalize = (p) => ({
   instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios,
   catalogProducts: p.catalogProducts ?? 0,
   auditSend: Boolean(p.auditSend),
+  tabs: cleanTabs(p.visibleTabs ?? p.tabs),
 });
 const sorted = (map) => [...map.values()].sort((a, b) => a.sortOrder - b.sortOrder || a.id.localeCompare(b.id));
 
 let cache = new Map(DEFAULT_PLANS.map((p) => [p.id, normalize({ ...p, priceCents: seedPrice(p.id) })]));
+let trialCache = { ...DEFAULT_TRIAL };
+
+const normalizeTrial = (t) => ({
+  days: Number.isInteger(t?.days) && t.days > 0 ? t.days : DEFAULT_TRIAL.days,
+  instances: t?.instances ?? DEFAULT_TRIAL.instances,
+  auditInstances: t?.auditInstances ?? DEFAULT_TRIAL.auditInstances,
+  contracts: t?.contracts ?? DEFAULT_TRIAL.contracts,
+  portfolios: t?.portfolios ?? DEFAULT_TRIAL.portfolios,
+  catalogProducts: t?.catalogProducts ?? DEFAULT_TRIAL.catalogProducts,
+  auditSend: Boolean(t?.auditSend),
+  tabs: cleanTabs(t?.visibleTabs ?? t?.tabs),
+});
 
 export async function loadPlans() {
-  const rows = await prisma.planSetting.findMany();
+  const [rows, trial] = await Promise.all([
+    prisma.planSetting.findMany(),
+    prisma.trialSetting.findFirst(),
+  ]);
   if (rows.length) cache = new Map(rows.map((r) => [r.plan, normalize(r)]));
+  if (trial) trialCache = normalizeTrial(trial);
   return sorted(cache);
 }
 
@@ -52,14 +73,28 @@ export async function loadPlans() {
 export async function ensurePlans() {
   if ((await prisma.planSetting.count()) === 0) {
     await prisma.planSetting.createMany({
-      data: DEFAULT_PLANS.map((p) => ({ plan: p.id, name: p.name, color: p.color, sortOrder: p.sortOrder, priceCents: seedPrice(p.id), instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend })),
+      data: DEFAULT_PLANS.map((p) => ({ plan: p.id, name: p.name, color: p.color, sortOrder: p.sortOrder, priceCents: seedPrice(p.id), instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend, visibleTabs: [...PLAN_TABS] })),
       skipDuplicates: true,
+    });
+  }
+  if ((await prisma.trialSetting.count()) === 0) {
+    await prisma.trialSetting.create({
+      data: {
+        days: DEFAULT_TRIAL.days,
+        instances: DEFAULT_TRIAL.instances,
+        auditInstances: DEFAULT_TRIAL.auditInstances,
+        contracts: DEFAULT_TRIAL.contracts,
+        portfolios: DEFAULT_TRIAL.portfolios,
+        catalogProducts: DEFAULT_TRIAL.catalogProducts,
+        auditSend: DEFAULT_TRIAL.auditSend,
+        visibleTabs: [...DEFAULT_TRIAL.tabs],
+      },
     });
   }
   return loadPlans();
 }
 
-const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, auditSend: d.auditSend });
+const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, auditSend: d.auditSend, visibleTabs: cleanTabs(d.tabs) });
 
 // Grava (cria ou altera) um plano e já atualiza a memória.
 export async function savePlan(id, data) {
@@ -91,11 +126,63 @@ export const priceCents = (id, period = 'mensal') => monthlyCents(id) * (PERIODS
 
 const limitsOf = (id) => {
   const p = cache.get(id) || sorted(cache)[0];
-  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend };
+  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend, tabs: p.tabs };
 };
 
+const trialLimits = () => ({
+  instances: trialCache.instances,
+  auditInstances: trialCache.auditInstances,
+  contracts: trialCache.contracts,
+  portfolios: trialCache.portfolios,
+  catalogProducts: trialCache.catalogProducts,
+  auditSend: trialCache.auditSend,
+  tabs: trialCache.tabs,
+});
+
+export function isTrialUser(user) {
+  if (!user || user.role === 'admin') return false;
+  const now = Date.now();
+  const paidUntil = user.accessUntil ? new Date(user.accessUntil).getTime() : 0;
+  const trialUntil = user.trialEndsAt ? new Date(user.trialEndsAt).getTime() : 0;
+  return paidUntil <= now && trialUntil > now;
+}
+
 export function limitsFor(user) {
-  return user.role === 'admin' ? limitsOf(topPlanId()) : limitsOf(user.plan);
+  if (user.role === 'admin') return { ...limitsOf(topPlanId()), tabs: [...PLAN_TABS] };
+  return isTrialUser(user) ? trialLimits() : limitsOf(user.plan);
+}
+
+export function trialSettings() {
+  return { ...trialCache };
+}
+
+export async function saveTrial(data) {
+  const row = await prisma.trialSetting.upsert({
+    where: { id: 1 },
+    create: {
+      id: 1,
+      days: data.days,
+      instances: data.instances,
+      auditInstances: data.auditInstances,
+      contracts: data.contracts,
+      portfolios: data.portfolios,
+      catalogProducts: data.catalogProducts,
+      auditSend: data.auditSend,
+      visibleTabs: cleanTabs(data.tabs),
+    },
+    update: {
+      days: data.days,
+      instances: data.instances,
+      auditInstances: data.auditInstances,
+      contracts: data.contracts,
+      portfolios: data.portfolios,
+      catalogProducts: data.catalogProducts,
+      auditSend: data.auditSend,
+      visibleTabs: cleanTabs(data.tabs),
+    },
+  });
+  trialCache = normalizeTrial(row);
+  return trialSettings();
 }
 
 export const listPeriods = () => PERIOD_IDS.map((id) => ({ id, label: PERIODS[id].label, months: PERIODS[id].months, days: periodDays(id) }));

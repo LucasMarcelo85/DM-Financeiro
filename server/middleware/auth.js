@@ -3,7 +3,8 @@ import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { computeAccess } from '../services/access.js';
-import { clearPinCookie, isTabLocked } from '../utils/pin.js';
+import { isTabLocked } from '../utils/pin.js';
+import { limitsFor } from '../plans.js';
 
 export const COOKIE = 'dm_token';
 const WEEK = 7 * 24 * 60 * 60 * 1000;
@@ -17,12 +18,10 @@ export function setSession(res, userId) {
     maxAge: WEEK,
     path: '/',
   });
-  clearPinCookie(res); // entrar de novo nunca deixa as abas com PIN destravadas
 }
 
 export const clearSession = (res) => {
   res.clearCookie(COOKIE, { path: '/' });
-  clearPinCookie(res);
 };
 
 // Em que parte do sistema o usuário mexeu (aparece para o administrador).
@@ -68,10 +67,10 @@ export function requireAdmin(req, _res, next) {
   next();
 }
 
-// Protege no servidor as APIs que só uma aba usa (auditoria, contratos, portfólio): se o usuário travou a aba com PIN
-// e ainda não digitou o código, a API responde 423 e a tela pede o PIN. (Clientes e WhatsApp são usados por outras telas
-// também, então nelas o bloqueio é só na tela.)
+// Protege no servidor as APIs de uma aba: (1) a aba precisa estar liberada no plano do usuário (definido pelo administrador em Gerir planos);
+// (2) se o usuário travou a aba com PIN e ainda não digitou o código, responde 423 e a tela pede o PIN.
 export const pinGuard = (tab) => (req, _res, next) => {
+  if (!limitsFor(req.user).tabs.includes(tab)) throw new AppError(403, 'Esta área não está incluída no seu plano.', 'TAB_NOT_IN_PLAN');
   if (isTabLocked(req, req.user, tab)) throw new AppError(423, 'Esta aba está protegida por código PIN. Digite o PIN para continuar.', 'PIN_REQUIRED');
   next();
 };

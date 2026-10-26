@@ -5,15 +5,15 @@ import { prisma } from '../prisma.js';
 import { AppError, DAY, isValidCNPJ, isValidCPF, normalizePhone, onlyDigits } from '../utils/helpers.js';
 import { auth, clearSession, setSession, touchActivity } from '../middleware/auth.js';
 import { publicUser } from '../services/access.js';
-import { defaultPlanId, isPlan, listPlans } from '../plans.js';
-import { assertPin, cleanPinTabs, clearPinCookie, clearPinFailures, hashPin, PIN_RE, pinUnlockedUntil, setPinCookie } from '../utils/pin.js';
+import { defaultPlanId, isPlan, listPlans, trialSettings } from '../plans.js';
+import { assertPin, cleanPinTabs, clearPinFailures, hashPin, issuePinUnlock, PIN_RE, pinUnlockedUntil } from '../utils/pin.js';
 import { checkCode, pickAdminInstance, recoveryUnavailable, sendCode } from '../services/recovery.js';
 
 const router = Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
 
 router.get('/plans', (_req, res) => {
-  res.json({ trialDays: config.trialDays, accessDays: config.accessDays, plans: listPlans() });
+  res.json({ trialDays: trialSettings().days, accessDays: config.accessDays, plans: listPlans() });
 });
 
 router.post('/auth/register', async (req, res) => {
@@ -39,9 +39,10 @@ router.post('/auth/register', async (req, res) => {
   if (exists) throw new AppError(409, exists.document === document ? 'Já existe uma conta com este CPF/CNPJ.' : 'Já existe uma conta com este e-mail.');
 
   let user;
+  const trialDays = trialSettings().days;
   try {
     user = await prisma.user.create({
-      data: { kind, name, document, email, phone, passwordHash: bcrypt.hashSync(password, 10), plan, trialEndsAt: new Date(Date.now() + config.trialDays * DAY) },
+      data: { kind, name, document, email, phone, passwordHash: bcrypt.hashSync(password, 10), plan, trialEndsAt: new Date(Date.now() + trialDays * DAY) },
     });
   } catch (e) {
     if (e.code === 'P2002') throw new AppError(409, 'Já existe uma conta com este CPF/CNPJ ou e-mail.');
@@ -174,25 +175,22 @@ router.put('/auth/pin', auth, async (req, res) => {
     throw new AppError(400, 'Digite o código PIN que você quer usar (de 4 a 8 números).');
   }
   const updated = await prisma.user.update({ where: { id: user.id }, data: { pinHash, pinTabs: tabs } });
-  const until = setPinCookie(res, updated); // quem acabou de definir o PIN já fica com as abas liberadas neste navegador
-  res.json({ user: publicUser(updated), pinUnlockedUntil: until });
+  res.json({ user: publicUser(updated), ...issuePinUnlock(updated) }); // quem acabou de definir o PIN já fica com as abas liberadas nesta tela
 });
 
 router.post('/auth/pin/disable', auth, async (req, res) => {
   assertPin(req.user, req.body?.currentPin);
   const updated = await prisma.user.update({ where: { id: req.user.id }, data: { pinHash: null, pinTabs: [] } });
-  clearPinCookie(res);
   res.json({ user: publicUser(updated), pinUnlockedUntil: null });
 });
 
 router.post('/auth/pin/verify', auth, (req, res) => {
   assertPin(req.user, req.body?.pin);
-  res.json({ ok: true, pinUnlockedUntil: setPinCookie(res, req.user) });
+  res.json({ ok: true, ...issuePinUnlock(req.user) });
 });
 
 // Trava as abas de novo agora (sem esperar o tempo acabar).
 router.post('/auth/pin/lock', auth, (_req, res) => {
-  clearPinCookie(res);
   res.json({ ok: true, pinUnlockedUntil: null });
 });
 
@@ -224,10 +222,9 @@ router.post('/auth/pin/reset', auth, async (req, res) => {
   clearPinFailures(user.id);
   if (wantsNew) {
     const updated = await prisma.user.update({ where: { id: user.id }, data: { pinHash: hashPin(String(pin)) } });
-    return res.json({ user: publicUser(updated), pinUnlockedUntil: setPinCookie(res, updated) });
+    return res.json({ user: publicUser(updated), ...issuePinUnlock(updated) });
   }
   const updated = await prisma.user.update({ where: { id: user.id }, data: { pinHash: null, pinTabs: [] } });
-  clearPinCookie(res);
   res.json({ user: publicUser(updated), pinUnlockedUntil: null });
 });
 

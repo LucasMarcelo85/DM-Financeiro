@@ -469,9 +469,26 @@ model PlanSetting {
   portfolios     Int
   catalogProducts Int     @default(0) @map("catalog_products") // 0 = sem catálogo digital nem produtos
   auditSend      Boolean  @default(false) @map("audit_send")
+  visibleTabs    String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos"]) @map("visible_tabs") // abas do menu liberadas no plano
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("plan_settings")
+}
+
+// Configuração do teste grátis (singleton): dias e limites temporários para novos usuários.
+model TrialSetting {
+  id              Int      @id @default(1)
+  days            Int      @default(3)
+  instances       Int      @default(1)
+  auditInstances  Int      @default(1) @map("audit_instances")
+  contracts       Int      @default(2)
+  portfolios      Int      @default(1)
+  catalogProducts Int      @default(0) @map("catalog_products")
+  auditSend       Boolean  @default(false) @map("audit_send")
+  visibleTabs     String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos"]) @map("visible_tabs")
+  updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
+
+  @@map("trial_settings")
 }
 
 // Código de confirmação enviado pelo WhatsApp do administrador (recuperar senha ou código PIN).

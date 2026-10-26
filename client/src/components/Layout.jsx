@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
-import { NavLink, Outlet, useLocation } from 'react-router-dom';
+import { Navigate, NavLink, Outlet, useLocation } from 'react-router-dom';
 import { useAuth } from '../auth.jsx';
 import { api } from '../api.js';
 import Icon from './Icon.jsx';
 import PlanBadge from './PlanBadge.jsx';
-import PinPrompt from './PinPrompt.jsx';
-import { isTabLocked, tabOfPath } from '../lib/pin.js';
+import PinPrompt, { PinUnlockModal } from './PinPrompt.jsx';
+import { isTabInPlan, isTabLocked, tabOfPath } from '../lib/pin.js';
 
 const NAV = [
   { to: '/', label: 'Início', icon: 'home', end: true },
@@ -31,17 +31,36 @@ export function Brand({ light }) {
   );
 }
 
+// Cadeado: com o PIN ativo, mostra ou esconde as abas protegidas.
+function PinToggle({ className = '' }) {
+  const { user, pinUnlocked, lockPin } = useAuth();
+  const [open, setOpen] = useState(false);
+  if (!user.pin?.enabled) return null;
+  const label = pinUnlocked ? 'Esconder abas protegidas' : 'Mostrar abas protegidas (pede o PIN)';
+  return (
+    <>
+      <button type="button" className={`icon-btn pin-toggle ${className}`} onClick={() => (pinUnlocked ? lockPin() : setOpen(true))} aria-label={label} title={label}>
+        <Icon name={pinUnlocked ? 'unlock' : 'lock'} size={18} />
+      </button>
+      {open && <PinUnlockModal onClose={() => setOpen(false)} />}
+    </>
+  );
+}
+
 export default function Layout() {
   const { user, logout, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
   const [openOrders, setOpenOrders] = useState(0);
   const base = NAV.filter((i) => i.feature !== 'catalog' || (user.limits?.catalogProducts ?? 0) > 0); // Produtos e Pedidos só nos planos com catálogo digital
-  const items = user.role === 'admin'
+  const all = user.role === 'admin'
     ? [...base, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
     : base;
+  // Abas fora do plano ou protegidas por PIN (ainda travadas) não aparecem no menu.
+  const items = all.filter((i) => isTabInPlan(user, tabOfPath(i.to)) && !isTabLocked(user, pinUnlocked, tabOfPath(i.to)));
   // Aba protegida por código PIN e ainda não destravada: mostra o pedido do PIN no lugar da página.
   const tab = tabOfPath(pathname);
   const locked = isTabLocked(user, pinUnlocked, tab);
+  const outOfPlan = !isTabInPlan(user, tab);
   const blocked = !user.access.hasAccess;
 
   useEffect(() => {
@@ -65,6 +84,7 @@ export default function Layout() {
       <aside className="sidebar">
         <div className="sidebar-top">
           <Brand light />
+          <PinToggle className="topbar-pin" />
           <button className="icon-btn topbar-logout" onClick={logout} aria-label="Sair">
             <Icon name="logout" />
           </button>
@@ -91,7 +111,7 @@ export default function Layout() {
 
         <div className="sidebar-user">
           <div className="sidebar-user-info">
-            <strong title={user.name}>{user.name}</strong>
+            <span className="sidebar-user-name"><strong title={user.name}>{user.name}</strong><PinToggle className="side-pin" /></span>
             {user.role === 'admin' ? <span className="badge plan-admin">Admin</span> : <PlanBadge plan={user.plan} name={user.planName} color={user.planColor} />}
           </div>
           <button className="btn btn-ghost-light btn-sm" onClick={logout}>
@@ -102,7 +122,7 @@ export default function Layout() {
 
       <main className="main">
         <div className={`page ${pathname.startsWith('/auditoria') ? 'page-wide' : ''}`}>
-          {locked ? <PinPrompt tab={tab} /> : <Outlet />}
+          {outOfPlan ? <Navigate to="/" replace /> : locked ? <PinPrompt tab={tab} /> : <Outlet />}
         </div>
       </main>
     </div>

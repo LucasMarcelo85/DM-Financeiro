@@ -15,7 +15,7 @@ function ago(ms) {
   const d = Math.floor(s / 86400);
   return `há ${d} ${d === 1 ? 'dia' : 'dias'}`;
 }
-const GRANT_LABEL = { mensal: 'acesso mensal (+30 dias)', teste: 'teste de 3 dias' };
+const grantLabel = (kind, trialDays) => (kind === 'teste' ? `teste de ${trialDays} ${trialDays === 1 ? 'dia' : 'dias'}` : 'acesso mensal (+30 dias)');
 
 const STATUS = {
   admin: ['Admin', 'pill-admin'],
@@ -29,6 +29,7 @@ export default function Admin() {
   const toast = useToast();
   const [users, setUsers] = useState(null);
   const [plans, setPlans] = useState([]); // planos cadastrados (o admin cria, edita e exclui em "Gerir planos")
+  const [trialDays, setTrialDays] = useState(3);
   const [query, setQuery] = useState('');
   const [statusFilter, setStatusFilter] = useState('all'); // all | paid | trial | expired (clique nos totais)
   const [busyId, setBusyId] = useState(null);
@@ -39,7 +40,14 @@ export default function Admin() {
     api.get('/admin/users').then((r) => setUsers(r.users)).catch((e) => toast(e.message, 'error'));
   }, [toast]);
   useEffect(load, [load]);
-  useEffect(() => { api.get('/admin/plans').then((r) => setPlans(r.plans)).catch(() => {}); }, []);
+  useEffect(() => {
+    api.get('/admin/plans')
+      .then((r) => {
+        setPlans(r.plans);
+        setTrialDays(Number(r.trial?.days) > 0 ? Number(r.trial.days) : 3);
+      })
+      .catch(() => {});
+  }, []);
 
   const replace = (u) => setUsers((list) => list.map((x) => (x.id === u.id ? { ...x, ...u } : x)));
 
@@ -137,11 +145,11 @@ export default function Admin() {
                       <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant`), 'Acesso mensal liberado (+30 dias).')}>
                         <Icon name="calendar" size={16} /> Dar acesso mensal
                       </button>
-                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant-trial`), 'Teste de 3 dias liberado.')} title="Dá mais 3 dias de teste grátis">
-                        <Icon name="clock" size={16} /> Dar teste de 3 dias
+                      <button className="btn btn-ghost btn-sm" disabled={busyId === u.id} onClick={() => act(u.id, () => api.post(`/admin/users/${u.id}/grant-trial`), `Teste de ${trialDays} ${trialDays === 1 ? 'dia' : 'dias'} liberado.`)} title={`Dá mais ${trialDays} ${trialDays === 1 ? 'dia' : 'dias'} de teste grátis`}>
+                        <Icon name="clock" size={16} /> Dar teste de {trialDays} {trialDays === 1 ? 'dia' : 'dias'}
                       </button>
                       <button className="btn btn-ghost btn-sm" disabled={busyId === u.id || !u.lastGrant} onClick={() => setConfirmUndo(u)}
-                        title={u.lastGrant ? `Desfaz: ${GRANT_LABEL[u.lastGrant.kind]} dado em ${dateTimeBR(u.lastGrant.createdAt)}` : 'Não há liberação do administrador para desfazer'}>
+                        title={u.lastGrant ? `Desfaz: ${grantLabel(u.lastGrant.kind, trialDays)} dado em ${dateTimeBR(u.lastGrant.createdAt)}` : 'Não há liberação do administrador para desfazer'}>
                         <Icon name="undo" size={16} /> Retroceder
                       </button>
                     </>

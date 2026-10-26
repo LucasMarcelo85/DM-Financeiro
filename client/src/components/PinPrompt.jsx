@@ -8,6 +8,45 @@ import { tabLabel } from '../lib/pin.js';
 // Digitar só números (4 a 8) no campo de PIN.
 export const onlyPinDigits = (v) => v.replace(/\D/g, '').slice(0, 8);
 
+// Cadeado ao lado do nome: abas protegidas por PIN ficam escondidas do menu; ao digitar o PIN elas aparecem por alguns minutos.
+export function PinUnlockModal({ onClose }) {
+  const { unlockPin } = useAuth();
+  const [pin, setPin] = useState('');
+  const [error, setError] = useState('');
+  const [busy, setBusy] = useState(false);
+  const [forgot, setForgot] = useState(false);
+
+  async function submit(e) {
+    e.preventDefault();
+    setError('');
+    setBusy(true);
+    try {
+      await unlockPin(pin);
+      onClose();
+    } catch (err) {
+      setError(err.message);
+      setPin('');
+      setBusy(false);
+    }
+  }
+
+  return (
+    <Modal title="Abas protegidas" onClose={onClose}>
+      <form className="form" onSubmit={submit} noValidate>
+        <p className="muted">Digite o código PIN para mostrar as abas escondidas. Elas voltam a ficar escondidas depois de alguns minutos.</p>
+        <label className="field">
+          <span>Código PIN</span>
+          <input className="input pin-input" type="password" inputMode="numeric" autoComplete="off" autoFocus maxLength={8} value={pin} onChange={(e) => setPin(onlyPinDigits(e.target.value))} aria-label="Código PIN" />
+        </label>
+        {error && <p className="form-error" role="alert">{error}</p>}
+        <button className="btn btn-primary btn-block" disabled={busy || pin.length < 4}>{busy ? 'Verificando...' : 'Mostrar abas'}</button>
+        <button type="button" className="link-btn" onClick={() => setForgot(true)}>Esqueci o código PIN</button>
+      </form>
+      {forgot && <ForgotPinModal onClose={() => setForgot(false)} />}
+    </Modal>
+  );
+}
+
 // Tela que aparece no lugar de uma aba protegida: pede o código PIN.
 export default function PinPrompt({ tab }) {
   const { unlockPin } = useAuth();

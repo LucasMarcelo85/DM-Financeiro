@@ -45,7 +45,7 @@ function NewPageModal({ onClose, onCreate, busy, catalogOk }) {
   );
 }
 
-function DomainCard({ domain, onChange }) {
+function DomainCard({ domain, onChange, locked }) {
   const toast = useToast();
   const [value, setValue] = useState(domain.name);
   const [busy, setBusy] = useState('');
@@ -80,20 +80,22 @@ function DomainCard({ domain, onChange }) {
           <strong>Domínio próprio</strong>
           <span className="muted small">Use o endereço do seu site (ex.: <code>meusite.com.br</code>) em vez do endereço do sistema. A página principal abre direto nele e as outras ficam depois da barra.</span>
         </div>
+        {locked && <span className="pill pill-failed"><Icon name="lock" size={13} /> Bloqueado no teste</span>}
         {saved && <span className={`pill ${domain.verified ? 'pill-sent' : 'pill-partial'}`}>{domain.verified ? 'Ativo' : 'Aguardando DNS'}</span>}
       </div>
       <div className="pl-domain-row">
-        <input className="input" value={value} onChange={(e) => setValue(e.target.value)} maxLength={253} placeholder="meusite.com.br" aria-label="Seu domínio" inputMode="url" autoCapitalize="none" spellCheck={false} />
-        <button className="btn btn-primary" onClick={save} disabled={!!busy || !value.trim() || !changed}>{busy === 'save' ? 'Salvando...' : 'Salvar domínio'}</button>
-        {saved && <button className="btn btn-ghost" onClick={remove} disabled={!!busy}>{busy === 'remove' ? 'Removendo...' : 'Remover'}</button>}
+        <input className="input" value={value} onChange={(e) => setValue(e.target.value)} maxLength={253} placeholder="meusite.com.br" aria-label="Seu domínio" inputMode="url" autoCapitalize="none" spellCheck={false} disabled={locked} />
+        <button className="btn btn-primary" onClick={save} disabled={locked || !!busy || !value.trim() || !changed}>{busy === 'save' ? 'Salvando...' : 'Salvar domínio'}</button>
+        {saved && <button className="btn btn-ghost" onClick={remove} disabled={locked || !!busy}>{busy === 'remove' ? 'Removendo...' : 'Remover'}</button>}
       </div>
+      {locked && <p className="muted small">Domínio próprio fica disponível após adquirir um plano. Durante o teste grátis, este campo permanece bloqueado.</p>}
       {saved && !domain.verified && (
         <div className="banner banner-amber">
           <div>
             <strong>Falta apontar o domínio para o sistema.</strong>
             <span>No painel onde você registrou o domínio, crie um registro <b>tipo A</b> com nome <b>@</b>{domain.serverIp ? <> apontando para <code>{domain.serverIp}</code></> : ' apontando para o IP do servidor'}. Para o <b>www</b>, crie outro registro A com nome <b>www</b>. No Cloudflare, deixe a nuvem cinza (somente DNS).</span>
           </div>
-          <button className="btn btn-ghost btn-sm" onClick={check} disabled={!!busy}>{busy === 'check' ? 'Verificando...' : 'Verificar agora'}</button>
+          <button className="btn btn-ghost btn-sm" onClick={check} disabled={locked || !!busy}>{busy === 'check' ? 'Verificando...' : 'Verificar agora'}</button>
         </div>
       )}
       {!saved && domain.serverIp && <p className="muted small">Aponte o DNS do seu domínio (registro tipo A) para o IP <code>{domain.serverIp}</code>.</p>}
@@ -190,7 +192,7 @@ export default function Portfolios() {
           </div>
         </div>
       )}
-      {data && <DomainCard domain={data.domain} onChange={load} />}
+      {data && <DomainCard domain={data.domain} onChange={load} locked={user.access?.status === 'trial'} />}
 
       {data === null ? <p className="muted">Carregando...</p> : count === 0 ? (
         <section className="empty-hero">

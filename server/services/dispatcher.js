@@ -4,6 +4,7 @@ import { sleep } from '../utils/helpers.js';
 import { occurrenceAfter } from '../utils/schedule.js';
 import { renderTemplate } from '../utils/template.js';
 import { accessibleUserFilter } from './access.js';
+import { isTrialUser } from '../plans.js';
 import * as wa from './whatsapp.js';
 
 const MAX_LATE_MS = 6 * 60 * 60 * 1000; // passou de 6h do horário: não envia cobrança "velha"
@@ -43,9 +44,12 @@ export async function deliver(instance, number, text, extra) {
   }
 }
 
-export const renderFor = (schedule, contact, dueDate) => ({
-  text: renderTemplate(schedule.text, { name: contact.name, amountCents: schedule.amountCents, dueDate }),
-  extra: schedule.extra ? renderTemplate(schedule.extra, { name: contact.name, amountCents: schedule.amountCents, dueDate }) : null,
+const TRIAL_NOTICE = 'Mensagem de teste DM Digital.\nAdquira um plano para remover esta mensagem automática.';
+const withTrialNotice = (text, user) => (isTrialUser(user) ? `${TRIAL_NOTICE}\n\n${text}` : text);
+
+export const renderFor = (schedule, contact, dueDate, user) => ({
+  text: withTrialNotice(renderTemplate(schedule.text, { name: contact.name, amountCents: schedule.amountCents, dueDate }), user),
+  extra: schedule.extra ? withTrialNotice(renderTemplate(schedule.extra, { name: contact.name, amountCents: schedule.amountCents, dueDate }), user) : null,
 });
 
 export function logMessage({ schedule, contact, instanceName, status, error, automatic }) {
@@ -116,7 +120,7 @@ async function processOne(s, originalRunAt) {
   let result = null;
 
   if (instance) {
-    const { text, extra } = renderFor(s, contact, dueDate);
+    const { text, extra } = renderFor(s, contact, dueDate, s.user);
     try {
       result = await deliver(instance, contact.phone, text, extra);
     } catch (e) {
