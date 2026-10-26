@@ -22,6 +22,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
   { t: 'shape', icon: 'shape' }, { t: 'video', icon: 'video' }, { t: 'products', icon: 'grid' },
+  { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
 const SAVE_LABEL = { saved: 'Salvo', dirty: 'Alterações não salvas', saving: 'Salvando...', error: 'Erro ao salvar' };
@@ -400,7 +401,7 @@ export default function PortfolioEditor() {
             <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
           </div>
-          {leftTab === 'add' ? PALETTE.map((p) => (
+          {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
             <button key={p.t} type="button" className="ce-tool" draggable onClick={() => addFromPalette(p.t)} onDragStart={(e) => { e.dataTransfer.setData('text/pv-type', p.t); e.dataTransfer.effectAllowed = 'copy'; }}
               title={`Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
               <EIcon name={p.icon} size={20} />
@@ -459,7 +460,7 @@ export default function PortfolioEditor() {
           </button>
           {selected
             ? <ElementInspector el={selected} device={device} api={inspectorApi} products={products} />
-            : <PageInspector doc={doc} device={device} meta={meta} api={inspectorApi} categories={categories} />}
+            : <PageInspector doc={doc} device={device} meta={meta} api={inspectorApi} categories={categories} products={products} />}
         </aside>
       </div>
 

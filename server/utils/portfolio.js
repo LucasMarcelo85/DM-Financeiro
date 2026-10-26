@@ -261,7 +261,7 @@ export const MAX_ELEMENTS = 200;
 export const DEVICES = ['desktop', 'tablet', 'mobile'];
 export const KINDS = new Set(['site', 'catalog']);
 
-const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products']);
+const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid']);
 const ENTER = new Set(['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce', 'rotate', 'blur', 'drop']);
 const LOOP = new Set(['none', 'float', 'pulse', 'shake', 'spin', 'wiggle', 'glow', 'swing', 'heartbeat', 'rubber', 'bounce', 'tada', 'flash', 'hue']);
 const HOVER = new Set(['none', 'grow', 'shrink', 'lift', 'glow', 'rotate', 'tilt', 'shake', 'brighten', 'pulse']);
@@ -384,6 +384,14 @@ function cleanElement(raw) {
       });
       break;
     }
+    case 'catsearch':
+      Object.assign(el, { showSearch: bool(raw.showSearch, true), showCategories: bool(raw.showCategories, true), placeholder: line(raw.placeholder, 60) || 'Buscar produtos' });
+      break;
+    case 'catgrid': {
+      const c = isObj(raw.cols) ? raw.cols : {};
+      el.cols = { desktop: Math.round(num(c.desktop, 1, 6, 4)), tablet: Math.round(num(c.tablet, 1, 6, 3)), mobile: Math.round(num(c.mobile, 1, 4, 2)) };
+      break;
+    }
     default:
       return null;
   }
@@ -451,6 +459,7 @@ function cleanDocV2(raw, kindHint) {
       cartLayout: pick(c.cartLayout, new Set(['standard', 'compact', 'split']), 'standard'),
       cartLink: /^[a-z0-9_-]{1,24}$/i.test(line(c.cartLink, 24)) ? line(c.cartLink, 24).toLowerCase() : 'carrinho',
       cartButtonLabel: line(c.cartButtonLabel, 40),
+      elementized: bool(c.elementized, false),
       cartButtonUrl: (() => {
         const value = str(c.cartButtonUrl, 500).trim();
         return /^https?:\/\/[^\s]+$/i.test(value) ? value : '';

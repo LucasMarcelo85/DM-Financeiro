@@ -142,23 +142,33 @@ export async function quoteCorreios({ token = config.geo.superfreteToken, sandbo
   };
   if (!token) throw new AppError(503, 'O frete dos Correios não está configurado no servidor. Avise o administrador.', 'SHIPPING_UNAVAILABLE');
   const authorization = /^Bearer\s/i.test(token) ? token : `Bearer ${token}`;
-  let res;
-  try {
-    res = await fetch(`${sandbox ? config.geo.superfreteSandbox : config.geo.superfrete}/api/v0/calculator`, {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authorization, 'User-Agent': SUPERFRETE_UA },
-      body: JSON.stringify({
-        from: { postal_code: correios.originZip }, to: { postal_code: to }, services: '1,2,17', package: pkg,
-        options: { own_hand: false, receipt: false, insurance_value: insuranceCents / 100, use_insurance_value: insuranceCents > 0 },
-      }),
-      signal: AbortSignal.timeout(TIMEOUT_MS + 3000),
-    });
-  } catch {
-    throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
-  }
+  const url = `${sandbox ? config.geo.superfreteSandbox : config.geo.superfrete}/api/v0/calculator`;
+  const call = async (withInsurance) => {
+    let res;
+    try {
+      res = await fetch(url, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json', Accept: 'application/json', Authorization: authorization, 'User-Agent': SUPERFRETE_UA },
+        body: JSON.stringify({
+          from: { postal_code: onlyDigits(correios.originZip) }, to: { postal_code: to }, services: '1,2,17', package: pkg,
+          options: { own_hand: false, receipt: false, insurance_value: withInsurance ? insuranceCents / 100 : 0, use_insurance_value: withInsurance },
+        }),
+        signal: AbortSignal.timeout(TIMEOUT_MS + 3000),
+      });
+    } catch (e) {
+      console.error('[superfrete] sem resposta:', e?.message);
+      return { res: null, rows: [] };
+    }
+    const data = await res.json().catch(() => null);
+    const rows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
+    if (!res.ok || !rows.length) console.error('[superfrete] falha', res.status, JSON.stringify(data)?.slice(0, 300));
+    return { res, rows };
+  };
+  let { res, rows: resultRows } = await call(insuranceCents > 0);
+  // Se a simulação com seguro falhar (valor declarado recusado), tenta de novo sem seguro.
+  if ((!res || !res.ok || !resultRows.length) && res?.status !== 401 && res?.status !== 403) ({ res, rows: resultRows } = await call(false));
+  if (!res) throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
   if (res.status === 401 || res.status === 403) throw new AppError(502, 'As credenciais do SuperFrete foram recusadas. Avise o administrador do sistema.', 'SHIPPING_TOKEN');
-  const data = await res.json().catch(() => null);
-  const resultRows = Array.isArray(data) ? data : Array.isArray(data?.data) ? data.data : [];
   if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, 'Não foi possível simular o frete para esse CEP. Confira o CEP de destino.', 'SHIPPING_UNAVAILABLE');
   const options = resultRows
     .filter((o) => o && !o.error && o.id !== undefined)

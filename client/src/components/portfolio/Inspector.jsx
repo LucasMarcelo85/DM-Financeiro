@@ -2,10 +2,10 @@ import { useEffect, useMemo, useState } from 'react';
 import EIcon from '../contract/EIcon.jsx';
 import { Check, ColorField, ImageField, LinkFields, RangeField, Section, Seg, TextField } from './Fields.jsx';
 import IconPicker from './IconPicker.jsx';
-import { fillBackground } from './Canvas.jsx';
+import { fillBackground, ProductCard } from './Canvas.jsx';
 import {
   BTN_STYLES, CARD_STYLES, CATALOG_DISPLAY, DESIGN_W, ELEMENT_LABELS, ENTER_OPTIONS, FILL_ANIM_OPTIONS, HOVER_OPTIONS, LOOP_OPTIONS, SHADOW_OPTIONS,
-  TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, boxOf,
+  TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, autoHeight, boxOf,
 } from '../../lib/portfolio/doc.js';
 import { FONTS, FONT_GROUPS, THEME_PRESETS, pageUrl, parseVideo } from '../../lib/portfolio/model.js';
 import { MASK_LIST, SHAPE_LIST, SHAPE_PATHS } from '../../lib/portfolio/shapes.js';
@@ -91,7 +91,7 @@ function PositionSection({ el, device, api }) {
         <NumField label="X" value={Math.round(b.x)} min={-1000} max={4000} onChange={set('x')} />
         <NumField label="Y" value={Math.round(b.y)} min={-200} max={30000} onChange={set('y')} />
         <NumField label="Largura" value={Math.round(b.w)} min={4} max={W * 3} onChange={set('w')} />
-        {el.t !== 'products' && <NumField label="Altura" value={Math.round(b.h)} min={4} max={8000} onChange={set('h')} />}
+        {!autoHeight(el) && <NumField label="Altura" value={Math.round(b.h)} min={4} max={8000} onChange={set('h')} />}
       </div>
       {hasFont && <NumField label="Tamanho da letra" value={b.fs} min={6} max={400} suffix="px" onChange={set('fs')} />}
       <RangeField label="Girar" value={b.r} min={-180} max={180} step={1} suffix="°" onChange={(v) => api.box({ r: Math.round(v) }, 'box:r')} id="rot" />
@@ -278,6 +278,29 @@ function VideoSection({ el, api }) {
   );
 }
 
+function CatSearchSection({ el, api }) {
+  const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
+  return (
+    <Section title="Busca e categorias">
+      <Check label="Mostrar barra de busca" checked={el.showSearch} onChange={f('showSearch')} />
+      <Check label="Mostrar categorias" checked={el.showCategories} onChange={f('showCategories')} />
+      <TextField label="Texto da busca" value={el.placeholder} onChange={f('placeholder')} maxLength={60} id="cs-ph" />
+    </Section>
+  );
+}
+
+function CatGridSection({ el, api }) {
+  const set = (k) => (v) => api.patch({ cols: { ...el.cols, [k]: v } }, 'el:cols');
+  return (
+    <Section title="Produtos do catálogo">
+      <RangeField label="Colunas no computador" value={el.cols.desktop} min={1} max={6} onChange={set('desktop')} id="cg-d" />
+      <RangeField label="Colunas no tablet" value={el.cols.tablet} min={1} max={6} onChange={set('tablet')} id="cg-t" />
+      <RangeField label="Colunas no celular" value={el.cols.mobile} min={1} max={4} onChange={set('mobile')} id="cg-m" />
+      <p className="muted small">O visual do cartão fica em <strong>Página &gt; Catálogo</strong> e aparece aqui na hora.</p>
+    </Section>
+  );
+}
+
 function ProductsSection({ el, api, products }) {
   const [q, setQ] = useState('');
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
@@ -362,6 +385,8 @@ export function ElementInspector({ el, device, api, products }) {
       {el.t === 'shape' && <ShapeSection el={el} api={api} />}
       {el.t === 'video' && <VideoSection el={el} api={api} />}
       {el.t === 'products' && <ProductsSection el={el} api={api} products={products} />}
+      {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
+      {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}
       {linkable && (
         <Section title={el.t === 'button' ? 'Link do botão' : 'Link ao clicar'}>
           <LinkFields link={el.link} onChange={(link, key) => api.patch({ link }, key || 'el:link')} id={`link-${el.id}`} />
@@ -419,13 +444,20 @@ function PixelSection({ doc, api }) {
   );
 }
 
-function CardDesigner({ doc, api }) {
+const SAMPLE_PRODUCT = { id: 0, name: 'Nome do produto', category: 'Categoria', description: 'Descrição curta do produto para você ver como fica.', priceCents: 4990, images: [{ id: 1, label: 'Azul', priceCents: null, url: '' }, { id: 2, label: 'Rosa', priceCents: null, url: '' }], priceOptions: [{ id: 1, label: 'Atacado', priceCents: 3990, minQuantity: 10 }] };
+
+function CardDesigner({ doc, api, products = [] }) {
   const c = doc.catalog;
   const k = c.card;
+  const sample = products[0] || SAMPLE_PRODUCT;
   const set = (key) => (v) => api.patchCatalog({ card: { ...k, [key]: v } }, `cat:card:${key}`);
   const custom = Boolean(k.bg || k.text || k.accent);
   return (
     <Section title="Cartão do produto">
+      <div className="cd-live" aria-label="Pré-visualização do cartão">
+        <small>Pré-visualização ao vivo</small>
+        <div className="cd-live-card"><ProductCard p={sample} cardStyle={c.cardStyle} card={k} action={<span className="pv-card-btn">{c.addLabel}</span>} /></div>
+      </div>
       <Seg label="Disposição" value={k.layout} options={[['vertical', 'Foto em cima'], ['horizontal', 'Foto ao lado']]} onChange={set('layout')} id="cd-layout" />
       <Seg label="Formato da foto" value={k.ratio} options={[['square', 'Quadrada'], ['portrait', 'Vertical'], ['landscape', 'Horizontal']]} onChange={set('ratio')} id="cd-ratio" />
       <Seg label="Ajuste da foto" value={k.fit} options={[['cover', 'Preencher'], ['contain', 'Inteira']]} onChange={set('fit')} id="cd-fit" />
@@ -458,7 +490,7 @@ function CardDesigner({ doc, api }) {
   );
 }
 
-function CatalogSection({ doc, api, categories, meta }) {
+function CatalogSection({ doc, api, categories, meta, products = [] }) {
   const c = doc.catalog;
   const set = (k) => (v) => api.patchCatalog({ [k]: v }, `cat:${k}`);
   return (
@@ -478,7 +510,7 @@ function CatalogSection({ doc, api, categories, meta }) {
       <RangeField label="Colunas no tablet" value={c.columns.tablet} min={1} max={6} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, tablet: v } }, 'cat:cols')} id="cc-t" />
       <RangeField label="Colunas no celular" value={c.columns.mobile} min={1} max={3} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, mobile: v } }, 'cat:cols')} id="cc-m" />
       <Seg label="Estilo do cartão" value={c.cardStyle} options={CARD_STYLES} onChange={set('cardStyle')} id="cc-style" />
-      <CardDesigner doc={doc} api={api} />
+      <CardDesigner doc={doc} api={api} products={products} />
       <Check label="Mostrar busca" checked={c.showSearch} onChange={set('showSearch')} />
       <Check label="Mostrar filtro de categorias" checked={c.showCategories} onChange={set('showCategories')} />
       <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />
@@ -493,7 +525,7 @@ function CatalogSection({ doc, api, categories, meta }) {
   );
 }
 
-export function PageInspector({ doc, device, meta, api, categories }) {
+export function PageInspector({ doc, device, meta, api, categories, products = [] }) {
   const th = doc.theme;
   const setTheme = (k) => (v, key) => api.patchTheme({ [k]: v }, key || `theme:${k}`);
   const preset = THEME_PRESETS.find((p) => p.primary === th.primary && p.bg === th.bg && p.text === th.text);
@@ -538,7 +570,7 @@ export function PageInspector({ doc, device, meta, api, categories }) {
         )}
         {device !== 'desktop' && <p className="muted small">Pontos de partida: depois é só arrastar cada elemento. Dá para desfazer com Ctrl+Z.</p>}
       </Section>
-      {doc.kind === 'catalog' && <CatalogSection doc={doc} api={api} categories={categories} meta={meta} />}
+      {doc.kind === 'catalog' && <CatalogSection doc={doc} api={api} categories={categories} meta={meta} products={products} />}
       <Section title="Pesquisa (Google) e compartilhamento">
         <TextField label="Título da página" value={doc.seo.title} onChange={(v) => api.patchSeo({ title: v }, 'seo:title')} maxLength={120} id="seo-title" />
         <TextField label="Descrição curta" value={doc.seo.description} onChange={(v) => api.patchSeo({ description: v }, 'seo:desc')} multiline rows={3} maxLength={300} id="seo-desc" />

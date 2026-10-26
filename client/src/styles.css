@@ -1003,6 +1003,15 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-grid { display: grid; gap: 14px; grid-template-columns: repeat(var(--cm, 2), minmax(0, 1fr)); }
 @media (min-width: 601px) { .cat-grid { grid-template-columns: repeat(var(--ct, 3), minmax(0, 1fr)); } }
 @media (min-width: 1025px) { .cat-grid { grid-template-columns: repeat(var(--cd, 4), minmax(0, 1fr)); } }
+.cg-tools { display: grid; gap: 0.7rem; overflow: hidden; color: var(--tx); font-family: var(--bf); }
+.cg-groups { display: flex; flex-direction: column; color: var(--tx); font-family: var(--bf); }
+.cg-title { font-family: var(--hf); margin: 0; font-size: 1.4rem; overflow: hidden; }
+.cg-grid { display: grid; }
+.cg-grid .cat-card { height: 100%; min-height: 0; overflow: hidden; }
+.cd-live { position: sticky; top: 0; z-index: 3; padding: 0.5rem; margin-bottom: 0.6rem; border-radius: 10px; background: #dfe5ed; display: grid; gap: 0.3rem; justify-items: center; }
+.cd-live small { font-weight: 700; color: #3b4a5c; }
+.cd-live-card { width: min(100%, 210px); }
+.cat-edit-mark { position: relative; z-index: 1; margin: 0; padding: 0.35rem 0.8rem; text-align: center; font: 700 0.75rem system-ui, sans-serif; color: #1b4f8a; background: #dbeafe; border-block: 1px dashed #60a5fa; }
 .cat-card { display: block; width: 100%; padding: 0; border: 0; background: none; font: inherit; text-align: left; cursor: pointer; border-radius: 14px; transition: transform .15s; }
 .cat-card:hover { transform: translateY(-3px); }
 .cat-card:focus-visible { outline: 3px solid var(--p); outline-offset: 3px; }

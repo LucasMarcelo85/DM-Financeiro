@@ -18,7 +18,10 @@ export const DESIGN_W = { desktop: 1200, tablet: 768, mobile: 375 };
 export const MAX_ELEMENTS = 200;
 export const MAX_PAGE_H = 30000;
 
-export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', video: 'Vídeo', products: 'Produtos' };
+export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', video: 'Vídeo', products: 'Produtos', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
+export const CATALOG_ELEMENTS = new Set(['catsearch', 'catgrid']);
+// Elementos cuja altura é calculada (não dá para esticar à mão).
+export const autoHeight = (el) => el.t === 'products' || el.t === 'catgrid';
 
 // ---------------------------------------------------------------- opções (rótulo em português)
 export const ENTER_OPTIONS = [['none', 'Nenhuma'], ['fade', 'Aparecer'], ['slide-up', 'Subir'], ['slide-down', 'Descer'], ['slide-left', 'Entrar pela direita'], ['slide-right', 'Entrar pela esquerda'], ['zoom-in', 'Zoom (crescer)'], ['zoom-out', 'Zoom (encolher)'], ['flip-x', 'Virar na horizontal'], ['flip-y', 'Virar na vertical'], ['bounce', 'Pular'], ['rotate', 'Girar entrando'], ['blur', 'Desfocar'], ['drop', 'Cair']];
@@ -42,7 +45,7 @@ export const CATALOG_DEFAULTS = () => ({
   card: CARD_DEFAULTS(),
   display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
   addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
-  cartButtonLabel: '', cartButtonUrl: '',
+  cartButtonLabel: '', cartButtonUrl: '', elementized: false,
 });
 
 // ---------------------------------------------------------------- padrões de cada tipo
@@ -58,8 +61,10 @@ const TYPE_DEFAULTS = {
   shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, link: emptyLink() }),
   video: () => ({ url: '', radius: 12 }),
   products: () => ({ ids: [], cols: { desktop: 4, tablet: 3, mobile: 2 }, whatsapp: '', buttonLabel: 'Pedir no WhatsApp', showPrice: true, cardStyle: 'soft' }),
+  catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
+  catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };
-const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], video: [480, 270], products: [720, 300] };
+const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], video: [480, 270], products: [720, 300], catsearch: [1080, 104], catgrid: [1080, 400] };
 const FONT_SIZES = { text: [24, 20, 17], button: [18, 17, 16] };
 
 export const emptyBox = (t) => ({ x: 60, y: 60, w: SIZES[t][0], h: SIZES[t][1], r: 0, hide: false, ...(FONT_SIZES[t] ? { fs: FONT_SIZES[t][0] } : {}) });
@@ -84,7 +89,17 @@ export function newElement(t, theme = THEME_DEFAULTS, over = {}) {
   if (boxOver?.tablet) el.box.tablet = { ...el.box.tablet, ...boxOver.tablet };
   if (boxOver?.mobile) el.box.mobile = { ...el.box.mobile, ...boxOver.mobile };
   if (hasFont(t) && FONT_SIZES[t]) { el.box.tablet.fs = el.box.tablet.fs ?? FONT_SIZES[t][1]; el.box.mobile.fs = el.box.mobile.fs ?? FONT_SIZES[t][2]; }
+  if (CATALOG_ELEMENTS.has(t)) fullWidthBoxes(el, boxOver);
   return el;
+}
+
+// Busca e produtos do catálogo ocupam a largura da tela em cada dispositivo (margens de 24px no tablet e 16px no celular).
+function fullWidthBoxes(el, boxOver) {
+  for (const d of ['tablet', 'mobile']) {
+    if (boxOver?.[d]) continue;
+    const m = d === 'mobile' ? 16 : 24;
+    el.box[d] = { ...el.box[d], x: m, w: DESIGN_W[d] - m * 2, h: el.t === 'catsearch' ? (d === 'mobile' ? 96 : 100) : el.box[d].h };
+  }
 }
 
 export const blankDoc = (kind = 'site') => ({
@@ -107,6 +122,24 @@ function fixElement(raw, theme) {
 }
 
 export function normalizeDoc(raw, kindHint = 'site') {
+  return withCatalogElements(normalizeBase(raw, kindHint));
+}
+
+// Páginas de catálogo antigas mostravam busca e produtos automaticamente no fim da página.
+// Agora são elementos: na primeira abertura eles são colocados no fim (o usuário pode mover ou apagar) e a página é marcada como convertida.
+function withCatalogElements(doc) {
+  if (doc.kind !== 'catalog' || doc.catalog.elementized) return doc;
+  const search = newElement('catsearch', doc.theme);
+  const grid = newElement('catgrid', doc.theme);
+  for (const d of Object.keys(DESIGN_W)) {
+    const y = bottomOf(doc.elements.map((e) => boxOf(e, d))) + 24;
+    search.box[d].y = y;
+    grid.box[d].y = y + search.box[d].h + 8;
+  }
+  return { ...doc, catalog: { ...doc.catalog, elementized: true }, elements: [...doc.elements, search, grid].slice(0, MAX_ELEMENTS) };
+}
+
+function normalizeBase(raw, kindHint = 'site') {
   const src = isObj(raw) ? raw : {};
   if (src.v !== 2) return Array.isArray(src.blocks) ? convertV1(src, kindHint) : blankDoc(kindHint);
   const kind = src.kind === 'catalog' || kindHint === 'catalog' ? 'catalog' : 'site';
@@ -132,7 +165,47 @@ export function productsHeight(el, device, count = el.ids.length) {
   const rows = Math.max(1, Math.ceil(Math.max(1, count) / cols));
   return Math.round(rows * cardH + (rows - 1) * PRODUCT_GAP);
 }
-export const boxOf = (el, device) => (el.t === 'products' ? { ...el.box[device], h: productsHeight(el, device) } : el.box[device]);
+// Produtos e configuração do catálogo da página que está sendo mostrada: a altura da grade depende deles.
+// O editor e a página pública chamam setCatalogContext a cada renderização, antes de medir os elementos.
+let CAT = { products: [], catalog: null };
+export const setCatalogContext = (products, catalog) => { CAT = { products: products || [], catalog: catalog || null }; };
+
+const CARD_RATIO = { square: 1, portrait: 4 / 3, landscape: 3 / 4 };
+const CARD_PAD = { compact: 14, normal: 22, roomy: 34 };
+const CARD_TEXT = { sm: 14, md: 16, lg: 20 };
+const CARD_PRICE = { sm: 16, md: 20, lg: 26 };
+
+// Medidas da grade de produtos do catálogo: as linhas têm altura fixa, então a página não "pula" ao filtrar.
+export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.catalog) {
+  const k = { ...CARD_DEFAULTS(), ...(cfg?.card || {}) };
+  const gap = 14; const titleH = 44; const groupGap = 28;
+  const cols = clamp(el.cols?.[device] || 2, 1, 6);
+  const w = el.box[device].w;
+  const cardW = (w - gap * (cols - 1)) / cols;
+  const hasVars = products.some((p) => (p.images || []).length > 1);
+  const tierLines = clamp(Math.max(0, ...products.map((p) => (p.priceOptions || []).filter((o) => o.priceCents !== null).length)), 1, 4);
+  const parts = [
+    k.showCategory && 16, k.showName && Math.ceil(CARD_TEXT[k.textSize] * 1.25 * 2), k.showDescription && 42,
+    k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), k.showTiers && tierLines * 15, k.showVariations && hasVars && 22, k.showButton && 44,
+  ].filter(Boolean);
+  const body = (CARD_PAD[k.padding] || 22) + parts.reduce((s, n) => s + n, 0) + Math.max(0, parts.length - 1) * 4;
+  const ratio = CARD_RATIO[k.ratio] || 1;
+  const cardH = Math.ceil(k.layout === 'horizontal'
+    ? Math.max(k.showImage ? Math.max(112, cardW * 0.42 * ratio) : 0, body)
+    : (k.showImage ? cardW * ratio : 0) + body);
+  const only = cfg?.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
+  const list = products.filter((p) => !only || p.category === only);
+  const counts = cfg?.display === 'category'
+    ? Object.values(list.reduce((m, p) => ({ ...m, [p.category]: (m[p.category] || 0) + 1 }), {}))
+    : [list.length];
+  const groups = counts.length ? counts : [0];
+  const height = list.length
+    ? groups.reduce((sum, n) => { const rows = Math.ceil(n / cols); return sum + (cfg?.display === 'category' ? titleH : 0) + rows * cardH + (rows - 1) * gap; }, 0) + (groups.length - 1) * groupGap
+    : 160;
+  return { cols, gap, titleH, groupGap, cardH, height: Math.max(80, Math.round(height)) };
+}
+
+export const boxOf = (el, device) => (el.t === 'products' ? { ...el.box[device], h: productsHeight(el, device) } : el.t === 'catgrid' ? { ...el.box[device], h: catgridMetrics(el, device).height } : el.box[device]);
 export const pageHeight = (doc, device) => Math.max(doc.heights[device] || 700, bottomOf(doc.elements.map((e) => boxOf(e, device))) + 24);
 
 // Estimativa da altura de um texto (usada ao empilhar para o celular).
@@ -224,8 +297,9 @@ export function stackDevice(doc, device, from = 'desktop') {
       y += h + 14;
       continue;
     } else if (e.t === 'button') { h = clamp(Math.round(b.h * (0.8 + 0.2 * k)), 44, 64); boxes.set(e.id, { ...b, x: m, y, w, h, fs: clamp(Math.round(b.fs * (0.6 + 0.4 * k)), 14, b.fs), r: 0, hide: false }); y += h + 14; continue; }
+    else if (e.t === 'catgrid') h = catgridMetrics({ ...e, box: { ...e.box, [device]: { ...e.box[device], w } } }, device).height;
     else h = Math.max(40, Math.round(b.h * k * 1.2));
-    boxes.set(e.id, { ...b, x: small ? Math.round((W - w) / 2) : m, y, w, h: e.t === 'products' ? b.h : h, r: small ? b.r : 0, hide: false });
+    boxes.set(e.id, { ...b, x: small ? Math.round((W - w) / 2) : m, y, w, h: autoHeight(e) ? b.h : h, r: small ? b.r : 0, hide: false });
     y += h + 14;
   }
   return {

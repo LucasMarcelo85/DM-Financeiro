@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
-import { CartPage, CatalogHome, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
+import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 
@@ -68,10 +68,10 @@ function PublicPage({ page, products, store, slug }) {
       <ClipDefs />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
-          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} onLink={onLink} onCart={isCatalog ? () => goCart(true) : undefined} cartCount={cartCount} />
+          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn } : undefined} onLink={onLink} onCart={isCatalog ? () => goCart(true) : undefined} cartCount={cartCount} />
         </main>
       )}
-      {isCatalog && !showCart && <CatalogHome doc={doc} products={products} cart={cart} onOpenCart={() => goCart(true)} pixelOn={pixelOn} />}
+      {isCatalog && !showCart && <CartBar products={products} cart={cart} onOpenCart={() => goCart(true)} />}
       {showCart && <CartPage doc={doc} products={products} store={store} slug={slug} cart={cart} onBack={() => goCart(false)} pixelOn={pixelOn} />}
       <PageCredit theme={doc.theme} />
     </div>

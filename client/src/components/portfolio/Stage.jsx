@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PortfolioCanvas, { ClipDefs } from './Canvas.jsx';
-import { DESIGN_W, boxOf, pageHeight } from '../../lib/portfolio/doc.js';
+import { DESIGN_W, autoHeight, boxOf, pageHeight } from '../../lib/portfolio/doc.js';
 import { HANDLES, angleTo, resizeBox, snapMove } from '../../lib/portfolio/geometry.js';
 
 // Palco do editor livre: arrastar, redimensionar (8 alças), girar, ajuste magnético às guias, soltar elementos e imagens.
@@ -68,7 +68,7 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
     } else if (d.kind === 'resize') {
       const r = resizeBox(d.box, d.handle, dx, dy, { keepRatio: d.ratio !== e.shiftKey, centered: e.altKey });
       patch = { x: Math.round(r.x), y: Math.round(r.y), w: Math.round(r.w), h: Math.round(r.h) };
-      if (d.el.t === 'products') delete patch.h; // a altura dos produtos é calculada
+      if (autoHeight(d.el)) delete patch.h; // a altura é calculada
     } else {
       const c = { x: d.box.x + d.box.w / 2, y: d.box.y + d.box.h / 2 };
       patch = { r: angleTo(c, p, e.shiftKey) };

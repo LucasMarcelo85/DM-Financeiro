@@ -1,6 +1,7 @@
 import { memo, useEffect, useRef, useState } from 'react';
 import './pv.css';
-import { DESIGN_W, boxOf, pageHeight } from '../../lib/portfolio/doc.js';
+import { DESIGN_W, autoHeight, boxOf, pageHeight, setCatalogContext } from '../../lib/portfolio/doc.js';
+import { CatalogScope, CatGridView, CatSearchView } from './Catalog.jsx';
 import { ICON_COMPONENTS, ICONS } from '../../lib/portfolio/icons.js';
 import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
 import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/model.js';
@@ -293,6 +294,8 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   else if (el.t === 'shape') { content = <ShapeView el={el} />; linked = el.link; }
   else if (el.t === 'video') content = <VideoView el={el} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
+  else if (el.t === 'catsearch') content = <CatSearchView el={el} mode={mode} />;
+  else if (el.t === 'catgrid') content = <CatGridView el={el} device={device} mode={mode} />;
   else if (el.t === 'button') {
     const b = ButtonView({ el, box, mode, onCart, onLink, cartCount });
     if (mode === 'public' && !b.href && !b.button) return null; // botão sem link não aparece na página pública
@@ -343,10 +346,11 @@ export function PageCredit({ theme }) {
 }
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
-export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, onLink, onCart, cartCount = 0, replay = 0, children, minHeight }) {
+export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight }) {
+  setCatalogContext(products, doc.catalog);
   const W = DESIGN_W[device];
   const H = Math.max(minHeight || 0, pageHeight(doc, device));
-  return (
+  const body = (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
       <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
         {doc.elements.map((el, i) => (
@@ -356,6 +360,7 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
       </div>
     </div>
   );
+  return doc.kind === 'catalog' ? <CatalogScope doc={doc} products={products} shop={shop} mode={mode}>{body}</CatalogScope> : body;
 }
 
 // Variáveis de cor e fonte da página (usadas pelo fundo, rodapé, cartões e botões).

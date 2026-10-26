@@ -1,7 +1,8 @@
-import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+﻿import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../../api.js';
 import { ProductCard, minPrice } from './Canvas.jsx';
 import { IconSvg } from './Canvas.jsx';
+import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
 
@@ -118,68 +119,89 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
   );
 }
 
-export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
-  const cfg = doc.catalog;
+// ---------------------------------------------------------------- elementos do catálogo (busca e produtos são colocados na página pelo usuário)
+const CatCtx = createContext(null);
+const sortBR = (a, b) => a.localeCompare(b, 'pt-BR');
+
+// Compartilha busca, categoria e carrinho entre os elementos "Busca" e "Produtos" da mesma página.
+export function CatalogScope({ doc, products, shop, mode, children }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
+  const value = useMemo(() => ({ catalog: doc.catalog, products: products || [], shop, mode, q, setQ, cat, setCat }), [doc.catalog, products, shop, mode, q, cat]);
+  return <CatCtx.Provider value={value}>{children}</CatCtx.Provider>;
+}
+
+export function CatSearchView({ el, mode }) {
+  const ctx = useContext(CatCtx);
+  const products = ctx?.products;
+  const categories = useMemo(() => [...new Set((products || []).map((p) => p.category))].sort(sortBR), [products]);
+  if (!ctx) return null;
+  const { catalog, q, setQ, cat, setCat } = ctx;
+  const only = catalog?.display === 'only' && catalog.onlyCategory ? catalog.onlyCategory : '';
+  const edit = mode === 'edit';
+  const showChips = el.showCategories && !only && categories.length > 0;
+  return (
+    <div className="cg-tools" style={{ pointerEvents: edit ? 'none' : undefined }}>
+      {el.showSearch && <input className="cat-search" type="search" placeholder={el.placeholder || 'Buscar produtos'} value={q} readOnly={edit} tabIndex={edit ? -1 : undefined} onChange={(e) => setQ(e.target.value)} aria-label="Buscar produtos" />}
+      {showChips && (
+        <div className="cat-chips" role="group" aria-label="Categorias">
+          <button type="button" tabIndex={edit ? -1 : undefined} className={`cat-chip${!cat ? ' is-on' : ''}`} onClick={() => setCat('')}>Todas</button>
+          {categories.map((c) => <button key={c} type="button" tabIndex={edit ? -1 : undefined} className={`cat-chip${cat === c ? ' is-on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
+        </div>
+      )}
+      {!el.showSearch && !showChips && edit && <p className="cat-empty">Ative a busca ou as categorias no painel.</p>}
+    </div>
+  );
+}
+
+export function CatGridView({ el, device, mode }) {
+  const ctx = useContext(CatCtx);
   const [open, setOpen] = useState(null);
+  if (!ctx) return null;
+  const { catalog: cfg, products, shop, q, cat } = ctx;
+  const edit = mode === 'edit';
+  const m = catgridMetrics(el, device, products, cfg);
   const only = cfg.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
-  const categories = useMemo(() => [...new Set(products.map((p) => p.category))].sort((a, b) => a.localeCompare(b, 'pt-BR')), [products]);
-
-  const shown = useMemo(() => {
-    const t = q.trim().toLowerCase();
-    return products.filter((p) => (!only || p.category === only) && (!cat || p.category === cat) && (!t || p.name.toLowerCase().includes(t) || p.category.toLowerCase().includes(t)));
-  }, [products, q, cat, only]);
-
-  const groups = useMemo(() => {
-    if (cfg.display !== 'category') return [{ title: '', list: [...shown].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')) }];
-    const m = new Map();
-    for (const p of shown) { if (!m.has(p.category)) m.set(p.category, []); m.get(p.category).push(p); }
-    return [...m.entries()].sort((a, b) => a[0].localeCompare(b[0], 'pt-BR')).map(([title, list]) => ({ title, list }));
-  }, [shown, cfg.display]);
-
-  const { count, subtotal } = priced(cart.items, products);
+  const t = q.trim().toLowerCase();
+  const shown = products.filter((p) => (!only || p.category === only) && (!cat || p.category === cat) && (!t || p.name.toLowerCase().includes(t) || p.category.toLowerCase().includes(t)));
+  const groups = cfg.display !== 'category'
+    ? [{ title: '', list: [...shown].sort((a, b) => sortBR(a.name, b.name)) }]
+    : [...shown.reduce((map, p) => map.set(p.category, [...(map.get(p.category) || []), p]), new Map()).entries()].sort((a, b) => sortBR(a[0], b[0])).map(([title, list]) => ({ title, list }));
+  const pixelOn = Boolean(shop?.pixelOn);
   const add = (p, img, qty) => {
-    cart.add(p.id, p.images.length > 1 ? img?.id : null, null, qty);
+    shop?.cart?.add(p.id, p.images.length > 1 ? img?.id : null, null, qty);
     const tier = pickTier(p.priceOptions, qty);
     const unit = tier ? tier.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
-  const cols = cfg.columns;
-
   return (
-    <section className="cat-home" style={{ '--cd': cols.desktop, '--ct': cols.tablet, '--cm': cols.mobile }}>
-      {(cfg.showSearch || (cfg.showCategories && !only && categories.length > 1)) && (
-        <div className="cat-tools">
-          {cfg.showSearch && <input className="cat-search" type="search" placeholder="Buscar produtos" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar produtos" />}
-          {cfg.showCategories && !only && categories.length > 1 && (
-            <div className="cat-chips" role="group" aria-label="Categorias">
-              <button type="button" className={`cat-chip${!cat ? ' is-on' : ''}`} onClick={() => setCat('')}>Todas</button>
-              {categories.map((c) => <button key={c} type="button" className={`cat-chip${cat === c ? ' is-on' : ''}`} onClick={() => setCat(c)}>{c}</button>)}
-            </div>
-          )}
-        </div>
-      )}
-      {!shown.length ? <p className="cat-empty">{products.length ? 'Nenhum produto encontrado.' : 'Em breve novidades por aqui.'}</p> : groups.map((g) => (
-        <div key={g.title || 'all'} className="cat-group">
-          {g.title && <h2 className="cat-group-title">{g.title}</h2>}
-          <div className="cat-grid">
+    <div className="cg-groups" style={{ gap: m.groupGap, pointerEvents: edit ? 'none' : undefined }}>
+      {!shown.length ? <p className="cat-empty">{products.length ? 'Nenhum produto encontrado.' : edit ? 'Cadastre produtos na aba Produtos/Serviços para vê-los aqui.' : 'Em breve novidades por aqui.'}</p> : groups.map((g) => (
+        <div key={g.title || 'all'}>
+          {g.title && <h2 className="cg-title" style={{ height: m.titleH, lineHeight: `${m.titleH}px` }}>{g.title}</h2>}
+          <div className="cg-grid" style={{ gridTemplateColumns: `repeat(${m.cols}, minmax(0, 1fr))`, gridAutoRows: m.cardH, gap: m.gap }}>
             {g.list.map((p) => (
-              <button key={p.id} type="button" className="cat-card" onClick={() => view(p)} aria-label={`Ver ${p.name}`}>
+              <button key={p.id} type="button" className="cat-card" tabIndex={edit ? -1 : undefined} onClick={() => view(p)} aria-label={`Ver ${p.name}`}>
                 <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} action={<span className="pv-card-btn">{cfg.addLabel}</span>} />
               </button>
             ))}
           </div>
         </div>
       ))}
-      {count > 0 && (
-        <button type="button" className="cat-cartbar" onClick={onOpenCart}>
-          <IconSvg name="cart" size={20} /><span>Ver carrinho ({count})</span><strong>{brl(subtotal)}</strong>
-        </button>
-      )}
-      {open && <ProductModal p={open} addLabel={cfg.addLabel} onAdd={add} onClose={() => setOpen(null)} />}
-    </section>
+      {open && !edit && <ProductModal p={open} addLabel={cfg.addLabel} onAdd={add} onClose={() => setOpen(null)} />}
+    </div>
+  );
+}
+
+// Barra fixa "Ver carrinho" da página pública do catálogo.
+export function CartBar({ products, cart, onOpenCart }) {
+  const { count, subtotal } = priced(cart.items, products);
+  if (!count) return null;
+  return (
+    <button type="button" className="cat-cartbar" onClick={onOpenCart}>
+      <IconSvg name="cart" size={20} /><span>Ver carrinho ({count})</span><strong>{brl(subtotal)}</strong>
+    </button>
   );
 }
 
