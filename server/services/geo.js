@@ -166,12 +166,13 @@ export async function quoteCorreios({ token = config.geo.superfreteToken, sandbo
   };
   let { res, rows: resultRows, data } = await call(insuranceCents > 0);
   // Se a simulação com seguro falhar (valor declarado recusado), tenta de novo sem seguro.
-  if ((!res || !res.ok || !resultRows.length) && res?.status !== 401 && res?.status !== 403) ({ res, rows: resultRows, data } = await call(false));
+  // Só tenta de novo sem seguro quando o SuperFrete respondeu com erro; sem resposta (timeout) não dobra a espera.
+  if (res && (!res.ok || !resultRows.length) && res.status !== 401 && res.status !== 403) ({ res, rows: resultRows, data } = await call(false));
   const reason = String(data?.message || data?.error || (data?.errors && JSON.stringify(data.errors)) || '').replace(/\s+/g, ' ').slice(0, 160);
   const detail = reason ? ` (${reason})` : '';
-  if (!res) throw new AppError(502, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
-  if (res.status === 401 || res.status === 403) throw new AppError(502, `O SuperFrete recusou o token${sandbox ? ' (modo teste ligado: use o token do ambiente de testes ou desligue o modo teste)' : ' (confira se o token é de produção)'}. Avise o administrador.${detail}`, 'SHIPPING_TOKEN');
-  if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 502, `Não foi possível simular o frete para esse CEP${detail}. Confira o CEP de destino e as medidas do pacote.`, 'SHIPPING_UNAVAILABLE');
+  if (!res) throw new AppError(424, 'O SuperFrete não respondeu agora. Tente novamente em instantes.', 'SHIPPING_UNAVAILABLE');
+  if (res.status === 401 || res.status === 403) throw new AppError(424, `O SuperFrete recusou o token${sandbox ? ' (modo teste ligado: use o token do ambiente de testes ou desligue o modo teste)' : ' (confira se o token é de produção)'}. Avise o administrador.${detail}`, 'SHIPPING_TOKEN');
+  if (!res.ok || !resultRows.length) throw new AppError(res.status === 422 || res.status === 400 ? 422 : 424, `Não foi possível simular o frete para esse CEP${detail}. Confira o CEP de destino e as medidas do pacote.`, 'SHIPPING_UNAVAILABLE');
   const options = resultRows
     .filter((o) => o && !o.error && o.id !== undefined)
     .map((o) => {
