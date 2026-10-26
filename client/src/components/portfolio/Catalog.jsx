@@ -37,6 +37,14 @@ export function useCart(slug) {
   };
 }
 
+// Faixa de preço vigente: a de maior quantidade mínima já atingida (faixas sem valor não se aplicam).
+export const pickTier = (options, qty) => [...(options || [])]
+  .filter((o) => o.priceCents !== null && (o.minQuantity || 1) <= qty)
+  .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
+export const nextTier = (options, qty) => [...(options || [])]
+  .filter((o) => o.priceCents !== null && (o.minQuantity || 1) > qty)
+  .sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1))[0] || null;
+
 // Junta o carrinho com os dados atuais dos produtos (preço e imagem sempre vêm do cadastro).
 export function priced(items, products) {
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -46,11 +54,10 @@ export function priced(items, products) {
     if (!p) continue;
     const img = p.images.find((i) => i.id === it.imageId) || null;
     const staleSelection = Boolean(it.imageId && !img);
-    const priceOption = [...p.priceOptions]
-      .filter((option) => (option.minQuantity || 1) <= it.qty)
-      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
-    const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
-    lines.push({ ...it, p, img, priceOption, staleSelection, unit, total: unit * it.qty });
+    const priceOption = pickTier(p.priceOptions, it.qty);
+    const upcoming = nextTier(p.priceOptions, it.qty);
+    const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    lines.push({ ...it, p, img, priceOption, upcoming, staleSelection, unit, total: unit * it.qty });
   }
   return { lines, subtotal: lines.reduce((s, l) => s + l.total, 0), count: lines.reduce((s, l) => s + l.qty, 0) };
 }
@@ -68,10 +75,8 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
   const [idx, setIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const img = p.images[idx] || p.images[0];
-  const priceOption = [...p.priceOptions]
-    .filter((option) => (option.minQuantity || 1) <= qty)
-    .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
-  const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+  const priceOption = pickTier(p.priceOptions, qty);
+  const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -136,10 +141,8 @@ export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
   const { count, subtotal } = priced(cart.items, products);
   const add = (p, img, qty) => {
     cart.add(p.id, p.images.length > 1 ? img?.id : null, null, qty);
-    const tier = [...p.priceOptions]
-      .filter((option) => (option.minQuantity || 1) <= qty)
-      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0];
-    const unit = tier ? tier.priceCents || 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    const tier = pickTier(p.priceOptions, qty);
+    const unit = tier ? tier.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
@@ -164,7 +167,7 @@ export function CatalogHome({ doc, products, cart, onOpenCart, pixelOn }) {
           <div className="cat-grid">
             {g.list.map((p) => (
               <button key={p.id} type="button" className="cat-card" onClick={() => view(p)} aria-label={`Ver ${p.name}`}>
-                <ProductCard p={p} cardStyle={cfg.cardStyle} action={<span className="pv-card-btn">{cfg.addLabel}</span>} />
+                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} action={<span className="pv-card-btn">{cfg.addLabel}</span>} />
               </button>
             ))}
           </div>
@@ -193,7 +196,7 @@ const loadCustomer = (slug) => {
 export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) {
   const cfg = doc.catalog;
   const { lines, subtotal } = priced(cart.items, products);
-  const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : store[key])?.enabled);
+  const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : key === 'retirada' ? store.pickup : store[key])?.enabled);
   const [saved] = useState(() => loadCustomer(slug));
   const skipNextSave = useRef(false);
   const [customerRevision, setCustomerRevision] = useState(0);
@@ -210,6 +213,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [step, setStep] = useState(0);
   const tracked = useRef(false);
   const clearSavedCustomer = () => {
     try { localStorage.removeItem(`dm:checkout:${slug}`); } catch { /* Dados locais indisponíveis. */ }
@@ -262,7 +266,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const canQuote = type === 'correios' ? zipOk : zipOk || (addr.street.trim() && addr.city.trim());
 
   async function submit(e) {
-    e.preventDefault();
+    e?.preventDefault();
     setError('');
     if (!lines.length) return setError('O carrinho está vazio.');
     if (name.trim().length < 2) return setError('Informe o seu nome.');
@@ -309,25 +313,69 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const subtotalMet = subtotal >= minimumSubtotal;
   const meetsMinimum = itemsMet && subtotalMet;
   const progress = Math.round(Math.min(1, minimumItems > 0 ? itemCount / minimumItems : 1, minimumSubtotal > 0 ? subtotal / minimumSubtotal : 1) * 100);
+  const STEPS = ['Carrinho', 'Seus dados', 'Entrega', 'Revisão'];
+  const STEP_HINTS = ['Confira os itens e as quantidades.', 'Diga quem está fazendo o pedido.', 'Escolha como quer receber.', 'Confirme tudo e finalize.'];
+  const stepError = (n) => {
+    if (n === 0) return !lines.length ? 'O carrinho está vazio.' : !meetsMinimum ? 'Continue adicionando itens para atingir o mínimo do pedido.' : lines.some((l) => l.staleSelection) ? 'Uma opção mudou. Remova e adicione o item novamente.' : '';
+    if (n === 1) return name.trim().length < 2 ? 'Informe o seu nome.' : phone.replace(/\D/g, '').length < 10 ? 'Informe o seu telefone com DDD.' : '';
+    if (!type) return 'Escolha a forma de entrega.';
+    if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome do galpão, a cidade e o endereço do galpão.';
+    if (type === 'motoboy' && !canQuote) return 'Motoboy: informe o CEP ou o endereço de entrega.';
+    if (type === 'correios' && !zipOk) return 'Correios: informe o CEP de destino.';
+    if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
+    return '';
+  };
+  const goTo = (n) => { setStep(n); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }); };
+  const next = () => {
+    for (let n = 0; n <= step; n++) {
+      const msg = stepError(n);
+      if (msg) { if (n !== step) { goTo(n); } setError(msg); return; }
+    }
+    goTo(step + 1);
+  };
+  const onSubmit = (e) => { e.preventDefault(); if (step < STEPS.length - 1) next(); else submit(); };
+  const typeLabel = TYPES.find(([key]) => key === type)?.[1] || '';
   return (
     <section className={`cat-cart is-${cfg.cartLayout || 'standard'}`}>
       <button type="button" className="cat-back" onClick={onBack}>← Continuar comprando</button>
       <h1>{cfg.cartTitle}</h1>
       {cfg.cartButtonLabel && cfg.cartButtonUrl && <a className="cat-btn cat-btn-custom" href={cfg.cartButtonUrl} target="_blank" rel="noopener noreferrer">{cfg.cartButtonLabel}</a>}
       {!lines.length ? <p className="cat-empty">Seu carrinho está vazio.</p> : (
-        <form className="cat-form" onSubmit={submit} noValidate>
+        <form className="cat-form" onSubmit={onSubmit} noValidate>
+          <ol className="cat-steps" aria-label="Etapas do pedido">
+            {STEPS.map((label, n) => (
+              <li key={label} className={n === step ? 'is-on' : n < step ? 'is-done' : ''}>
+                <button type="button" disabled={n > step} onClick={() => goTo(n)} aria-current={n === step ? 'step' : undefined}><b>{n < step ? '✓' : n + 1}</b><span>{label}</span></button>
+              </li>
+            ))}
+          </ol>
+          <div className="cat-stepbar" role="progressbar" aria-valuemin={1} aria-valuemax={STEPS.length} aria-valuenow={step + 1}><span style={{ width: `${((step + 1) / STEPS.length) * 100}%` }} /></div>
+          <p className="cat-stephead"><strong>Etapa {step + 1} de {STEPS.length}: {STEPS[step]}</strong><span>{STEP_HINTS[step]}</span></p>
+          {step > 0 && <p className="cat-minisum"><span>{itemCount} {itemCount === 1 ? 'item' : 'itens'} · {brl(subtotal)}</span><button type="button" onClick={() => goTo(0)}>Editar itens</button></p>}
+          {step === 0 && <>
           <ul className="cat-lines">
             {lines.map((l) => (
               <li key={l.id}>
                 <span className="cat-line-img">{(l.img || l.p.images[0]) && <img src={(l.img || l.p.images[0]).url} alt="" />}</span>
-                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · a partir de {l.priceOption.minQuantity || 1} un.</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
+                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · a partir de {l.priceOption.minQuantity || 1} un.</small>}{l.upcoming && <small className="cat-tier-hint">Leve {l.upcoming.minQuantity} e pague {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>
                 <button type="button" className="cat-line-x" onClick={() => cart.remove(l.id)} aria-label={`Remover ${l.p.name}`}>×</button>
               </li>
             ))}
           </ul>
+          <div className="cat-totals"><span className="cat-grand">Subtotal <strong>{brl(subtotal)}</strong></span></div>
+          {!meetsMinimum && <div className="cat-checkout-progress" role="status" aria-live="polite">
+            <div className="cat-checkout-progress-head"><strong>Quase lá!</strong><span>{progress}%</span></div>
+            <div className="cat-progress-track"><span style={{ width: `${progress}%` }} /></div>
+            <ul>
+              {!itemsMet && <li>Adicione mais {minimumItems - itemCount} {minimumItems - itemCount === 1 ? 'item' : 'itens'} para atingir o mínimo de {minimumItems}.</li>}
+              {!subtotalMet && <li>Faltam {brl(minimumSubtotal - subtotal)} para atingir o valor mínimo.</li>}
+            </ul>
+          </div>}
+          </>}
 
+          {step === 1 && <>
           <h2>Seus dados</h2>
           <p className="cat-saved-hint">Seus dados de contato e endereço são salvos apenas neste aparelho para agilizar os próximos pedidos. <button type="button" onClick={clearSavedCustomer}>Apagar dados salvos</button></p>
           <div className="cat-fields">
@@ -335,6 +383,9 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             <label><span>Telefone (WhatsApp) *</span><input value={phone} onChange={(e) => setPhone(maskPhone(e.target.value))} inputMode="tel" placeholder="(85) 99999-9999" autoComplete="tel" /></label>
           </div>
 
+          </>}
+
+          {step === 2 && <>
           <h2>Entrega</h2>
           {!enabled.length ? <p className="cat-error">Esta loja ainda não configurou as formas de entrega. Fale com a loja pelo WhatsApp.</p> : (
             <div className="cat-types" role="radiogroup" aria-label="Forma de entrega">
@@ -342,6 +393,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
                 <label key={k} className={`cat-type${type === k ? ' is-on' : ''}`}>
                   <input type="radio" name="delivery" checked={type === k} onChange={() => setType(k)} />
                   <strong>{label}</strong><small>{hint}</small>
+                  {k === 'retirada' && <em className="cat-type-tag">Sem frete</em>}
                 </label>
               ))}
             </div>
@@ -396,24 +448,31 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             </>
           )}
 
+          </>}
+
+          {step === 3 && <>
+          <h2>Revise o pedido</h2>
+          <dl className="cat-review">
+            <div><dt>Cliente</dt><dd>{name} · {phone}</dd></div>
+            <div><dt>Entrega</dt><dd>{typeLabel}{type === 'retirada' && store.pickup?.address ? ` · ${store.pickup.address}` : ''}{type === 'excursao' ? ` · ${exc.warehouse}, ${exc.city}` : ''}{type === 'motoboy' ? ` · ${[addr.street, addr.number, addr.city].filter(Boolean).join(', ') || addr.zip}` : ''}{type === 'correios' ? ` · CEP ${addr.zip}${option ? ` · ${option.name}` : ''}` : ''}</dd></div>
+            <div><dt>Itens</dt><dd>{lines.map((l) => `${l.qty}× ${l.p.name}${l.img?.label ? ` (${l.img.label})` : ''}`).join(' · ')}</dd></div>
+          </dl>
           <label className="cat-notes"><span>Observações (opcional)</span><textarea rows={2} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
           {cfg.checkoutNote && <p className="cat-muted cat-note">{cfg.checkoutNote}</p>}
+          </>}
 
           <div className="cat-totals">
             <span>Subtotal <strong>{brl(subtotal)}</strong></span>
-            <span>Frete <strong>{type === 'excursao' ? 'a combinar' : shipping === null ? '—' : brl(shipping)}</strong></span>
-            <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>
+            {step >= 2 && type && <span>Frete <strong>{type === 'excursao' ? 'a combinar' : type === 'retirada' ? 'grátis' : shipping === null ? '—' : brl(shipping)}</strong></span>}
+            {step >= 2 && <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>}
           </div>
-          {!meetsMinimum && <div className="cat-checkout-progress" role="status" aria-live="polite">
-            <div className="cat-checkout-progress-head"><strong>Quase lá!</strong><span>{progress}%</span></div>
-            <div className="cat-progress-track"><span style={{ width: `${progress}%` }} /></div>
-            <ul>
-              {!itemsMet && <li>Adicione mais {minimumItems - itemCount} {minimumItems - itemCount === 1 ? 'item' : 'itens'} para atingir o mínimo de {minimumItems}.</li>}
-              {!subtotalMet && <li>Faltam {brl(minimumSubtotal - subtotal)} para atingir o valor mínimo.</li>}
-            </ul>
-          </div>}
           {error && <p className="cat-error" role="alert">{error}</p>}
-          <button className={`cat-btn cat-submit${!meetsMinimum ? ' is-locked' : ''}`} disabled={busy || !enabled.length || !meetsMinimum || lines.some((line) => line.staleSelection)}>{busy ? 'Enviando...' : !meetsMinimum ? 'Continue adicionando para finalizar' : 'Finalizar pedido'}</button>
+          <div className="cat-nav">
+            {step > 0 && <button type="button" className="cat-btn cat-btn-ghost" onClick={() => goTo(step - 1)}>Voltar</button>}
+            {step < STEPS.length - 1
+              ? <button type="submit" className={`cat-btn cat-submit${step === 0 && !meetsMinimum ? ' is-locked' : ''}`} disabled={step === 0 && (!meetsMinimum || lines.some((l) => l.staleSelection))}>{step === 0 && !meetsMinimum ? 'Continue adicionando para avançar' : 'Continuar'}</button>
+              : <button type="submit" className="cat-btn cat-submit" disabled={busy || !enabled.length || !meetsMinimum}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>}
+          </div>
         </form>
       )}
     </section>

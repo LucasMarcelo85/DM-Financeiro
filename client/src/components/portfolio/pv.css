@@ -148,8 +148,29 @@
 .pv-card-cat { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
 .pv-card-name { font-weight: 700; font-size: .98rem; line-height: 1.25; overflow-wrap: anywhere; }
 .pv-card-price { font-weight: 800; color: var(--p, #137a52); }
+.pv-card { border-radius: var(--card-r, 14px); }
+.pv-card.al-center { text-align: center; } .pv-card.al-center .pv-card-body { justify-items: center; }
+.pv-card.ratio-portrait .pv-card-img { aspect-ratio: 3 / 4; } .pv-card.ratio-landscape .pv-card-img { aspect-ratio: 4 / 3; }
+.pv-card.fit-contain .pv-card-img img { object-fit: contain; }
+.pv-card.is-horizontal { flex-direction: row; align-items: stretch; }
+.pv-card.is-horizontal .pv-card-img { flex: 0 0 42%; aspect-ratio: auto; min-height: 7rem; }
+.pv-card.is-horizontal .pv-card-body { flex: 1; align-content: center; min-width: 0; }
+.pv-card-desc { font-size: .82rem; opacity: .75; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
+.pv-card-tiers, .pv-card-vars { display: flex; flex-wrap: wrap; gap: .25rem; }
+.pv-card-tiers { flex-direction: column; gap: .1rem; } .pv-card-tiers small { font-size: .74rem; opacity: .8; }
+.pv-card-vars small { padding: .1rem .45rem; border-radius: 99px; font-size: .7rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
 .pv-card-btn { margin-top: .35rem; display: inline-flex; justify-content: center; align-items: center; gap: .4rem; padding: .55rem .7rem; border-radius: 10px; border: 0; background: var(--p, #f2a33a); color: var(--on-p, #14202e); font: 700 .9rem/1 var(--bf, system-ui); cursor: pointer; text-decoration: none; }
 .pv-dots { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 4px; }
+/* personalização do cartão (aplicada depois dos estilos base para prevalecer) */
+.pv-card.sh-none { box-shadow: none; } .pv-card.sh-soft { box-shadow: 0 6px 22px rgba(20, 32, 46, .12); } .pv-card.sh-strong { box-shadow: 0 14px 38px rgba(20, 32, 46, .28); }
+.pv-card.has-border { border: 1.5px solid color-mix(in srgb, currentColor 22%, transparent); }
+.pv-card.pad-compact .pv-card-body { padding: .4rem .5rem .5rem; gap: .15rem; } .pv-card.pad-roomy .pv-card-body { padding: 1rem 1.1rem 1.15rem; gap: .4rem; }
+.pv-card.ts-sm .pv-card-name { font-size: .85rem; } .pv-card.ts-lg .pv-card-name { font-size: 1.2rem; }
+.pv-card.ts-sm .pv-card-desc { font-size: .74rem; } .pv-card.ts-lg .pv-card-desc { font-size: .95rem; }
+.pv-card.ps-sm .pv-card-price { font-size: .85rem; } .pv-card.ps-lg .pv-card-price { font-size: 1.3rem; }
+.pv-card.bt-outline .pv-card-btn { background: transparent; color: var(--p, #f2a33a); box-shadow: inset 0 0 0 2px var(--p, #f2a33a); }
+.pv-card.bt-soft .pv-card-btn { background: color-mix(in srgb, var(--p, #f2a33a) 16%, transparent); color: var(--p, #f2a33a); }
+.pv-card.bt-auto .pv-card-btn { justify-self: start; } .pv-card.bt-auto.al-center .pv-card-btn { justify-self: center; }
 .pv-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, .9); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
 
 /* ---------- rodapé discreto (em toda página) ---------- */

@@ -84,9 +84,9 @@ export async function createOrder(userSlug, body = {}) {
     const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : null;
     if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
     const priceOption = [...p.priceOptions]
-      .filter((option) => (option.minQuantity || 1) <= qty)
+      .filter((option) => option.priceCents !== null && (option.minQuantity || 1) <= qty)
       .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
-    const unit = priceOption ? priceOption.priceCents ?? 0 : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
   }

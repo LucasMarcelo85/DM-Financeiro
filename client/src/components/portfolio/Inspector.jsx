@@ -419,6 +419,45 @@ function PixelSection({ doc, api }) {
   );
 }
 
+function CardDesigner({ doc, api }) {
+  const c = doc.catalog;
+  const k = c.card;
+  const set = (key) => (v) => api.patchCatalog({ card: { ...k, [key]: v } }, `cat:card:${key}`);
+  const custom = Boolean(k.bg || k.text || k.accent);
+  return (
+    <Section title="Cartão do produto">
+      <Seg label="Disposição" value={k.layout} options={[['vertical', 'Foto em cima'], ['horizontal', 'Foto ao lado']]} onChange={set('layout')} id="cd-layout" />
+      <Seg label="Formato da foto" value={k.ratio} options={[['square', 'Quadrada'], ['portrait', 'Vertical'], ['landscape', 'Horizontal']]} onChange={set('ratio')} id="cd-ratio" />
+      <Seg label="Ajuste da foto" value={k.fit} options={[['cover', 'Preencher'], ['contain', 'Inteira']]} onChange={set('fit')} id="cd-fit" />
+      <Seg label="Alinhamento do texto" value={k.align} options={[['left', 'Esquerda'], ['center', 'Centro']]} onChange={set('align')} id="cd-align" />
+      <RangeField label="Arredondamento" value={k.radius} min={0} max={32} onChange={set('radius')} id="cd-radius" />
+      <Seg label="Sombra" value={k.shadow} options={[['none', 'Nenhuma'], ['soft', 'Suave'], ['strong', 'Forte']]} onChange={set('shadow')} id="cd-shadow" />
+      <Seg label="Espaço interno" value={k.padding} options={[['compact', 'Pequeno'], ['normal', 'Normal'], ['roomy', 'Grande']]} onChange={set('padding')} id="cd-pad" />
+      <Seg label="Tamanho do nome" value={k.textSize} options={[['sm', 'Pequeno'], ['md', 'Médio'], ['lg', 'Grande']]} onChange={set('textSize')} id="cd-ts" />
+      <Seg label="Tamanho do preço" value={k.priceSize} options={[['sm', 'Pequeno'], ['md', 'Médio'], ['lg', 'Grande']]} onChange={set('priceSize')} id="cd-ps" />
+      <Check label="Borda no cartão" checked={k.border} onChange={set('border')} />
+      <Seg label="Estilo do botão" value={k.buttonStyle} options={[['solid', 'Cheio'], ['outline', 'Contorno'], ['soft', 'Suave']]} onChange={set('buttonStyle')} id="cd-bt" />
+      <Check label="Botão ocupa toda a largura" checked={k.buttonFull} onChange={set('buttonFull')} />
+      <Check label={'Escrever "a partir de" quando o preço varia'} checked={k.priceFrom} onChange={set('priceFrom')} />
+      <p className="muted small">O que aparece no cartão:</p>
+      <Check label="Foto" checked={k.showImage} onChange={set('showImage')} />
+      <Check label="Categoria" checked={k.showCategory} onChange={set('showCategory')} />
+      <Check label="Nome" checked={k.showName} onChange={set('showName')} />
+      <Check label="Descrição" checked={k.showDescription} onChange={set('showDescription')} />
+      <Check label="Preço" checked={k.showPrice} onChange={set('showPrice')} />
+      <Check label="Preços por quantidade" checked={k.showTiers} onChange={set('showTiers')} />
+      <Check label="Variações" checked={k.showVariations} onChange={set('showVariations')} />
+      <Check label="Botão" checked={k.showButton} onChange={set('showButton')} />
+      <Check label="Usar cores próprias no cartão" checked={custom} onChange={(on) => api.patchCatalog({ card: { ...k, bg: on ? '#ffffff' : '', text: on ? '#14202e' : '', accent: on ? doc.theme.primary : '' } }, 'cat:card:colors')} />
+      {custom && <>
+        <ColorField label="Fundo do cartão" value={k.bg || '#ffffff'} onChange={set('bg')} id="cd-bg" />
+        <ColorField label="Cor do texto" value={k.text || '#14202e'} onChange={set('text')} id="cd-text" />
+        <ColorField label="Cor de destaque (preço e botão)" value={k.accent || doc.theme.primary} onChange={set('accent')} id="cd-accent" />
+      </>}
+    </Section>
+  );
+}
+
 function CatalogSection({ doc, api, categories, meta }) {
   const c = doc.catalog;
   const set = (k) => (v) => api.patchCatalog({ [k]: v }, `cat:${k}`);
@@ -439,6 +478,7 @@ function CatalogSection({ doc, api, categories, meta }) {
       <RangeField label="Colunas no tablet" value={c.columns.tablet} min={1} max={6} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, tablet: v } }, 'cat:cols')} id="cc-t" />
       <RangeField label="Colunas no celular" value={c.columns.mobile} min={1} max={3} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, mobile: v } }, 'cat:cols')} id="cc-m" />
       <Seg label="Estilo do cartão" value={c.cardStyle} options={CARD_STYLES} onChange={set('cardStyle')} id="cc-style" />
+      <CardDesigner doc={doc} api={api} />
       <Check label="Mostrar busca" checked={c.showSearch} onChange={set('showSearch')} />
       <Check label="Mostrar filtro de categorias" checked={c.showCategories} onChange={set('showCategories')} />
       <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />

@@ -33,7 +33,13 @@ export const CARD_STYLES = [['soft', 'Suave'], ['flat', 'Reto'], ['outline', 'Co
 export const CATALOG_DISPLAY = [['category', 'Em ordem de categorias'], ['mixed', 'Misturados'], ['only', 'Somente uma categoria']];
 
 export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e9eef5', bgAngle: 135, bgAnimate: 'none' };
+export const CARD_DEFAULTS = () => ({
+  layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, bg: '', text: '', accent: '',
+  showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true,
+  shadow: 'soft', border: false, padding: 'normal', textSize: 'md', priceSize: 'md', buttonStyle: 'solid', buttonFull: true, priceFrom: true,
+});
 export const CATALOG_DEFAULTS = () => ({
+  card: CARD_DEFAULTS(),
   display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
   addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
   cartButtonLabel: '', cartButtonUrl: '',
@@ -111,7 +117,7 @@ export function normalizeDoc(raw, kindHint = 'site') {
     pixel: { meta: '', google: '', tiktok: '', ...(isObj(src.pixel) ? src.pixel : {}) },
     heights: { desktop: 700, tablet: 700, mobile: 700, ...(isObj(src.heights) ? src.heights : {}) },
     elements: (Array.isArray(src.elements) ? src.elements : []).slice(0, MAX_ELEMENTS).map((e) => fixElement(e, theme)).filter(Boolean),
-    ...(kind === 'catalog' ? { catalog: { ...CATALOG_DEFAULTS(), ...(isObj(src.catalog) ? src.catalog : {}), columns: { ...CATALOG_DEFAULTS().columns, ...(isObj(src.catalog?.columns) ? src.catalog.columns : {}) } } } : {}),
+    ...(kind === 'catalog' ? { catalog: { ...CATALOG_DEFAULTS(), ...(isObj(src.catalog) ? src.catalog : {}), card: { ...CARD_DEFAULTS(), ...(isObj(src.catalog?.card) ? src.catalog.card : {}) }, columns: { ...CATALOG_DEFAULTS().columns, ...(isObj(src.catalog?.columns) ? src.catalog.columns : {}) } } } : {}),
   };
 }
 

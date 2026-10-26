@@ -37,7 +37,7 @@ export default function PortfolioEditor() {
   const [name, setName] = useState('');
   const [saveState, setSaveState] = useState('saved');
   const [selectedId, setSelectedId] = useState(null);
-  const [device, setDevice] = useState('desktop');
+  const [device, setDevice] = useState('mobile');
   const [manualZoom, setManualZoom] = useState(null);
   const [avail, setAvail] = useState(900);
   const [preview, setPreview] = useState(false);
@@ -65,7 +65,7 @@ export default function PortfolioEditor() {
   const savedVersion = useRef(0);
   const saving = useRef(false);
   const selectedRef = useRef(null);
-  const deviceRef = useRef('desktop');
+  const deviceRef = useRef('mobile');
   const stageRef = useRef(null);
   const fileRef = useRef(null);
   const pendingAdd = useRef(null);

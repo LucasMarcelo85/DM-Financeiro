@@ -34,7 +34,7 @@ router.get('/portfolio', async (req, res) => {
   const doc = page.data || {};
   const out = {};
   const imgs = { select: { id: true, position: true, label: true, priceCents: true } };
-  const priceOptions = { select: { id: true, position: true, label: true, priceCents: true } };
+  const priceOptions = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true } };
   if (doc.v === 2 && page.kind === 'catalog') {
     // Catálogo digital: todos os produtos ativos + as formas de entrega (sem token e sem endereço de saída). Sem plano com catálogo = 404.
     const ctx = await loadCatalogOwner(owner.portfolioSlug);

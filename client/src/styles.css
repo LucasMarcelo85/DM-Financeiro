@@ -1038,6 +1038,27 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .cat-cart h1 { font-family: var(--hf); margin: 0.4rem 0 1rem; }
 .cat-cart h2 { font-family: var(--hf); font-size: 1.15rem; margin: 1.4rem 0 0.6rem; }
 .cat-back { border: 0; background: none; color: var(--p); font: 700 0.95rem var(--bf, system-ui); cursor: pointer; padding: 0.3rem 0; }
+.cat-steps { display: flex; gap: 0.3rem; margin: 0 0 1rem; padding: 0; list-style: none; }
+.cat-steps li { flex: 1; min-width: 0; }
+.cat-steps button { width: 100%; display: grid; justify-items: center; gap: 0.25rem; padding: 0.3rem 0; border: 0; background: none; color: inherit; font: 600 0.72rem var(--bf, system-ui); opacity: 0.5; cursor: default; }
+.cat-steps li.is-done button { cursor: pointer; opacity: 0.85; }
+.cat-steps li.is-on button { opacity: 1; }
+.cat-steps b { width: 1.8rem; height: 1.8rem; display: grid; place-items: center; border-radius: 50%; border: 2px solid var(--p); font-size: 0.8rem; }
+.cat-steps li.is-on b, .cat-steps li.is-done b { background: var(--p); color: var(--on-p, #fff); }
+.cat-nav { display: flex; gap: 0.6rem; } .cat-nav .cat-btn { flex: 1; }
+.cat-stepbar { height: 6px; border-radius: 99px; background: color-mix(in srgb, var(--tx) 12%, transparent); overflow: hidden; margin-top: -0.4rem; }
+.cat-stepbar span { display: block; height: 100%; background: var(--p); border-radius: 99px; transition: width .25s; }
+.cat-stephead { display: grid; gap: 0.1rem; margin: 0; } .cat-stephead strong { font-size: 1.05rem; } .cat-stephead span { opacity: 0.7; font-size: 0.9rem; }
+.cat-minisum { display: flex; justify-content: space-between; align-items: center; gap: 0.6rem; margin: 0; padding: 0.55rem 0.85rem; border-radius: 10px; background: color-mix(in srgb, var(--p) 10%, transparent); font-weight: 600; font-size: 0.9rem; }
+.cat-minisum button { border: 0; background: none; color: var(--p); font: 700 0.85rem var(--bf, system-ui); cursor: pointer; text-decoration: underline; }
+.cat-type-tag { justify-self: start; margin-top: 0.2rem; padding: 0.1rem 0.5rem; border-radius: 99px; background: var(--p); color: var(--on-p, #fff); font: 700 0.7rem var(--bf, system-ui); font-style: normal; }
+@media (max-width: 640px) {
+  .cat-cart .cat-nav { position: sticky; bottom: 0; z-index: 5; margin: 0 -1rem; padding: 0.7rem 1rem calc(0.7rem + env(safe-area-inset-bottom)); background: var(--bg); box-shadow: 0 -6px 18px rgba(20, 32, 46, .12); }
+}
+.cat-review { display: grid; gap: 0.6rem; margin: 0; }
+.cat-review div { padding: 0.7rem 0.85rem; border: 1px solid color-mix(in srgb, var(--tx) 15%, transparent); border-radius: 10px; }
+.cat-review dt { font-size: 0.72rem; font-weight: 700; text-transform: uppercase; opacity: 0.6; } .cat-review dd { margin: 0.15rem 0 0; overflow-wrap: anywhere; }
+.cat-tier-hint { color: var(--p); font-weight: 700; }
 .cat-btn-custom { width: auto; margin: 0 0 0.9rem; padding: 0.65rem 1rem; font-size: 0.9rem; }
 .cat-cart { max-width: 46rem; }
 .cat-form { display: grid; gap: 1rem; }

@@ -422,6 +422,29 @@ function cleanDocV2(raw, kindHint) {
     const cols = isObj(c.columns) ? c.columns : {};
     doc.catalog = {
       display: pick(c.display, CAT_DISPLAY, 'category'), onlyCategory: line(c.onlyCategory, 60),
+      card: (() => {
+        const k = isObj(c.card) ? c.card : {};
+        const optColor = (v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : '');
+        return {
+          layout: pick(k.layout, new Set(['vertical', 'horizontal']), 'vertical'),
+          ratio: pick(k.ratio, new Set(['square', 'portrait', 'landscape']), 'square'),
+          fit: pick(k.fit, new Set(['cover', 'contain']), 'cover'),
+          align: pick(k.align, new Set(['left', 'center']), 'left'),
+          radius: Math.round(num(k.radius, 0, 32, 14)),
+          bg: optColor(k.bg), text: optColor(k.text), accent: optColor(k.accent),
+          showImage: bool(k.showImage, true), showCategory: bool(k.showCategory, true), showName: bool(k.showName, true),
+          showDescription: bool(k.showDescription, false), showPrice: bool(k.showPrice, true), showTiers: bool(k.showTiers, false),
+          showVariations: bool(k.showVariations, true), showButton: bool(k.showButton, true),
+          shadow: pick(k.shadow, new Set(['none', 'soft', 'strong']), 'soft'),
+          border: bool(k.border, false),
+          padding: pick(k.padding, new Set(['compact', 'normal', 'roomy']), 'normal'),
+          textSize: pick(k.textSize, new Set(['sm', 'md', 'lg']), 'md'),
+          priceSize: pick(k.priceSize, new Set(['sm', 'md', 'lg']), 'md'),
+          buttonStyle: pick(k.buttonStyle, new Set(['solid', 'outline', 'soft']), 'solid'),
+          buttonFull: bool(k.buttonFull, true),
+          priceFrom: bool(k.priceFrom, true),
+        };
+      })(),
       columns: { desktop: Math.round(num(cols.desktop, 1, 6, 4)), tablet: Math.round(num(cols.tablet, 1, 6, 3)), mobile: Math.round(num(cols.mobile, 1, 3, 2)) },
       showSearch: bool(c.showSearch, true), showCategories: bool(c.showCategories, true), cardStyle: pick(c.cardStyle, CARD_STYLE, 'soft'),
       addLabel: line(c.addLabel, 30) || 'Adicionar', cartTitle: line(c.cartTitle, 60) || 'Seu carrinho', checkoutNote: str(c.checkoutNote, 300),

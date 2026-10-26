@@ -199,34 +199,44 @@ function VideoView({ el, mode }) {
   );
 }
 
-export function ProductCard({ p, cardStyle = 'soft', price = true, action }) {
+export function ProductCard({ p, cardStyle = 'soft', price = true, action, card }) {
+  const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
   const img = p.images[0];
-  const firstTier = [...(p.priceOptions || [])]
-    .filter((option) => option.priceCents !== null)
-    .sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1))[0];
+  const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null).sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1));
   const imagePrice = (p.images || []).filter((image) => image.priceCents !== null).sort((a, b) => a.priceCents - b.priceCents)[0];
   const displayedPrice = p.priceCents > 0
     ? { cents: p.priceCents, label: '' }
     : imagePrice
-      ? { cents: imagePrice.priceCents, label: 'a partir de ' }
-      : firstTier
-        ? { cents: firstTier.priceCents, label: `a partir de ${firstTier.minQuantity || 1} un. · ` }
+      ? { cents: imagePrice.priceCents, label: k.priceFrom === false ? '' : 'a partir de ' }
+      : tiers[0]
+        ? { cents: tiers[0].priceCents, label: k.priceFrom === false ? '' : `a partir de ${tiers[0].minQuantity || 1} un. · ` }
         : null;
+  const style = {
+    '--card-r': `${k.radius}px`,
+    ...(k.bg ? { background: k.bg } : {}), ...(k.text ? { color: k.text } : {}), ...(k.accent ? { '--p': k.accent } : {}),
+  };
+  const mods = [k.shadow && `sh-${k.shadow}`, k.border && 'has-border', k.padding && `pad-${k.padding}`, k.textSize && `ts-${k.textSize}`, k.priceSize && `ps-${k.priceSize}`, k.buttonStyle && `bt-${k.buttonStyle}`, k.buttonFull === false && 'bt-auto'].filter(Boolean).join(' ');
   return (
-    <div className={`pv-card cs-${cardStyle}`}>
-      <div className="pv-card-img">
-        {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" />}
-        {p.images.length > 1 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
-      </div>
+    <div className={`pv-card cs-${cardStyle} is-${k.layout} ratio-${k.ratio} fit-${k.fit} al-${k.align} ${mods}`} style={style}>
+      {k.showImage && (
+        <div className="pv-card-img">
+          {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" />}
+          {k.showVariations && p.images.length > 1 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
+        </div>
+      )}
       <div className="pv-card-body">
-        <span className="pv-card-cat">{p.category}</span>
-        <span className="pv-card-name">{p.name}</span>
-        {price && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
-        {action}
+        {k.showCategory && <span className="pv-card-cat">{p.category}</span>}
+        {k.showName && <span className="pv-card-name">{p.name}</span>}
+        {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
+        {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
+        {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} a partir de {t.minQuantity || 1} un.</small>)}</span>}
+        {k.showVariations && p.images.length > 1 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
+        {k.showButton && action}
       </div>
     </div>
   );
 }
+
 export const minPrice = (p) => {
   const values = [
     ...(p.priceCents > 0 ? [p.priceCents] : []),
