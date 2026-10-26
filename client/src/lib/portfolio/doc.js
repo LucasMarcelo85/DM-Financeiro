@@ -106,7 +106,7 @@ function fullWidthBoxes(el, boxOver) {
 
 export const blankDoc = (kind = 'site') => ({
   v: 2, kind, theme: { ...THEME_DEFAULTS }, seo: { title: '', description: '' }, pixel: { meta: '', google: '', tiktok: '' },
-  heights: { desktop: 700, tablet: 700, mobile: 700 }, elements: [], ...(kind === 'catalog' ? { catalog: CATALOG_DEFAULTS() } : {}),
+  heights: { desktop: 700, tablet: 700, mobile: 700 }, manual: { tablet: false, mobile: false }, elements: [], ...(kind === 'catalog' ? { catalog: CATALOG_DEFAULTS() } : {}),
 });
 
 // ---------------------------------------------------------------- completar o que veio do banco
@@ -124,8 +124,18 @@ function fixElement(raw, theme) {
 }
 
 export function normalizeDoc(raw, kindHint = 'site') {
-  return withCatalogElements(normalizeBase(raw, kindHint));
+  return syncDevices(withCatalogElements(normalizeBase(raw, kindHint)));
 }
+
+// Telas que o usuário ainda não ajustou à mão (tablet e celular) acompanham o computador, na mesma proporção.
+export function syncDevices(doc) {
+  if (doc.kind === 'catalog') return doc;
+  let out = doc;
+  for (const dv of ['tablet', 'mobile']) if (!out.manual?.[dv]) out = adaptDevice(out, 'desktop', dv);
+  return out;
+}
+
+export const markManual = (doc, device) => (device === 'desktop' || doc.manual?.[device] ? doc : { ...doc, manual: { ...doc.manual, [device]: true } });
 
 // Páginas de catálogo antigas mostravam busca e produtos automaticamente no fim da página.
 // Agora são elementos: na primeira abertura eles são colocados no fim (o usuário pode mover ou apagar) e a página é marcada como convertida.
@@ -151,6 +161,8 @@ function normalizeBase(raw, kindHint = 'site') {
     seo: { title: '', description: '', ...(isObj(src.seo) ? src.seo : {}) },
     pixel: { meta: '', google: '', tiktok: '', ...(isObj(src.pixel) ? src.pixel : {}) },
     heights: { desktop: 700, tablet: 700, mobile: 700, ...(isObj(src.heights) ? src.heights : {}) },
+    // Páginas salvas antes deste recurso não trazem o campo: mantêm o que já foi desenhado.
+    manual: isObj(src.manual) ? { tablet: Boolean(src.manual.tablet), mobile: Boolean(src.manual.mobile) } : { tablet: true, mobile: true },
     elements: (Array.isArray(src.elements) ? src.elements : []).slice(0, MAX_ELEMENTS).map((e) => fixElement(e, theme)).filter(Boolean),
     ...(kind === 'catalog' ? { catalog: { ...CATALOG_DEFAULTS(), ...(isObj(src.catalog) ? src.catalog : {}), card: { ...CARD_DEFAULTS(), ...(isObj(src.catalog?.card) ? src.catalog.card : {}) }, columns: { ...CATALOG_DEFAULTS().columns, ...(isObj(src.catalog?.columns) ? src.catalog.columns : {}) } } } : {}),
   };
@@ -396,7 +408,7 @@ export function convertV1(raw, kind = 'site') {
         y += clamp(b.height || 32, 4, 400);
       }
     });
-    doc.heights[device] = y + 40;
   }
+  doc.manual = { tablet: true, mobile: true };
   return doc;
 }

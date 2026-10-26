@@ -937,6 +937,8 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .pe-readout { position: absolute; left: 50%; translate: -50% 0; white-space: nowrap; background: #14202e; color: #fff; border-radius: 6px; font-family: system-ui, sans-serif; pointer-events: none; }
 .pe-empty-hint { max-width: 32rem; margin: 1.2rem auto 0; text-align: center; color: #5b6b7d; font-size: 0.9rem; }
 .pe-zoom { display: inline-flex; align-items: center; gap: 2px; }
+.pe-bgpick { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; cursor: pointer; }
+.pe-bgpick input { width: 30px; height: 30px; padding: 0; border: 1px solid var(--line, #d5dbe3); border-radius: 8px; background: none; cursor: pointer; }
 .pe-zoom-val { min-width: 3.1rem; border: 0; background: transparent; font: inherit; font-weight: 700; font-size: 0.85rem; cursor: pointer; color: var(--ink); }
 @media (hover: none) { .pe-stage-canvas .pv-el.is-selected, .pe-handle { touch-action: none; } }
 @media (max-width: 64rem) {

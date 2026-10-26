@@ -12,7 +12,7 @@ import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
   DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, adaptDevice, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc,
-  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, stackDevice,
+  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, stackDevice, markManual, syncDevices,
 } from '../lib/portfolio/doc.js';
 import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
@@ -272,7 +272,7 @@ export default function PortfolioEditor() {
   }, [commit]);
 
   const setBox = useCallback((elId, patch, key) => {
-    commit(patchBox(docRef.current, elId, deviceRef.current, patch), `${elId}:${deviceRef.current}:${key || Object.keys(patch).join(',')}`);
+    commit(markManual(patchBox(docRef.current, elId, deviceRef.current, patch), deviceRef.current), `${elId}:${deviceRef.current}:${key || Object.keys(patch).join(',')}`);
   }, [commit]);
 
   function act(action) {
@@ -288,7 +288,7 @@ export default function PortfolioEditor() {
     else if (action.startsWith('align:')) commit(alignElement(d, sel, deviceRef.current, action.slice(6)));
     else if (action === 'copy-from-desktop') {
       const el = findElement(d, sel);
-      if (el) commit(patchBox(d, sel, deviceRef.current, scaleBox(boxOf(el, 'desktop'), 'desktop', deviceRef.current, el.t)));
+      if (el) commit(markManual(patchBox(d, sel, deviceRef.current, scaleBox(boxOf(el, 'desktop'), 'desktop', deviceRef.current, el.t)), deviceRef.current));
     }
   }
 
@@ -311,8 +311,8 @@ export default function PortfolioEditor() {
     },
     layout: (how) => {
       const d = docRef.current; const dv = deviceRef.current;
-      commit(how === 'adapt' ? adaptDevice(d, 'desktop', dv) : stackDevice(d, dv));
-      toast(how === 'adapt' ? 'Layout ajustado a partir do computador.' : 'Elementos organizados em coluna.');
+      commit(how === 'adapt' ? { ...adaptDevice(d, 'desktop', dv), manual: { ...d.manual, [dv]: false } } : markManual(stackDevice(d, dv), dv));
+      toast(how === 'adapt' ? 'Layout ajustado a partir do computador. Ele volta a acompanhar o computador.' : 'Elementos organizados em coluna.');
     },
     act, toast, saveSlug, copyLink,
     error: (m) => toast(m, 'error'),
@@ -370,11 +370,15 @@ export default function PortfolioEditor() {
         <span className="ce-grow" />
         <div className="seg seg-view pe-device-seg" style={{ '--n': 3 }} role="radiogroup" aria-label="Desenhar para qual tela">
           {DEVICES.map((d) => (
-            <button key={d.id} role="radio" aria-checked={device === d.id} className={device === d.id ? 'is-on' : ''} onClick={() => { setDevice(d.id); setManualZoom(null); }} title={`Desenhar a versão para ${d.label.toLowerCase()} (${d.w}px)`}>
+            <button key={d.id} role="radio" aria-checked={device === d.id} className={device === d.id ? 'is-on' : ''} onClick={() => { if (d.id !== 'desktop' && docRef.current.kind !== 'catalog') commit(syncDevices(docRef.current)); setDevice(d.id); setManualZoom(null); }} title={`Desenhar a versão para ${d.label.toLowerCase()} (${d.w}px)`}>
               <EIcon name={DEVICE_ICON[d.id]} size={16} /> <span className="ce-lbl">{d.label}</span>
             </button>
           ))}
         </div>
+        <label className="pe-bgpick" title="Cor de fundo do site">
+          <span className="ce-lbl">Fundo</span>
+          <input type="color" value={doc.theme.bg} onChange={(e) => inspectorApi.patchTheme({ bg: e.target.value }, 'theme:bg')} aria-label="Cor de fundo do site" />
+        </label>
         <span className="pe-zoom" role="group" aria-label="Zoom">
           <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.max(0, zoomIdx - 1)])} disabled={zoomIdx === 0} title="Diminuir" aria-label="Diminuir zoom"><EIcon name="zoom-out" size={16} /></button>
           <button type="button" className="pe-zoom-val" onClick={() => setManualZoom(null)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>

@@ -443,6 +443,8 @@ function cleanDocV2(raw, kindHint) {
       tiktok: typeof px.tiktok === 'string' && TIKTOK_ID.test(px.tiktok.trim()) ? px.tiktok.trim() : '',
     },
     heights: { desktop: num(h.desktop, 200, 30000, 700), tablet: num(h.tablet, 200, 30000, 700), mobile: num(h.mobile, 200, 30000, 700) },
+    // true = o usuário já ajustou à mão aquela tela; false = ela acompanha o desenho do computador.
+    manual: isObj(raw.manual) ? { tablet: bool(raw.manual.tablet, true), mobile: bool(raw.manual.mobile, true) } : { tablet: true, mobile: true },
     elements: [],
   };
   if (kind === 'catalog') {

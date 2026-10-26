@@ -25,7 +25,7 @@ export const TEMPLATES = [...SITE_TEMPLATES, ...CATALOG_TEMPLATES];
 function finish(doc) {
   let d = adaptDevice(doc, 'desktop', 'tablet');
   d = stackDevice(d, 'mobile');
-  return d;
+  return { ...d, manual: { tablet: true, mobile: true } };
 }
 
 // `name`: nome da pessoa ou empresa (vem do cadastro) para já aparecer na página.
