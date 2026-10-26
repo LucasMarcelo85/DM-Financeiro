@@ -102,6 +102,9 @@ model User {
   orderCustomerProfiles OrderCustomerProfile[]
   catalogSettings CatalogSettings?
   productPreferences ProductPreferences?
+  addons             UserAddon[]
+  stores             Store[]
+  apiTokens          ApiToken[]
 
   @@map("users")
 }
@@ -147,6 +150,9 @@ model Payment {
   period         String        @default("mensal")
   days           Int           @default(30)
   status         PaymentStatus @default(pending)
+  // 'plan' ou 'addon'. Em 'addon', `items` guarda [{ resource, units, addonId? }] (addonId = renovação de uma compra existente).
+  kind           String        @default("plan")
+  items          Json?
   slug           String?
   transactionNsu String?       @map("transaction_nsu")
   receiptUrl     String?       @map("receipt_url")
@@ -299,6 +305,7 @@ model Contract {
 model Portfolio {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
+  storeId   Int?     @map("store_id") // null = portfólio da conta; preenchido = site de uma loja
   name      String
   slug      String
   published Boolean  @default(false)
@@ -469,10 +476,38 @@ model PlanSetting {
   portfolios     Int
   catalogProducts Int     @default(0) @map("catalog_products") // 0 = sem catálogo digital nem produtos
   auditSend      Boolean  @default(false) @map("audit_send")
-  visibleTabs    String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos"]) @map("visible_tabs") // abas do menu liberadas no plano
+  stores         Int      @default(0) // lojas que o plano permite criar (0 = sem a função "Criar loja")
+  dmCredit       Boolean  @default(true) @map("dm_credit") // mostra "Desenvolvido por Solução DM" no rodapé dos portfólios
+  visibleTabs    String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs") // abas do menu liberadas no plano
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("plan_settings")
+}
+
+// Limites extras vendáveis (um por recurso). O admin define o tamanho do pacote e o valor mensal de cada pacote.
+model AddonSetting {
+  resource   String  @id // instances | auditInstances | contracts | portfolios | catalogProducts
+  enabled    Boolean @default(true)
+  packUnits  Int     @default(1) @map("pack_units") // quantas unidades vêm em cada pacote
+  priceCents Int     @default(0) @map("price_cents") // valor MENSAL de cada pacote
+  maxPacks   Int     @default(20) @map("max_packs") // máximo de pacotes por compra
+
+  @@map("addon_settings")
+}
+
+// Limite extra comprado por um usuário. Cada compra vale por 30 dias e é renovada à parte; vencida, deixa de somar ao plano.
+model UserAddon {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  resource  String
+  units     Int
+  paidUntil DateTime @map("paid_until")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("user_addons")
 }
 
 // Configuração do teste grátis (singleton): dias e limites temporários para novos usuários.
@@ -485,7 +520,7 @@ model TrialSetting {
   portfolios      Int      @default(1)
   catalogProducts Int      @default(0) @map("catalog_products")
   auditSend       Boolean  @default(false) @map("audit_send")
-  visibleTabs     String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos"]) @map("visible_tabs")
+  visibleTabs     String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("trial_settings")
@@ -513,6 +548,7 @@ model VerificationCode {
 model Product {
   id          Int      @id @default(autoincrement())
   userId      Int      @map("user_id")
+  storeId     Int?     @map("store_id") // null = loja principal (a conta)
   kind        String   @default("produto") // 'produto' | 'servico'
   name        String
   category    String   @default("")
@@ -527,6 +563,7 @@ model Product {
   priceOptions ProductPriceOption[]
 
   @@index([userId, category])
+  @@index([storeId])
   @@map("products")
 }
 
@@ -588,6 +625,7 @@ model CatalogSettings {
 model Order {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
+  storeId       Int?     @map("store_id")
   code          String
   customerName  String   @map("customer_name")
   customerPhone String   @map("customer_phone")
@@ -607,7 +645,61 @@ model Order {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([userId, deletedAt, createdAt])
+  @@index([storeId])
   @@map("orders")
+}
+
+// Loja extra da conta (função "Criar loja"): site próprio (endereço e domínio), produtos e pedidos separados e token de API.
+model Store {
+  id                     Int       @id @default(autoincrement())
+  userId                 Int       @map("user_id")
+  name                   String
+  slug                   String    @unique // endereço público: dominio/<slug>
+  customDomain           String?   @unique @map("custom_domain")
+  customDomainVerifiedAt DateTime? @map("custom_domain_verified_at")
+  config                 Json      @default("{}") // configuração do catálogo (entregas, frete) desta loja
+  appEnabled             Boolean   @default(false) @map("app_enabled")
+  appName                String?   @map("app_name")
+  appColor               String?   @map("app_color")
+  appUsers               StoreUser[]
+  createdAt              DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("stores")
+}
+
+// Acesso do lojista ao aplicativo da loja (cadastra produtos e vê pedidos só dessa loja).
+model StoreUser {
+  id           Int      @id @default(autoincrement())
+  storeId      Int      @map("store_id")
+  name         String
+  login        String
+  passwordHash String   @map("password_hash")
+  active       Boolean  @default(true)
+  createdAt    DateTime @default(now()) @map("created_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([storeId, login])
+  @@map("store_users")
+}
+
+model ApiToken {
+  id         Int       @id @default(autoincrement())
+  userId     Int       @map("user_id")
+  storeId    Int?      @map("store_id") // null = loja principal
+  name       String
+  prefix     String
+  tokenHash  String    @unique @map("token_hash")
+  lastUsedAt DateTime? @map("last_used_at")
+  createdAt  DateTime  @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("api_tokens")
 }
 
 model OrderCustomerProfile {

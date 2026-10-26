@@ -1,13 +1,14 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { config } from '../config.js';
-import { isTrialUser, limitsFor } from '../plans.js';
+import { limitsFor } from '../plans.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
 import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { KINDS, cleanPortfolioDoc, cleanPortfolioName, emptyPortfolioDoc } from '../utils/portfolio.js';
 import { isValidSlug, pickSlug, slugify } from '../utils/slug.js';
+import { storeScope } from '../utils/store.js';
 
 // Portfólio do usuário logado: páginas públicas personalizáveis.
 // Endereço: dominio/<portfolioSlug do usuário> = página principal; dominio/<portfolioSlug>/<slug da página> = as demais.
@@ -31,7 +32,14 @@ const domainDTO = (user) => ({
   serverIp: config.serverIp,
   appHost,
 });
-const summarySelect = { id: true, name: true, slug: true, published: true, isMain: true, kind: true, createdAt: true, updatedAt: true };
+const summarySelect = { id: true, storeId: true, name: true, slug: true, published: true, isMain: true, kind: true, createdAt: true, updatedAt: true };
+
+// Endereço e domínio que valem para uma página: os da loja extra (quando ela é de uma loja) ou os da conta.
+async function addressFor(user, storeId) {
+  if (!storeId) return { userSlug: user.portfolioSlug || (await suggestUserSlug(user)), owner: user };
+  const store = await prisma.store.findUnique({ where: { id: storeId } });
+  return { userSlug: store.slug, owner: store };
+}
 
 async function owned(req, withData = false) {
   const id = Number(req.params.id);
@@ -47,7 +55,8 @@ async function owned(req, withData = false) {
 async function suggestUserSlug(user) {
   const base = slugify(user.name) || `usuario-${user.id}`;
   const rows = await prisma.user.findMany({ where: { portfolioSlug: { startsWith: base } }, select: { portfolioSlug: true } });
-  return pickSlug(base, new Set(rows.map((r) => r.portfolioSlug)), { reserved: true });
+  const stores = await prisma.store.findMany({ where: { slug: { startsWith: base } }, select: { slug: true } });
+  return pickSlug(base, new Set([...rows.map((r) => r.portfolioSlug), ...stores.map((s) => s.slug)]), { reserved: true });
 }
 
 // Cria o endereço do usuário na primeira página e o mantém para sempre (links já enviados não quebram).
@@ -74,10 +83,11 @@ async function freePageSlug(userId, base) {
 }
 
 // Cada plano tem um número máximo de páginas. Devolve quantas o usuário já tem.
-async function assertCanCreate(user) {
+async function assertCanCreate(user, storeId = null) {
   const limit = limitsFor(user).portfolios;
-  const count = await prisma.portfolio.count({ where: { userId: user.id } });
-  if (count >= limit) {
+  const total = await prisma.portfolio.count({ where: { userId: user.id } });
+  const count = await prisma.portfolio.count({ where: { userId: user.id, storeId } });
+  if (total >= limit) {
     throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? 'página de portfólio' : 'páginas de portfólio'}. Exclua uma página ou mude de plano para criar mais.`, 'LIMIT_REACHED');
   }
   return count;
@@ -90,12 +100,12 @@ function assertKindAllowed(user, kind) {
   }
 }
 
-async function createPage(user, { name, data, count, kind = 'site', published = false }) {
-  const userSlug = await ensureUserSlug(user);
+async function createPage(user, { name, data, count, kind = 'site', published = false, storeId = null }) {
+  const userSlug = storeId ? (await prisma.store.findUnique({ where: { id: storeId }, select: { slug: true } })).slug : await ensureUserSlug(user);
   for (let attempt = 0; attempt < 3; attempt++) {
     const slug = await freePageSlug(user.id, name);
     try {
-      const p = await prisma.portfolio.create({ data: { userId: user.id, name, slug, data, kind, published, isMain: count === 0 } });
+      const p = await prisma.portfolio.create({ data: { userId: user.id, storeId, name, slug, data, kind, published, isMain: count === 0 } });
       return { page: p, userSlug };
     } catch (e) {
       if (e?.code !== 'P2002' || attempt === 2) throw e; // outro salvamento pegou o mesmo endereço: tenta de novo
@@ -107,13 +117,13 @@ async function createPage(user, { name, data, count, kind = 'site', published = 
 // ---------- Rotas ----------
 // A lista não traz o conteúdo (pode ter imagens pesadas): só o resumo de cada página.
 router.get('/', async (req, res) => {
-  const rows = await prisma.portfolio.findMany({ where: { userId: req.user.id }, orderBy: [{ isMain: 'desc' }, { updatedAt: 'desc' }], select: summarySelect });
-  const userSlug = req.user.portfolioSlug || (await suggestUserSlug(req.user));
-  res.json({ portfolios: rows.map((p) => summaryDTO(p, userSlug, req.user)), limit: limitsFor(req.user).portfolios, catalogProducts: limitsFor(req.user).catalogProducts, userSlug, domain: domainDTO(req.user) });
+  const storeId = await storeScope(req);
+  const rows = await prisma.portfolio.findMany({ where: { userId: req.user.id, storeId }, orderBy: [{ isMain: 'desc' }, { updatedAt: 'desc' }], select: summarySelect });
+  const { userSlug, owner } = await addressFor(req.user, storeId);
+  res.json({ portfolios: rows.map((p) => summaryDTO(p, userSlug, owner)), limit: limitsFor(req.user).portfolios, used: await prisma.portfolio.count({ where: { userId: req.user.id } }), catalogProducts: limitsFor(req.user).catalogProducts, userSlug, domain: domainDTO(owner) });
 });
 
 router.put('/domain', async (req, res) => {
-  if (isTrialUser(req.user)) throw new AppError(403, 'Domínio próprio está bloqueado no teste grátis. Adquira um plano para liberar este recurso.', 'TRIAL_FEATURE_LOCKED');
   const raw = String(req.body?.domain ?? '').trim();
   const old = req.user.customDomain;
 
@@ -175,7 +185,6 @@ router.put('/domain', async (req, res) => {
 });
 
 router.post('/domain/check', async (req, res) => {
-  if (isTrialUser(req.user)) throw new AppError(403, 'Domínio próprio está bloqueado no teste grátis. Adquira um plano para liberar este recurso.', 'TRIAL_FEATURE_LOCKED');
   const domain = req.user.customDomain;
   if (!domain) throw new AppError(400, 'Cadastre um domínio primeiro.');
   try {
@@ -195,16 +204,18 @@ router.post('/domain/check', async (req, res) => {
 
 router.get('/:id', async (req, res) => {
   const p = await owned(req, true);
-  res.json({ portfolio: fullDTO(p, req.user.portfolioSlug, req.user) });
+  const { userSlug, owner } = await addressFor(req.user, p.storeId);
+  res.json({ portfolio: fullDTO(p, userSlug, owner) });
 });
 
 router.post('/', async (req, res) => {
-  const count = await assertCanCreate(req.user);
+  const storeId = await storeScope(req);
+  const count = await assertCanCreate(req.user, storeId);
   const kind = KINDS.has(req.body?.kind) ? req.body.kind : 'site';
   assertKindAllowed(req.user, kind);
   const name = cleanPortfolioName(req.body?.name);
   const data = req.body?.data === undefined ? emptyPortfolioDoc(kind) : cleanPortfolioDoc(req.body.data, kind);
-  const { page, userSlug } = await createPage(req.user, { name, data, count, kind });
+  const { page, userSlug } = await createPage(req.user, { name, data, count, kind, storeId });
   res.status(201).json({ portfolio: fullDTO(page, userSlug, req.user) });
 });
 
@@ -226,7 +237,8 @@ router.patch('/:id', async (req, res) => {
   if (!Object.keys(patch).length) throw new AppError(400, 'Nada para atualizar.');
   try {
     const p = await prisma.portfolio.update({ where: { id: current.id }, data: patch, select: summarySelect });
-    res.json({ portfolio: summaryDTO(p, req.user.portfolioSlug, req.user) });
+    const { userSlug, owner } = await addressFor(req.user, p.storeId);
+    res.json({ portfolio: summaryDTO(p, userSlug, owner) });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Você já tem outra página com esse endereço. Escolha outro.');
     throw e;
@@ -235,10 +247,10 @@ router.patch('/:id', async (req, res) => {
 
 router.post('/:id/duplicate', async (req, res) => {
   const current = await owned(req, true);
-  const count = await assertCanCreate(req.user);
+  const count = await assertCanCreate(req.user, current.storeId ?? null);
   assertKindAllowed(req.user, current.kind);
   const name = `${current.name} (cópia)`.slice(0, 120);
-  const { page, userSlug } = await createPage(req.user, { name, data: current.data, count, kind: current.kind });
+  const { page, userSlug } = await createPage(req.user, { name, data: current.data, count, kind: current.kind, storeId: current.storeId ?? null });
   res.status(201).json({ portfolio: summaryDTO(page, userSlug, req.user) });
 });
 
@@ -246,7 +258,7 @@ router.post('/:id/duplicate', async (req, res) => {
 router.post('/:id/main', async (req, res) => {
   const current = await owned(req);
   await prisma.$transaction([
-    prisma.portfolio.updateMany({ where: { userId: req.user.id }, data: { isMain: false } }),
+    prisma.portfolio.updateMany({ where: { userId: req.user.id, storeId: current.storeId ?? null }, data: { isMain: false } }),
     prisma.portfolio.update({ where: { id: current.id }, data: { isMain: true } }),
   ]);
   res.json({ ok: true });
@@ -258,7 +270,7 @@ router.delete('/:id', async (req, res) => {
     await tx.portfolio.delete({ where: { id: p.id } });
     if (p.isMain) {
       // Sobrou alguma página? A mais antiga vira a principal.
-      const next = await tx.portfolio.findFirst({ where: { userId: req.user.id }, orderBy: { createdAt: 'asc' }, select: { id: true } });
+      const next = await tx.portfolio.findFirst({ where: { userId: req.user.id, storeId: p.storeId ?? null }, orderBy: { createdAt: 'asc' }, select: { id: true } });
       if (next) await tx.portfolio.update({ where: { id: next.id }, data: { isMain: true } });
     }
   });

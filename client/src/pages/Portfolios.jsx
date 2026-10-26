@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, getActiveStore } from '../api.js';
+import BuyMore from '../components/BuyMore.jsx';
+import StoreBar from '../components/StoreBar.jsx';
+import StoreAppModal from '../components/StoreAppModal.jsx';
 import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
@@ -50,6 +53,8 @@ function DomainCard({ domain, onChange, locked }) {
   const [value, setValue] = useState(domain.name);
   const [busy, setBusy] = useState('');
   useEffect(() => setValue(domain.name), [domain.name]);
+  const store = getActiveStore();
+  const prefix = store ? `/stores/${store}` : '/portfolios';
   const saved = Boolean(domain.name);
   const changed = value.trim() !== domain.name;
 
@@ -66,10 +71,10 @@ function DomainCard({ domain, onChange, locked }) {
     }
   }
 
-  const save = () => run('save', () => api.put('/portfolios/domain', { domain: value }), (r) =>
+  const save = () => run('save', () => api.put(`${prefix}/domain`, { domain: value }), (r) =>
     r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Domínio salvo. Falta apontar o DNS (veja abaixo).');
-  const remove = () => run('remove', () => api.put('/portfolios/domain', { domain: '' }), () => 'Domínio removido.');
-  const check = () => run('check', () => api.post('/portfolios/domain/check'), (r) =>
+  const remove = () => run('remove', () => api.put(`${prefix}/domain`, { domain: '' }), () => 'Domínio removido.');
+  const check = () => run('check', () => api.post(`${prefix}/domain/check`), (r) =>
     r.domain.verified ? 'Domínio ativo! Seu site já abre nele.' : 'Ainda não encontrei o apontamento. O DNS pode levar de minutos a algumas horas.');
 
   return (
@@ -110,6 +115,7 @@ export default function Portfolios() {
   const { user } = useAuth();
   const [data, setData] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [appOpen, setAppOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
   const [sharing, setSharing] = useState(null);
@@ -120,7 +126,7 @@ export default function Portfolios() {
   const load = useCallback(() => api.get('/portfolios').then((r) => alive.current && setData(r)).catch((e) => toast(e.message, 'error')), [toast]);
   useEffect(() => { load(); }, [load]);
 
-  const count = data?.portfolios.length ?? 0;
+  const count = data?.used ?? data?.portfolios.length ?? 0;
   const full = data && count >= data.limit;
 
   async function create(key, name) {
@@ -172,12 +178,17 @@ export default function Portfolios() {
             {data ? ` Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}
           </p>
         </div>
+        {getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
         <button className="btn btn-primary" onClick={() => setNewOpen(true)} disabled={!data || full || !!busy}><Icon name="plus" size={18} /> Nova página</button>
       </header>
 
+      <StoreBar manage />
+      {appOpen && <StoreAppModal storeId={getActiveStore()} onClose={() => setAppOpen(false)} />}
+
       {full && (
         <div className="banner banner-amber">
-          <div><strong>Você usou todas as páginas do seu plano.</strong><span>Exclua uma página ou mude de plano para criar mais.</span></div>
+          <div><strong>Você usou todas as páginas do seu plano.</strong><span>Exclua uma página, adquira limite extra ou mude de plano para criar mais.</span></div>
+          <BuyMore resource="portfolios" />
           <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>
         </div>
       )}
@@ -192,14 +203,15 @@ export default function Portfolios() {
           </div>
         </div>
       )}
-      {data && <DomainCard domain={data.domain} onChange={load} locked={user.access?.status === 'trial'} />}
+      {data && <DomainCard domain={data.domain} onChange={load} locked={false} />}
 
       {data === null ? <p className="muted">Carregando...</p> : count === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="globe" size={32} /></span>
           <h2>Crie sua primeira página</h2>
           <p>Arraste textos, imagens, ícones, botões e formas para onde quiser, com desenho próprio para computador, tablet e celular. Depois copie o link e envie para quem quiser.</p>
-          <button className="btn btn-primary" onClick={() => setNewOpen(true)}>Nova página</button>
+          {getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
+        <button className="btn btn-primary" onClick={() => setNewOpen(true)}>Nova página</button>
         </section>
       ) : (
         <ul className="ct-grid">

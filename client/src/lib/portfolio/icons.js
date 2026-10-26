@@ -5,10 +5,13 @@ import {
   FiMessageCircle, FiMoon, FiMusic, FiPackage, FiPercent, FiPhone, FiPieChart, FiPlay, FiPlus, FiRefreshCw,
   FiSearch, FiSettings, FiShield, FiShoppingBag, FiShoppingCart, FiSliders, FiSmile, FiStar, FiSun,
   FiTag, FiThumbsUp, FiTool, FiTrendingUp, FiTruck, FiUser, FiUsers, FiWatch, FiX, FiZap,
+  FiAtSign, FiSmartphone, FiPhoneCall, FiPhoneIncoming, FiHeadphones, FiVideo, FiShare2, FiSend, FiNavigation, FiMessageSquare, FiUserCheck,
+  FiPrinter, FiHelpCircle, FiInbox, FiRss, FiMic, FiBarChart2, FiRepeat, FiRotateCcw, FiScissors, FiExternalLink, FiLifeBuoy,
 } from 'react-icons/fi';
 import { FaLinkedinIn } from 'react-icons/fa6';
 import {
   SiFacebook, SiInstagram, SiPinterest, SiSpotify, SiTelegram, SiThreads, SiTiktok, SiWhatsapp, SiX, SiYoutube,
+  SiDiscord, SiGithub, SiSnapchat, SiTwitch, SiPix, SiPaypal, SiGooglemaps, SiWaze, SiMercadopago,
 } from 'react-icons/si';
 
 // Chaves, rótulos e grupos dos ícones selecionáveis; os desenhos são renderizados pela biblioteca react-icons.
@@ -106,6 +109,41 @@ export const ICONS = {
   sliders: { g: 'general', label: 'Ajustes', s: [] },
   'trending-up': { g: 'general', label: 'Tendência de alta', s: [] },
   watch: { g: 'general', label: 'Relógio de pulso', s: [] },
+  'at-sign': { g: 'contact', label: 'Arroba', s: [] },
+  smartphone: { g: 'contact', label: 'Celular', s: [] },
+  'phone-call': { g: 'contact', label: 'Ligando', s: [] },
+  'phone-incoming': { g: 'contact', label: 'Chamada recebida', s: [] },
+  headphones: { g: 'contact', label: 'Atendimento', s: [] },
+  video: { g: 'contact', label: 'Videochamada', s: [] },
+  share: { g: 'contact', label: 'Compartilhar', s: [] },
+  send: { g: 'contact', label: 'Enviar', s: [] },
+  navigation: { g: 'contact', label: 'Como chegar', s: [] },
+  'message-square': { g: 'contact', label: 'Chat', s: [] },
+  'user-check': { g: 'contact', label: 'Cliente verificado', s: [] },
+  printer: { g: 'contact', label: 'Imprimir', s: [] },
+  'help-circle': { g: 'contact', label: 'Ajuda', s: [] },
+  inbox: { g: 'contact', label: 'Caixa de entrada', s: [] },
+  rss: { g: 'contact', label: 'Novidades', s: [] },
+  mic: { g: 'contact', label: 'Áudio', s: [] },
+  'external-link': { g: 'contact', label: 'Abrir link', s: [] },
+  'life-buoy': { g: 'contact', label: 'Suporte', s: [] },
+  discord: { g: 'social', label: 'Discord', s: [] },
+  github: { g: 'social', label: 'GitHub', s: [] },
+  snapchat: { g: 'social', label: 'Snapchat', s: [] },
+  twitch: { g: 'social', label: 'Twitch', s: [] },
+  'google-maps': { g: 'contact', label: 'Google Maps', s: [] },
+  waze: { g: 'contact', label: 'Waze', s: [] },
+  'bar-chart': { g: 'shop', label: 'Vendas', s: [] },
+  repeat: { g: 'shop', label: 'Troca', s: [] },
+  return: { g: 'shop', label: 'Devolução', s: [] },
+  scissors: { g: 'shop', label: 'Corte e costura', s: [] },
+  'credit-card-2': { g: 'shop', label: 'Parcelamento', s: [] },
+  'shield-check': { g: 'shop', label: 'Compra segura', s: [] },
+  'dollar-circle': { g: 'shop', label: 'Preço', s: [] },
+  pix: { g: 'shop', label: 'Pix', s: [] },
+  paypal: { g: 'shop', label: 'PayPal', s: [] },
+  mercadopago: { g: 'shop', label: 'Mercado Pago', s: [] },
+  'shopping-bag-plus': { g: 'shop', label: 'Comprar', s: [] },
 };
 
 export const ICON_COMPONENTS = {
@@ -123,4 +161,10 @@ export const ICON_COMPONENTS = {
   activity: FiActivity, archive: FiArchive, building: FiBriefcase, compass: FiCompass, edit: FiEdit3, file: FiFileText,
   filter: FiFilter, flag: FiFlag, grid: FiGrid, image: FiImage, layers: FiLayers, layout: FiLayout, lock: FiLock, map: FiMap,
   'pie-chart': FiPieChart, refresh: FiRefreshCw, settings: FiSettings, sliders: FiSliders, 'trending-up': FiTrendingUp, watch: FiWatch,
+  'at-sign': FiAtSign, smartphone: FiSmartphone, 'phone-call': FiPhoneCall, headphones: FiHeadphones, video: FiVideo, share: FiShare2,
+  send: FiSend, navigation: FiNavigation, 'message-square': FiMessageSquare, 'user-check': FiUserCheck, printer: FiPrinter,
+  'phone-incoming': FiPhoneIncoming, 'help-circle': FiHelpCircle, inbox: FiInbox, rss: FiRss, mic: FiMic,
+  'bar-chart': FiBarChart2, repeat: FiRepeat, return: FiRotateCcw, scissors: FiScissors, 'shopping-bag-plus': FiShoppingBag,
+  'credit-card-2': FiCreditCard, 'shield-check': FiShield, 'dollar-circle': FiDollarSign, 'external-link': FiExternalLink, 'life-buoy': FiLifeBuoy,
+  discord: SiDiscord, github: SiGithub, snapchat: SiSnapchat, twitch: SiTwitch, pix: SiPix, paypal: SiPaypal, 'google-maps': SiGooglemaps, waze: SiWaze, mercadopago: SiMercadopago,
 };

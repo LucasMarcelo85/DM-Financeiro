@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+﻿import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
@@ -17,7 +17,7 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     setState({ loading: true, page: null, owner: null, products: [], store: null });
     const qs = `u=${encodeURIComponent(userSlug)}${pageSlug ? `&p=${encodeURIComponent(pageSlug)}` : ''}`;
     api.get(`/public/portfolio?${qs}`)
-      .then((r) => alive && setState({ loading: false, owner: r.owner, products: r.products || [], store: r.store || null, page: { ...r.page, doc: normalizeDoc(r.page.data, r.page.kind) } }))
+      .then((r) => alive && setState({ loading: false, owner: { ...r.owner, credit: r.credit !== false }, products: r.products || [], store: r.store || null, page: { ...r.page, doc: normalizeDoc(r.page.data, r.page.kind) } }))
       .catch(() => alive && setState({ loading: false, page: null, owner: null, products: [], store: null }));
     return () => { alive = false; };
   }, [userSlug, pageSlug]);
@@ -47,10 +47,10 @@ export default function PortfolioPublic({ fixedUser = '' }) {
       </div>
     );
   }
-  return <PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} />;
+  return <PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} credit={owner.credit} />;
 }
 
-function PublicPage({ page, products, store, slug }) {
+function PublicPage({ page, products, store, slug, credit }) {
   const { doc } = page;
   const { device, scale } = usePageScale();
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
@@ -73,7 +73,7 @@ function PublicPage({ page, products, store, slug }) {
       )}
       {isCatalog && !showCart && <CartBar products={products} cart={cart} onOpenCart={() => goCart(true)} />}
       {showCart && <CartPage doc={doc} products={products} store={store} slug={slug} cart={cart} onBack={() => goCart(false)} pixelOn={pixelOn} />}
-      <PageCredit theme={doc.theme} />
+      {credit !== false && <PageCredit theme={doc.theme} />}
     </div>
   );
 }

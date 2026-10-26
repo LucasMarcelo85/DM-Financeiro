@@ -41,6 +41,8 @@ export const config = {
   },
   trialDays: positive(env.TRIAL_DAYS, 3),
   accessDays: positive(env.ACCESS_DAYS, 30),
+  // Dias após a licença vencer para a conta ser apagada de vez. 0 = nunca apaga (padrão, por segurança).
+  expiredAccountDays: Math.max(0, Math.floor(Number(env.EXPIRED_ACCOUNT_DAYS) || 0)),
   admin: {
     name: (env.ADMIN_NAME || 'Administrador').trim(),
     email: (env.ADMIN_EMAIL || '').trim().toLowerCase(),

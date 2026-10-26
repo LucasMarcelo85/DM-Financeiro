@@ -10,12 +10,33 @@ export class ApiError extends Error {
 let pinToken = null;
 export const setPinToken = (t) => { pinToken = t || null; };
 
+// Loja ativa do painel (null = loja principal). Produtos, pedidos e portfólios usam `?store=`.
+const STORE_KEY = 'dm:store';
+export const getActiveStore = () => localStorage.getItem(STORE_KEY) || null;
+export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
+const SCOPED = /^\/(products|catalog|portfolios)(\/|\?|$)/;
+const scoped = (url) => {
+  const store = getActiveStore();
+  if (!store || !SCOPED.test(url) || /^\/portfolios\/domain/.test(url) || /[?&]store=/.test(url)) return url;
+  return `${url}${url.includes('?') ? '&' : '?'}store=${store}`;
+};
+
+// Aplicativo do lojista (/app): o login é outro e as telas de Produtos e Pedidos reaproveitam as mesmas chamadas, redirecionadas para /shop-app.
+const SHOP_KEY = 'dm:shop-token';
+export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
+export const getShopToken = () => localStorage.getItem(SHOP_KEY);
+export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
+const SHOP_ROUTES = /^\/(products|catalog\/(orders|customers))(\/|\?|$)/;
+
 async function request(method, url, body) {
   let res;
+  const shop = isShopMode();
+  const target = shop ? (SHOP_ROUTES.test(url) ? `/shop-app${url}` : url) : scoped(url);
+  const auth = shop && getShopToken() ? { Authorization: `Bearer ${getShopToken()}` } : {};
   try {
-    res = await fetch(`/api${url}`, {
+    res = await fetch(`/api${target}`, {
       method,
-      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(pinToken ? { 'X-Pin-Token': pinToken } : {}) },
+      headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(pinToken ? { 'X-Pin-Token': pinToken } : {}), ...auth },
       body: body !== undefined ? JSON.stringify(body) : undefined,
       credentials: 'same-origin',
     });
@@ -29,6 +50,7 @@ async function request(method, url, body) {
     /* resposta sem corpo */
   }
   if (!res.ok) {
+    if (shop && res.status === 401 && getShopToken()) { setShopToken(null); window.dispatchEvent(new Event('dm:shop-logout')); }
     if (res.status === 402 && data?.code === 'PAYMENT_REQUIRED') window.dispatchEvent(new Event('dm:payment-required'));
     if (res.status === 423 && data?.code === 'PIN_REQUIRED') window.dispatchEvent(new Event('dm:pin-required')); // a aba foi travada de novo: a tela pede o PIN
     throw new ApiError(data?.error || 'Algo deu errado. Tente novamente.', res.status, data?.code);

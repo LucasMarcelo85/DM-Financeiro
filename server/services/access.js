@@ -12,7 +12,9 @@ export function computeAccess(user) {
   const endsAt = Math.max(ms(user.accessUntil), ms(user.trialEndsAt));
   const hasAccess = endsAt > now;
   const status = ms(user.accessUntil) > now ? 'paid' : ms(user.trialEndsAt) > now ? 'trial' : 'expired';
-  return { status, hasAccess, endsAt, daysLeft: hasAccess ? Math.ceil((endsAt - now) / DAY) : 0 };
+  // Se a exclusão automática estiver ligada, diz em quantos dias a conta vence de vez.
+  const deleteInDays = status === 'expired' && config.expiredAccountDays > 0 ? Math.max(0, Math.ceil((endsAt + config.expiredAccountDays * DAY - now) / DAY)) : null;
+  return { status, hasAccess, endsAt, daysLeft: hasAccess ? Math.ceil((endsAt - now) / DAY) : 0, deleteInDays };
 }
 
 // Filtro Prisma: usuários que ainda podem usar o sistema (usado pelo agendador).

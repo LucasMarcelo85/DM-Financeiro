@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../api.js';
+import { api, isShopMode } from '../api.js';
+import BuyMore from '../components/BuyMore.jsx';
+import StoreBar from '../components/StoreBar.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -21,6 +23,7 @@ function productPriceLabel(product) {
 }
 
 export default function Products() {
+  const shop = isShopMode();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
@@ -64,18 +67,20 @@ export default function Products() {
         </div>
         <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo</button>
       </header>
-      {data && <div className="pr-preferences-action"><button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Organizar categorias e opções</button></div>}
+      <StoreBar />
+      {data && !shop && <div className="pr-preferences-action"><button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Organizar categorias e opções</button></div>}
 
       {blocked && (
         <div className="banner banner-amber">
           <div><strong>O seu plano não inclui produtos e catálogo digital.</strong><span>Mude para um plano com catálogo para cadastrar produtos e serviços.</span></div>
-          <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>
+          {!shop && <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>}
         </div>
       )}
       {full && !blocked && (
         <div className="banner banner-amber">
-          <div><strong>Você usou todos os itens do seu plano.</strong><span>Exclua algum ou mude de plano para cadastrar mais.</span></div>
-          <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>
+          <div><strong>Você usou todos os itens do seu plano.</strong><span>Exclua algum, adquira limite extra ou mude de plano para cadastrar mais.</span></div>
+          {!shop && <BuyMore resource="catalogProducts" />}
+          {!shop && <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>}
         </div>
       )}
 
@@ -120,7 +125,7 @@ export default function Products() {
                   <input type="checkbox" checked={p.active} onChange={() => toggle(p)} /><span>{p.active ? 'Ativo' : 'Inativo'}</span>
                 </label>
                 <button className="icon-btn" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`} title="Editar"><Icon name="edit" size={17} /></button>
-                <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /></button>
+                {!shop && <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /></button>}
               </div>
             </li>
           ))}

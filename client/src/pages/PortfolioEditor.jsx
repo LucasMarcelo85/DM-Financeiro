@@ -21,7 +21,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
-  { t: 'shape', icon: 'shape' }, { t: 'video', icon: 'video' }, { t: 'products', icon: 'grid' },
+  { t: 'shape', icon: 'shape' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };

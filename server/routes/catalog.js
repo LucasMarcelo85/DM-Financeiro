@@ -1,16 +1,17 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
 import { cleanCatalogConfig, defaultCatalogConfig } from '../utils/catalog.js';
 import { config } from '../config.js';
 import { decrypt } from '../utils/secret.js';
 import { orderDTO, quoteShipping } from '../services/orders.js';
+import { storeScope } from '../utils/store.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
 
-function orderWhere(userId, filters = {}, { archived = false, includeStatus = true, includeText = true } = {}) {
-  const where = { userId, deletedAt: archived ? { not: null } : null };
+function orderWhere(userId, filters = {}, { archived = false, includeStatus = true, includeText = true, storeId = null } = {}) {
+  const where = { userId, storeId, deletedAt: archived ? { not: null } : null };
   if (includeStatus && (filters.status === 'novo' || filters.status === 'atendido')) where.status = filters.status;
   if (filters.deliveryType === 'retirada' || filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
   const days = Number(filters.days);
@@ -20,7 +21,12 @@ function orderWhere(userId, filters = {}, { archived = false, includeStatus = tr
   return where;
 }
 
-async function loadSettings(userId) {
+async function loadSettings(userId, storeId = null) {
+  if (storeId) {
+    const store = await prisma.store.findUnique({ where: { id: storeId }, select: { config: true } });
+    const row = await prisma.catalogSettings.findUnique({ where: { userId } });
+    return { cfg: { ...defaultCatalogConfig(), ...(store?.config || {}) }, token: config.geo.superfreteToken || decrypt(row?.superfrete) };
+  }
   const row = await prisma.catalogSettings.findUnique({ where: { userId } });
   return { cfg: { ...defaultCatalogConfig(), ...(row?.config || {}) }, token: config.geo.superfreteToken || decrypt(row?.superfrete) };
 }
@@ -28,22 +34,24 @@ async function loadSettings(userId) {
 const tokenInfo = (token) => ({ hasSuperfreteToken: Boolean(config.geo.superfreteToken || token) });
 
 router.get('/settings', async (req, res) => {
-  const { cfg, token } = await loadSettings(req.user.id);
+  const { cfg, token } = await loadSettings(req.user.id, await storeScope(req));
   res.json({ config: cfg, ...tokenInfo(token) });
 });
 
 router.put('/settings', async (req, res) => {
   const b = req.body || {};
-  const current = await loadSettings(req.user.id);
+  const storeId = await storeScope(req);
+  const current = await loadSettings(req.user.id, storeId);
   const token = current.token;
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
-  await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
+  if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
+  else await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
   res.json({ config: cfg, ...tokenInfo(token) });
 });
 
 // "Testar frete": simula com a configuração salva para um CEP de exemplo.
 router.post('/settings/test-shipping', async (req, res) => {
-  const { cfg, token } = await loadSettings(req.user.id);
+  const { cfg, token } = await loadSettings(req.user.id, await storeScope(req));
   if (!cfg.correios.enabled) throw new AppError(400, 'Ative e salve as configurações dos Correios antes de testar.');
   const q = await quoteShipping({ cfg, token }, 'correios', { zip: req.body?.zip }, 0);
   res.json({ options: q.options, provider: 'SuperFrete' });
@@ -52,13 +60,14 @@ router.post('/settings/test-shipping', async (req, res) => {
 // ---------- Pedidos ----------
 router.get('/orders', async (req, res) => {
   const archived = req.query.view === 'log';
-  const where = orderWhere(req.user.id, req.query, { archived });
-  const statsWhere = orderWhere(req.user.id, req.query, { includeStatus: false, includeText: false });
+  const storeId = await storeScope(req);
+  const where = orderWhere(req.user.id, req.query, { archived, storeId });
+  const statsWhere = orderWhere(req.user.id, req.query, { includeStatus: false, includeText: false, storeId });
   const [rows, total, fresh, archivedCount, stats] = await Promise.all([
     prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: 300 }),
     prisma.order.count({ where }),
     prisma.order.count({ where: { ...statsWhere, status: 'novo' } }),
-    prisma.order.count({ where: { userId: req.user.id, deletedAt: { not: null } } }),
+    prisma.order.count({ where: { userId: req.user.id, storeId, deletedAt: { not: null } } }),
     prisma.order.aggregate({ where: statsWhere, _sum: { totalCents: true }, _avg: { totalCents: true }, _count: { _all: true } }),
   ]);
   res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays });
@@ -153,7 +162,7 @@ router.delete('/orders/:id', async (req, res) => {
 router.post('/orders/bulk-delete', async (req, res) => {
   const b = req.body || {};
   let where;
-  if (b.all === true) where = orderWhere(req.user.id, b);
+  if (b.all === true) where = orderWhere(req.user.id, b, { storeId: await storeScope(req) });
   else {
     const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger).slice(0, 500);
     if (!ids.length) throw new AppError(400, 'Escolha os pedidos para excluir.');

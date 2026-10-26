@@ -1,6 +1,6 @@
 import { useEffect, useMemo, useState } from 'react';
 import EIcon from '../contract/EIcon.jsx';
-import { Check, ColorField, ImageField, LinkFields, RangeField, Section, Seg, TextField } from './Fields.jsx';
+import { Check, ColorField, GalleryField, ImageField, LinkFields, RangeField, Section, Seg, TextField } from './Fields.jsx';
 import IconPicker from './IconPicker.jsx';
 import { fillBackground, ProductCard } from './Canvas.jsx';
 import {
@@ -278,6 +278,71 @@ function VideoSection({ el, api }) {
   );
 }
 
+const NEW_LINK = () => ({ kind: 'link', url: '', phone: '', message: '', email: '' });
+const sid = () => Math.random().toString(36).slice(2, 10);
+
+function CarouselSection({ el, api }) {
+  const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
+  const slides = el.slides || [];
+  const setSlide = (id, patch, key) => api.patch({ slides: slides.map((s) => (s.id === id ? { ...s, ...patch } : s)) }, key);
+  return (
+    <>
+      <Section title="Imagens do carrossel">
+        <GalleryField items={slides} max={12} onError={api.error}
+          onAdd={(srcs) => api.patch({ slides: [...slides, ...srcs.map((src) => ({ id: sid(), src, alt: '', link: NEW_LINK() }))].slice(0, 12) })}
+          onRemove={(id) => api.patch({ slides: slides.filter((s) => s.id !== id) })} />
+        {slides.map((s, i) => (
+          <details key={s.id} className="pe-sub">
+            <summary>Imagem {i + 1}: descrição e link</summary>
+            <TextField label="Descrição (acessibilidade)" value={s.alt} onChange={(v) => setSlide(s.id, { alt: v }, `car-alt:${s.id}`)} maxLength={160} id={`car-alt-${s.id}`} />
+            <LinkFields link={s.link} onChange={(link, key) => setSlide(s.id, { link }, key)} id={`car-${s.id}`} />
+          </details>
+        ))}
+      </Section>
+      <Section title="Comportamento">
+        <Check label="Passar sozinho" checked={el.autoplay} onChange={f('autoplay')} />
+        {el.autoplay && <RangeField label="Tempo por imagem" value={el.interval} min={2} max={15} suffix=" s" onChange={f('interval')} id="car-int" />}
+        <Check label="Mostrar setas" checked={el.arrows} onChange={f('arrows')} />
+        <Check label="Mostrar pontinhos" checked={el.dots} onChange={f('dots')} />
+        <Seg label="Ajuste na moldura" value={el.fit} options={[['cover', 'Preencher'], ['contain', 'Caber']]} onChange={f('fit')} id="car-fit" />
+        <RangeField label="Cantos arredondados" value={el.radius} min={0} max={100} suffix="px" onChange={f('radius')} id="car-rad" />
+      </Section>
+    </>
+  );
+}
+
+function MenuSection({ el, api }) {
+  const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
+  const items = el.items || [];
+  const setItem = (id, patch, key) => api.patch({ items: items.map((s) => (s.id === id ? { ...s, ...patch } : s)) }, key);
+  return (
+    <>
+      <Section title="Itens do menu">
+        {items.map((s, i) => (
+          <details key={s.id} className="pe-sub" open={!s.label}>
+            <summary>{s.label || `Item ${i + 1}`}</summary>
+            <TextField label="Texto" value={s.label} onChange={(v) => setItem(s.id, { label: v }, `menu-l:${s.id}`)} maxLength={40} id={`menu-l-${s.id}`} />
+            <LinkFields link={s.link} onChange={(link, key) => setItem(s.id, { link }, key)} id={`menu-${s.id}`} />
+            <button type="button" className="link-btn" onClick={() => api.patch({ items: items.filter((x) => x.id !== s.id) })}>Remover item</button>
+          </details>
+        ))}
+        {items.length < 12 && (
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ items: [...items, { id: sid(), label: 'Novo item', link: NEW_LINK() }] })}>
+            <EIcon name="plus" size={16} /> Adicionar item
+          </button>
+        )}
+      </Section>
+      <Section title="Aparência">
+        <Select label="Exibição" value={el.variant} onChange={f('variant')} options={[['auto', 'Automático (hambúrguer no celular)'], ['hamburger', 'Sempre botão hambúrguer'], ['bar', 'Sempre barra de links']]} />
+        <TextField label="Texto ao lado do botão (opcional)" value={el.title} onChange={f('title')} maxLength={40} id="menu-title" />
+        <ColorField label="Cor do texto e ícone" value={el.color} onChange={f('color')} id="menu-c" />
+        <ColorField label="Cor de fundo" value={el.bg} onChange={f('bg')} id="menu-bg" />
+        <RangeField label="Cantos arredondados" value={el.radius} min={0} max={60} suffix="px" onChange={f('radius')} id="menu-r" />
+      </Section>
+    </>
+  );
+}
+
 function CatSearchSection({ el, api }) {
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
   return (
@@ -384,6 +449,8 @@ export function ElementInspector({ el, device, api, products }) {
       {el.t === 'button' && <ButtonSection el={el} api={api} />}
       {el.t === 'shape' && <ShapeSection el={el} api={api} />}
       {el.t === 'video' && <VideoSection el={el} api={api} />}
+      {el.t === 'carousel' && <CarouselSection el={el} api={api} />}
+      {el.t === 'menu' && <MenuSection el={el} api={api} />}
       {el.t === 'products' && <ProductsSection el={el} api={api} products={products} />}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}

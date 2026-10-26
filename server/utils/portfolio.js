@@ -261,7 +261,7 @@ export const MAX_ELEMENTS = 200;
 export const DEVICES = ['desktop', 'tablet', 'mobile'];
 export const KINDS = new Set(['site', 'catalog']);
 
-const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid']);
+const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid', 'carousel', 'menu']);
 const ENTER = new Set(['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce', 'rotate', 'blur', 'drop']);
 const LOOP = new Set(['none', 'float', 'pulse', 'shake', 'spin', 'wiggle', 'glow', 'swing', 'heartbeat', 'rubber', 'bounce', 'tada', 'flash', 'hue']);
 const HOVER = new Set(['none', 'grow', 'shrink', 'lift', 'glow', 'rotate', 'tilt', 'shake', 'brighten', 'pulse']);
@@ -373,6 +373,26 @@ function cleanElement(raw) {
       break;
     case 'video':
       Object.assign(el, { url: videoUrl(raw.url), radius: num(raw.radius, 0, 200, 12) });
+      break;
+    case 'carousel':
+      Object.assign(el, {
+        slides: (Array.isArray(raw.slides) ? raw.slides : []).slice(0, 12).map((s, i) => ({
+          id: typeof s?.id === 'string' && /^[\w-]{1,40}$/.test(s.id) ? s.id : `s${i}`,
+          src: image(s?.src), alt: line(s?.alt, 160), link: cleanLink(s?.link),
+        })).filter((s) => s.src),
+        autoplay: bool(raw.autoplay, true), interval: num(raw.interval, 2, 15, 5), arrows: bool(raw.arrows, true), dots: bool(raw.dots, true),
+        fit: pick(raw.fit, ['cover', 'contain'], 'cover'), radius: num(raw.radius, 0, 200, 12),
+      });
+      break;
+    case 'menu':
+      Object.assign(el, {
+        items: (Array.isArray(raw.items) ? raw.items : []).slice(0, 12).map((s, i) => ({
+          id: typeof s?.id === 'string' && /^[\w-]{1,40}$/.test(s.id) ? s.id : `m${i}`,
+          label: line(s?.label, 40), link: cleanLink(s?.link),
+        })).filter((s) => s.label),
+        variant: pick(raw.variant, ['auto', 'hamburger', 'bar'], 'auto'), title: line(raw.title, 40),
+        color: color(raw.color, '#14202e'), bg: color(raw.bg, '#ffffff'), radius: num(raw.radius, 0, 60, 12),
+      });
       break;
     case 'products': {
       const c = isObj(raw.cols) ? raw.cols : {};

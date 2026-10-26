@@ -1,5 +1,6 @@
 import { config } from './config.js';
 import { prisma } from './prisma.js';
+import { extrasFor } from './addons.js';
 
 // Planos: ficam no banco (tabela plan_settings) e o administrador cria, edita e exclui pela tela "Gerir planos".
 // Os valores abaixo só servem para criar os 3 planos iniciais quando a tabela está vazia (primeira execução).
@@ -12,7 +13,7 @@ const DEFAULT_PLANS = [
   { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, auditSend: true },
 ];
 // Abas do menu que o administrador pode liberar ou esconder em cada plano (Início, Plano e Perfil sempre aparecem).
-export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos'];
+export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
 const cleanTabs = (list) => (Array.isArray(list) ? PLAN_TABS.filter((t) => list.includes(t)) : [...PLAN_TABS]);
 const DEFAULT_TRIAL = { days: config.trialDays, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, auditSend: false, tabs: [...PLAN_TABS] };
 const seedPrice = (id) => Math.round((config.prices[id] ?? 49.9) * 100);
@@ -40,6 +41,8 @@ const normalize = (p) => ({
   priceCents: p.priceCents ?? seedPrice(p.id ?? p.plan),
   instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios,
   catalogProducts: p.catalogProducts ?? 0,
+  stores: p.stores ?? 0,
+  dmCredit: p.dmCredit ?? true,
   auditSend: Boolean(p.auditSend),
   tabs: cleanTabs(p.visibleTabs ?? p.tabs),
 });
@@ -94,7 +97,7 @@ export async function ensurePlans() {
   return loadPlans();
 }
 
-const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, auditSend: d.auditSend, visibleTabs: cleanTabs(d.tabs) });
+const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, stores: d.stores ?? 0, dmCredit: d.dmCredit ?? true, auditSend: d.auditSend, visibleTabs: cleanTabs(d.tabs) });
 
 // Grava (cria ou altera) um plano e já atualiza a memória.
 export async function savePlan(id, data) {
@@ -119,6 +122,7 @@ export const planIds = () => sorted(cache).map((p) => p.id);
 export const defaultPlanId = () => sorted(cache)[0]?.id || 'bronze'; // plano de quem se cadastra sem escolher
 export const topPlanId = () => sorted(cache).at(-1)?.id || 'ouro'; // o administrador tem os limites do maior plano
 export const planName = (id) => cache.get(id)?.name || (id ? id.charAt(0).toUpperCase() + id.slice(1) : '');
+export const planShowsCredit = (id) => cache.get(id)?.dmCredit ?? true;
 export const planColor = (id) => cache.get(id)?.color || '';
 
 const monthlyCents = (id) => cache.get(id)?.priceCents ?? 0;
@@ -126,18 +130,8 @@ export const priceCents = (id, period = 'mensal') => monthlyCents(id) * (PERIODS
 
 const limitsOf = (id) => {
   const p = cache.get(id) || sorted(cache)[0];
-  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend, tabs: p.tabs };
+  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, stores: p.stores, auditSend: p.auditSend, tabs: p.tabs };
 };
-
-const trialLimits = () => ({
-  instances: trialCache.instances,
-  auditInstances: trialCache.auditInstances,
-  contracts: trialCache.contracts,
-  portfolios: trialCache.portfolios,
-  catalogProducts: trialCache.catalogProducts,
-  auditSend: trialCache.auditSend,
-  tabs: trialCache.tabs,
-});
 
 export function isTrialUser(user) {
   if (!user || user.role === 'admin') return false;
@@ -149,7 +143,19 @@ export function isTrialUser(user) {
 
 export function limitsFor(user) {
   if (user.role === 'admin') return { ...limitsOf(topPlanId()), tabs: [...PLAN_TABS] };
-  return isTrialUser(user) ? trialLimits() : limitsOf(user.plan);
+  const base = limitsOf(user.plan); // o teste grátis tem todo o acesso do plano escolhido
+  const extras = extrasFor(user.id);
+  // Limite do plano + o que o usuário pagou à parte (só enquanto estiver em dia).
+  return {
+    ...base,
+    instances: base.instances + extras.instances,
+    auditInstances: base.auditInstances + extras.auditInstances,
+    contracts: base.contracts + extras.contracts,
+    portfolios: base.portfolios + extras.portfolios,
+    catalogProducts: base.catalogProducts + extras.catalogProducts,
+    stores: base.stores + extras.stores,
+    extras,
+  };
 }
 
 export function trialSettings() {
@@ -196,5 +202,6 @@ export function listPlans() {
     priceCents: priceCents(p.id), // mensal (mantido por compatibilidade)
     prices: Object.fromEntries(PERIOD_IDS.map((per) => [per, priceCents(p.id, per)])),
     ...limitsOf(p.id),
+    dmCredit: p.dmCredit,
   }));
 }

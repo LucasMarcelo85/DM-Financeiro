@@ -1,0 +1,2 @@
+ALTER TABLE "plan_settings" ADD COLUMN "stores" INTEGER NOT NULL DEFAULT 0;
+ALTER TABLE "plan_settings" ADD COLUMN "dm_credit" BOOLEAN NOT NULL DEFAULT true;

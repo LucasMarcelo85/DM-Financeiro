@@ -10,6 +10,7 @@ export const PIN_TABS = [
   { key: 'portfolio', label: 'Portfólio' },
   { key: 'produtos', label: 'Produtos/Serviços' },
   { key: 'pedidos', label: 'Pedidos' },
+  { key: 'api', label: 'API' },
   { key: 'plano', label: 'Plano' },
   { key: 'admin', label: 'Administração (usuários e planos)', adminOnly: true },
 ];
@@ -28,5 +29,5 @@ export function tabOfPath(pathname) {
 export const isTabLocked = (user, pinUnlocked, tab) => Boolean(tab && user?.pin?.enabled && user.pin.tabs.includes(tab) && !pinUnlocked);
 
 // Abas que o administrador pode liberar ou esconder em cada plano (mesmas chaves do servidor: server/plans.js).
-export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos'];
+export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
 export const isTabInPlan = (user, tab) => !PLAN_TABS.includes(tab) || (user?.limits?.tabs || PLAN_TABS).includes(tab);

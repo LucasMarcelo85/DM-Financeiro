@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
+import BuyMore from '../components/BuyMore.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -99,7 +100,8 @@ export default function Contracts() {
 
       {full && (
         <div className="banner banner-amber">
-          <div><strong>Você usou todos os modelos do seu plano.</strong><span>Exclua um modelo ou mude de plano para criar mais.</span></div>
+          <div><strong>Você usou todos os modelos do seu plano.</strong><span>Exclua um modelo, adquira limite extra ou mude de plano para criar mais.</span></div>
+          <BuyMore resource="contracts" />
           <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>
         </div>
       )}

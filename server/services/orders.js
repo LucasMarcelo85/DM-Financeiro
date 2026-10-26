@@ -1,4 +1,4 @@
-import crypto from 'node:crypto';
+﻿import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone, onlyDigits } from '../utils/helpers.js';
 import { defaultCatalogConfig, publicProduct } from '../utils/catalog.js';
@@ -7,6 +7,7 @@ import { limitsFor } from '../plans.js';
 import { decrypt } from '../utils/secret.js';
 import { config } from '../config.js';
 import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
+import { resolvePublicOwner } from '../utils/store.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -17,11 +18,12 @@ const newCode = () => Array.from(crypto.randomBytes(6), (b) => CODE_CHARS[b % CO
 
 // Dono da página (com acesso ativo e plano com catálogo) + configuração do catálogo.
 export async function loadCatalogOwner(userSlug) {
-  const slug = String(userSlug || '').toLowerCase();
-  const owner = await prisma.user.findFirst({ where: { portfolioSlug: slug, ...accessibleUserFilter() }, include: { catalogSettings: true } });
-  if (!owner || limitsFor(owner).catalogProducts < 1) throw new AppError(404, 'Catálogo não encontrado.');
-  const cfg = { ...defaultCatalogConfig(), ...(owner.catalogSettings?.config || {}) };
-  return { owner, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete) };
+  const found = await resolvePublicOwner(userSlug, { id: true, plan: true, role: true, accessUntil: true, trialEndsAt: true, catalogSettings: true });
+  if (!found || limitsFor(found.owner).catalogProducts < 1) throw new AppError(404, 'Catálogo não encontrado.');
+  const { owner, store } = found;
+  const base = store ? store.config : owner.catalogSettings?.config;
+  const cfg = { ...defaultCatalogConfig(), ...(base || {}) };
+  return { owner, store, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete) };
 }
 
 // Endereço de destino vindo do cliente (CEP ou endereço). Completa pelo CEP quando possível.
@@ -59,7 +61,7 @@ export async function quoteShipping({ cfg, token }, type, rawDest, subtotalCents
 
 export async function createOrder(userSlug, body = {}) {
   const ctx = await loadCatalogOwner(userSlug);
-  const { owner, cfg } = ctx;
+  const { owner, store, cfg } = ctx;
 
   // 1) Cliente: nome e telefone são obrigatórios para todos.
   const c = body.customer || {};
@@ -74,7 +76,7 @@ export async function createOrder(userSlug, body = {}) {
   const requestedCount = rawItems.reduce((sum, item) => sum + (Number.isInteger(Number(item?.qty)) && Number(item.qty) > 0 ? Number(item.qty) : 0), 0);
   if (requestedCount < (cfg.checkout?.minItems || 1)) throw new AppError(400, `Este pedido precisa ter pelo menos ${cfg.checkout.minItems} itens.`);
   const ids = [...new Set(rawItems.map((i) => Number(i?.productId)).filter(Number.isInteger))];
-  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: true, priceOptions: true } });
+  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: store?.id ?? null, active: true }, include: { images: true, priceOptions: true } });
   const byId = new Map(products.map((p) => [p.id, p]));
   const items = [];
   for (const it of rawItems) {
@@ -150,7 +152,7 @@ export async function createOrder(userSlug, body = {}) {
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });
         return tx.order.create({
-          data: { userId: owner.id, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes },
+          data: { userId: owner.id, storeId: store?.id ?? null, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes },
         });
       });
       break;

@@ -1,7 +1,8 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { accessibleUserFilter } from '../services/access.js';
+import { planShowsCredit } from '../plans.js';
+import { resolvePublicOwner } from '../utils/store.js';
 import { decodeImage, portfolioCover, portfolioDescription } from '../utils/portfolio.js';
 import { isReservedSlug, isValidSlug } from '../utils/slug.js';
 import { publicCatalogConfig, publicProduct } from '../utils/catalog.js';
@@ -16,14 +17,13 @@ export async function findPublicPage(userSlug, pageSlug) {
   const u = String(userSlug || '').toLowerCase();
   const p = pageSlug ? String(pageSlug).toLowerCase() : '';
   if (!isValidSlug(u) || isReservedSlug(u) || (p && !isValidSlug(p))) return null;
-  const owner = await prisma.user.findFirst({
-    where: { portfolioSlug: u, ...accessibleUserFilter() },
-    select: { id: true, name: true, portfolioSlug: true },
-  });
-  if (!owner) return null;
-  const page = await prisma.portfolio.findFirst({
-    where: p ? { userId: owner.id, slug: p, published: true } : { userId: owner.id, isMain: true, published: true },
-  });
+  const resolved = await resolvePublicOwner(u, { id: true, name: true, portfolioSlug: true, plan: true, role: true });
+  if (!resolved) return null;
+  const { store } = resolved;
+  const owner = store ? { ...resolved.owner, name: store.name, portfolioSlug: store.slug } : resolved.owner;
+  const scope = { userId: owner.id, storeId: store?.id ?? null, published: true };
+  const page = await prisma.portfolio.findFirst({ where: p ? { ...scope, slug: p } : { ...scope, isMain: true } });
+  if (page) owner.storeId = store?.id ?? null;
   return page ? { owner, page } : null;
 }
 
@@ -38,17 +38,18 @@ router.get('/portfolio', async (req, res) => {
   if (doc.v === 2 && page.kind === 'catalog') {
     // Catálogo digital: todos os produtos ativos + as formas de entrega (sem token e sem endereço de saída). Sem plano com catálogo = 404.
     const ctx = await loadCatalogOwner(owner.portfolioSlug);
-    const products = await prisma.product.findMany({ where: { userId: owner.id, active: true }, include: { images: imgs, priceOptions }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
+    const products = await prisma.product.findMany({ where: { userId: owner.id, storeId: owner.storeId ?? null, active: true }, include: { images: imgs, priceOptions }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
     out.products = products.map(publicProduct);
     out.store = publicCatalogConfig(ctx.cfg);
   } else if (doc.v === 2) {
     // Página livre com cartões de produtos escolhidos.
     const ids = [...new Set((doc.elements || []).filter((e) => e.t === 'products').flatMap((e) => e.ids || []))].slice(0, 60);
-    if (ids.length) out.products = (await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, active: true }, include: { images: imgs, priceOptions } })).map(publicProduct);
+    if (ids.length) out.products = (await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: owner.storeId ?? null, active: true }, include: { images: imgs, priceOptions } })).map(publicProduct);
   }
   res.set('Cache-Control', 'no-cache'); // o navegador confere (ETag) antes de reusar: edições aparecem logo
   res.json({
     owner: { name: owner.name, slug: owner.portfolioSlug },
+    credit: owner.role === 'admin' ? true : planShowsCredit(owner.plan),
     page: { name: page.name, slug: page.slug, isMain: page.isMain, kind: page.kind, updatedAt: page.updatedAt.getTime(), data: page.data },
     ...out,
   });

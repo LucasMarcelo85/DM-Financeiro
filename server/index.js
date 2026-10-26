@@ -10,6 +10,7 @@ import { prisma, connectWithRetry } from './prisma.js';
 import { AppError, DAY } from './utils/helpers.js';
 import { auth, pinGuard, requireAccess, requireAdmin } from './middleware/auth.js';
 import { ensurePlans, topPlanId } from './plans.js';
+import { loadAddons } from './addons.js';
 import authRoutes from './routes/auth.js';
 import instanceRoutes, { instanceRouter } from './routes/instances.js';
 import auditRoutes from './routes/audit.js';
@@ -21,6 +22,9 @@ import receiptRoutes from './routes/receipts.js';
 import messageRoutes from './routes/messages.js';
 import contractRoutes from './routes/contracts.js';
 import portfolioRoutes from './routes/portfolios.js';
+import storeRoutes from './routes/stores.js';
+import shopAppRoutes from './routes/shop-app.js';
+import { publicApi, tokenRoutes } from './routes/api-tokens.js';
 import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/public-portfolio.js';
 import productRoutes from './routes/products.js';
 import catalogRoutes from './routes/catalog.js';
@@ -70,6 +74,7 @@ async function seedAdmin() {
 }
 try {
   await ensurePlans(); // valores e limites dos planos vêm do banco (o .env só define os iniciais)
+  await loadAddons();
   await seedAdmin();
 } catch (e) {
   console.error('[banco] falha ao preparar o banco. As tabelas existem? Rode: npm run db:deploy\n', e.message);
@@ -115,7 +120,7 @@ app.use(
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
-const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/webhooks/evolution/');
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 
@@ -157,6 +162,11 @@ app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
 app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '12mb' }), portfolioRoutes);
+app.use('/api/stores', auth, requireAccess, pinGuard('portfolio'), storeRoutes);
+app.use('/api/tokens', auth, requireAccess, pinGuard('api'), tokenRoutes);
+app.use('/api/shop-app/login', limiter(30, 15 * 60 * 1000));
+app.use('/api/shop-app', express.json({ limit: '8mb' }), shopAppRoutes);
+app.use('/api/v1', limiter(300, 60 * 1000), publicApi);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);
 app.use('/api/products', auth, requireAccess, express.json({ limit: '8mb' }), productRoutes);
@@ -169,7 +179,7 @@ const dist = path.join(ROOT, 'client', 'dist');
 if (fs.existsSync(path.join(dist, 'index.html'))) {
   const shell = fs.readFileSync(path.join(dist, 'index.html'), 'utf8');
   app.use(async (req, res, next) => {
-    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || path.extname(req.path)) return next();
+    if (!req.customDomain || req.method !== 'GET' || req.path.startsWith('/api') || req.path === '/app' || path.extname(req.path)) return next();
     try {
       const meta = await portfolioShareMeta(req);
       if (meta?.pixel) res.set('Content-Security-Policy', PIXEL_CSP);

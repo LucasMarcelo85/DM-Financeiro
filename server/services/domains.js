@@ -1,4 +1,4 @@
-import dns from 'node:dns/promises';
+﻿import dns from 'node:dns/promises';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { hostKey } from '../utils/domain.js';
@@ -39,10 +39,15 @@ export async function domainOwner(host) {
   if (!host || isSystemHost(host)) return null;
   const hit = cache.get(host);
   if (hit && Date.now() - hit.at < (hit.owner ? TTL_HIT : TTL_MISS)) return hit.owner;
-  const owner = await prisma.user.findFirst({
+  let owner = await prisma.user.findFirst({
     where: { customDomain: host, customDomainVerifiedAt: { not: null }, portfolioSlug: { not: null } },
     select: { id: true, portfolioSlug: true },
   });
+  if (!owner) {
+    // Domínio de uma loja extra: o endereço público dela é o slug da loja.
+    const store = await prisma.store.findFirst({ where: { customDomain: host, customDomainVerifiedAt: { not: null } }, select: { userId: true, slug: true } });
+    if (store) owner = { id: store.userId, portfolioSlug: store.slug };
+  }
   if (cache.size >= MAX_CACHE) cache.clear();
   cache.set(host, { owner, at: Date.now() });
   return owner;
@@ -52,6 +57,7 @@ export async function domainOwner(host) {
 const OPEN_API = new Set(['/api/public/portfolio', '/api/public/portfolio/image', '/api/public/domain-check']);
 const OPEN_API_ROUTES = [
   /^\/api\/public\/product-image\/\d+$/,
+  /^\/api\/shop-app\//,
   /^\/api\/public\/cep\/\d{8}$/,
   /^\/api\/public\/catalog\/shipping\/quote$/,
   /^\/api\/webhooks\/orders\/[a-z0-9-]+$/,

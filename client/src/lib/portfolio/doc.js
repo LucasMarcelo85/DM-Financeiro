@@ -18,7 +18,7 @@ export const DESIGN_W = { desktop: 1200, tablet: 768, mobile: 375 };
 export const MAX_ELEMENTS = 200;
 export const MAX_PAGE_H = 30000;
 
-export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', video: 'Vídeo', products: 'Produtos', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
+export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', video: 'Vídeo', carousel: 'Carrossel', menu: 'Menu', products: 'Produtos', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
 export const CATALOG_ELEMENTS = new Set(['catsearch', 'catgrid']);
 // Elementos cuja altura é calculada (não dá para esticar à mão).
 export const autoHeight = (el) => el.t === 'products' || el.t === 'catgrid';
@@ -60,11 +60,13 @@ const TYPE_DEFAULTS = {
   button: (th) => ({ label: 'Fale conosco', style: 'solid', color: th.primary, color2: '#d6336c', textColor: readableOn(th.primary), font: th.bodyFont, weight: 700, radius: 12, icon: '', iconPos: 'left', link: { ...emptyLink(), kind: 'whatsapp' } }),
   shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, link: emptyLink() }),
   video: () => ({ url: '', radius: 12 }),
+  carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
+  menu: (th) => ({ items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
   products: () => ({ ids: [], cols: { desktop: 4, tablet: 3, mobile: 2 }, whatsapp: '', buttonLabel: 'Pedir no WhatsApp', showPrice: true, cardStyle: 'soft' }),
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };
-const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], video: [480, 270], products: [720, 300], catsearch: [1080, 104], catgrid: [1080, 400] };
+const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], video: [480, 270], carousel: [640, 360], menu: [360, 56], products: [720, 300], catsearch: [1080, 104], catgrid: [1080, 400] };
 const FONT_SIZES = { text: [24, 20, 17], button: [18, 17, 16] };
 
 export const emptyBox = (t) => ({ x: 60, y: 60, w: SIZES[t][0], h: SIZES[t][1], r: 0, hide: false, ...(FONT_SIZES[t] ? { fs: FONT_SIZES[t][0] } : {}) });

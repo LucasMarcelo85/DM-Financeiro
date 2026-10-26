@@ -1,8 +1,9 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { cleanProduct, publicProduct } from '../utils/catalog.js';
+import { storeScope } from '../utils/store.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
@@ -48,7 +49,8 @@ async function assertCanCreate(user) {
 }
 
 router.get('/', async (req, res) => {
-  const where = { userId: req.user.id };
+  const storeId = await storeScope(req);
+  const where = { userId: req.user.id, storeId };
   const q = String(req.query.q || '').trim();
   if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' } }, { category: { contains: q, mode: 'insensitive' } }];
   if (req.query.category) where.category = String(req.query.category);
@@ -98,6 +100,7 @@ router.post('/', async (req, res) => {
     data: {
       ...data,
       userId: req.user.id,
+      storeId: await storeScope(req),
       images: { create: images.map((im, position) => ({ position, label: im.label, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data })) },
       priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
     },

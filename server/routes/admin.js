@@ -1,4 +1,4 @@
-import { Router } from 'express';
+﻿import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { PLAN_ID_RE, PLAN_TABS, RESERVED_PLAN_IDS, deletePlan, isPlan, listPlans, listPeriods, planName, savePlan, saveTrial, trialSettings } from '../plans.js';
@@ -6,6 +6,7 @@ import { eventDTO, grantAccess, publicUser, undoLastGrant } from '../services/ac
 import * as evo from '../services/evolution.js';
 import { removeDomainFromEasypanel } from '../services/easypanel.js';
 import { forgetDomain } from '../services/domains.js';
+import { listAddonSettings, saveAddonSettings } from '../addons.js';
 
 const router = Router();
 
@@ -114,6 +115,8 @@ function planFields(b) {
     contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
     portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
     catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos/serviços do catálogo (0 = sem catálogo digital)'),
+    stores: intIn(b.stores ?? 0, 0, 1000, 'Lojas que o plano permite criar (0 = sem a função Criar loja)'),
+    dmCredit: b.dmCredit !== false,
     auditSend: b.auditSend,
     tabs: (() => {
       if (!Array.isArray(b.tabs) || b.tabs.some((t) => !PLAN_TABS.includes(t))) throw new AppError(400, 'Escolha as abas liberadas no plano.');
@@ -122,28 +125,22 @@ function planFields(b) {
   };
 }
 
+// O teste grátis usa todo o acesso do plano escolhido no cadastro; aqui só se define a duração.
 function trialFields(b) {
-  if (typeof b.auditSend !== 'boolean') throw new AppError(400, 'Informe se o teste pode responder conversas pela auditoria (sim ou não).');
-  return {
-    days: intIn(b.days, 1, 60, 'Dias de teste grátis'),
-    instances: intIn(b.instances, 0, 1000, 'WhatsApps para cobranças e lembretes'),
-    auditInstances: intIn(b.auditInstances, 0, 1000, 'Números para auditoria'),
-    contracts: intIn(b.contracts, 0, 100000, 'Modelos de contrato'),
-    portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
-    catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos/serviços do catálogo (0 = sem catálogo digital)'),
-    auditSend: b.auditSend,
-    tabs: (() => {
-      if (!Array.isArray(b.tabs) || b.tabs.some((t) => !PLAN_TABS.includes(t))) throw new AppError(400, 'Escolha as abas liberadas no teste grátis.');
-      return PLAN_TABS.filter((t) => b.tabs.includes(t));
-    })(),
-  };
+  return { ...trialSettings(), days: intIn(b.days, 1, 60, 'Dias de teste grátis') };
 }
 
 async function plansView() {
   const counts = await prisma.user.groupBy({ by: ['plan'], where: { role: 'usuario' }, _count: { _all: true } });
   const byPlan = new Map(counts.map((c) => [c.plan, c._count._all]));
-  return { plans: listPlans().map((p) => ({ ...p, userCount: byPlan.get(p.id) || 0 })), periods: listPeriods(), trial: trialSettings() };
+  return { plans: listPlans().map((p) => ({ ...p, userCount: byPlan.get(p.id) || 0 })), periods: listPeriods(), trial: trialSettings(), addons: listAddonSettings() };
 }
+
+// Limites extras: pacote (quantidade) e valor mensal de cada recurso que o usuário pode comprar além do plano.
+router.put('/addons', async (req, res) => {
+  await saveAddonSettings(req.body?.addons);
+  res.json({ ...(await plansView()), saved: 'Limites extras' });
+});
 
 router.get('/plans', async (_req, res) => {
   res.json(await plansView());

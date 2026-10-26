@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, isShopMode } from '../api.js';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import Icon from '../components/Icon.jsx';
+import StoreBar from '../components/StoreBar.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
@@ -94,8 +95,9 @@ export default function Orders() {
           <h1>Pedidos e clientes</h1>
           <p className="muted">Acompanhe as vendas, clientes e o histórico. Pedidos removidos ficam em Arquivados por até {data?.retentionDays || 20} dias.</p>
         </div>
-        <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>
+        {!isShopMode() && <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>}
       </header>
+      <StoreBar />
 
       <nav className="od-tabs" aria-label="Área de pedidos">
         <button type="button" className={tab === 'orders' ? 'is-on' : ''} onClick={() => { setTab('orders'); setSel(new Set()); }}>Pedidos {data && <span>{data.fresh} novos</span>}</button>
@@ -129,7 +131,7 @@ export default function Orders() {
           {tab !== 'customers' && <select className="input" value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)} aria-label="Forma de entrega">
             <option value="">Todas as entregas</option><option value="retirada">Retirada</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
           </select>}
-          {tab === 'orders' && sel.size > 0 && <button className="btn btn-danger btn-sm" onClick={() => setConfirm({ ids: [...sel] })}>Excluir {plural(sel.size, 'selecionado', 'selecionados')}</button>}
+          {tab === 'orders' && sel.size > 0 && !isShopMode() && <button className="btn btn-danger btn-sm" onClick={() => setConfirm({ ids: [...sel] })}>Excluir {plural(sel.size, 'selecionado', 'selecionados')}</button>}
           {tab === 'orders' && data?.total > 0 && <button className="btn btn-ghost btn-sm" onClick={() => setConfirm({ all: true })}>Arquivar todos</button>}
         </div>
       )}

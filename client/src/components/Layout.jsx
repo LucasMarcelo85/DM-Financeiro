@@ -18,6 +18,7 @@ const NAV = [
   { to: '/portfolio', label: 'Portfólio', icon: 'globe' },
   { to: '/produtos', label: 'Produtos', icon: 'box', feature: 'catalog' },
   { to: '/pedidos', label: 'Pedidos', icon: 'receipt', feature: 'catalog' },
+  { to: '/api', label: 'API', icon: 'link' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
   { to: '/perfil', label: 'Perfil', icon: 'gear', always: true },
 ];

@@ -8,7 +8,7 @@ export const RESERVED_SLUGS = new Set([
   'api', 'assets', 'static', 'public', 'health', 'webhooks', 'favicon', 'robots', 'sitemap', 'index',
   'entrar', 'login', 'sair', 'cadastro', 'registro', 'whatsapp', 'clientes', 'cobrancas', 'cobranca', 'lembretes', 'lembrete',
   'contratos', 'contrato', 'auditoria', 'portfolio', 'portfolios', 'plano', 'planos', 'pagamento', 'admin',
-  'app', 'inicio', 'dashboard', 'suporte', 'ajuda', 'termos', 'privacidade', 'p', 'u', 'null', 'undefined',
+  'app', 'produtos', 'pedidos', 'perfil', 'stores', 'tokens', 'inicio', 'dashboard', 'suporte', 'ajuda', 'termos', 'privacidade', 'p', 'u', 'null', 'undefined',
 ]);
 
 export function slugify(input, max = SLUG_MAX) {

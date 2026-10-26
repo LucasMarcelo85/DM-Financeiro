@@ -1,5 +1,6 @@
-import { useEffect, useRef, useState } from 'react';
+﻿import { useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import BuyMore from './BuyMore.jsx';
 import { useAuth } from '../auth.jsx';
 import Icon from './Icon.jsx';
 import Lamp from './Lamp.jsx';
@@ -278,8 +279,9 @@ export default function InstanceManager({ purpose = 'envio' }) {
           {canAdd ? (
             <button className="btn btn-ghost" onClick={() => setChoose(true)} disabled={busy === 'add'}><Icon name="plus" size={18} /> {audit ? 'Adicionar outro número' : 'Adicionar outro WhatsApp'}</button>
           ) : (
-            <p className="muted small">Você usou {instances.length} de {limit}. Para conectar mais, mude para um plano maior.</p>
+            <p className="muted small">Você usou {instances.length} de {limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.</p>
           )}
+          <BuyMore resource={audit ? 'auditInstances' : 'instances'} />
         </div>
       )}
       {data && <p className="muted small">Seu plano permite {plural(limit, noun[0], noun[1])}.</p>}

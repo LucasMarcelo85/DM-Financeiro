@@ -187,6 +187,65 @@ function ButtonView({ el, box, mode, onCart, onLink, cartCount }) {
   return { cls, style, body, href, button };
 }
 
+function CarouselView({ el, mode }) {
+  const slides = el.slides || [];
+  const [i, setI] = useState(0);
+  const n = slides.length;
+  const cur = n ? i % n : 0;
+  useEffect(() => {
+    if (mode !== 'public' || !el.autoplay || n < 2) return undefined;
+    const t = setInterval(() => setI((v) => (v + 1) % n), Math.max(2, el.interval) * 1000);
+    return () => clearInterval(t);
+  }, [mode, el.autoplay, el.interval, n]);
+  if (!n) return mode === 'edit' ? <div className="pv-ph"><span>Adicione as imagens do carrossel no painel</span></div> : null;
+  const go = (d) => setI((cur + d + n) % n);
+  return (
+    <div className="pv-car" style={{ borderRadius: el.radius }}>
+      <div className="pv-car-track" style={{ transform: `translateX(-${cur * 100}%)` }}>
+        {slides.map((s) => {
+          const href = mode === 'public' ? linkHref(s.link) : '';
+          const img = <img src={s.src} alt={s.alt || ''} draggable="false" style={{ objectFit: el.fit }} />;
+          return <div className="pv-car-slide" key={s.id}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{img}</a> : img}</div>;
+        })}
+      </div>
+      {el.arrows && n > 1 && (
+        <>
+          <button type="button" className="pv-car-btn is-prev" aria-label="Anterior" onClick={() => go(-1)}>‹</button>
+          <button type="button" className="pv-car-btn is-next" aria-label="Próxima" onClick={() => go(1)}>›</button>
+        </>
+      )}
+      {el.dots && n > 1 && (
+        <div className="pv-car-dots">
+          {slides.map((s, k) => <button type="button" key={s.id} className={k === cur ? 'is-on' : ''} aria-label={`Imagem ${k + 1}`} onClick={() => setI(k)} />)}
+        </div>
+      )}
+    </div>
+  );
+}
+
+function MenuView({ el, device, mode }) {
+  const [open, setOpen] = useState(false);
+  const items = el.items || [];
+  const burger = el.variant === 'hamburger' || (el.variant === 'auto' && device === 'mobile');
+  const style = { '--mc': el.color, '--mbg': el.bg, '--mr': `${el.radius}px` };
+  const link = (it) => {
+    const href = mode === 'public' ? linkHref(it.link) : '';
+    return href
+      ? <a key={it.id} href={href} target={href.startsWith('#') ? undefined : '_blank'} rel="noopener noreferrer" onClick={() => setOpen(false)}>{it.label}</a>
+      : <span key={it.id}>{it.label}</span>;
+  };
+  if (!burger) return <nav className="pv-menu is-bar" style={style} aria-label={el.title || 'Menu'}>{items.map(link)}</nav>;
+  return (
+    <div className={`pv-menu is-burger${open ? ' is-open' : ''}`} style={style}>
+      <button type="button" className="pv-menu-btn" aria-expanded={open} aria-label="Abrir menu" onClick={() => setOpen((v) => !v)}>
+        <span className="pv-bars" aria-hidden="true"><i /><i /><i /></span>
+        {el.title && <b>{el.title}</b>}
+      </button>
+      {open && <nav className="pv-menu-panel" aria-label={el.title || 'Menu'}>{items.map(link)}</nav>}
+    </div>
+  );
+}
+
 function VideoView({ el, mode }) {
   const v = el.url ? parseVideo(el.url) : null;
   if (!v) return mode === 'edit' ? <div className="pv-ph"><span>Cole o link de um vídeo (YouTube ou Vimeo) no painel</span></div> : null;
@@ -293,6 +352,8 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   }
   else if (el.t === 'shape') { content = <ShapeView el={el} />; linked = el.link; }
   else if (el.t === 'video') content = <VideoView el={el} mode={mode} />;
+  else if (el.t === 'carousel') content = <CarouselView el={el} mode={mode} />;
+  else if (el.t === 'menu') content = <MenuView el={el} device={device} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
   else if (el.t === 'catsearch') content = <CatSearchView el={el} mode={mode} />;
   else if (el.t === 'catgrid') content = <CatGridView el={el} device={device} mode={mode} />;

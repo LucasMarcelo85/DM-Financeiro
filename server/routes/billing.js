@@ -6,6 +6,7 @@ import { AppError, normalizePhone } from '../utils/helpers.js';
 import { PERIODS, isPeriod, isPlan, listPeriods, listPlans, periodDays, planName, priceCents } from '../plans.js';
 import { computeAccess, extendAccess, publicUser } from '../services/access.js';
 import * as pay from '../services/infinitepay.js';
+import { ADDON_RESOURCES, ADDON_DAYS, addonPurchases, applyAddonPayment, extrasFor, listAddonSettings, priceAddonItems } from '../addons.js';
 
 export const billingRouter = Router();
 export const webhookRouter = Router();
@@ -19,7 +20,8 @@ async function settle(payment, { slug, transactionNsu, receiptUrl }) {
       data: { status: 'paid', slug: slug || null, transactionNsu: transactionNsu || null, receiptUrl: receiptUrl || null, paidAt: new Date() },
     });
     if (claimed.count !== 1) return false;
-    await extendAccess(payment.userId, payment.days || config.accessDays, payment.plan, tx); // dias do período contratado
+    if (payment.kind === 'addon') await applyAddonPayment(payment, tx);
+    else await extendAccess(payment.userId, payment.days || config.accessDays, payment.plan, tx); // dias do período contratado
     return true;
   });
 }
@@ -41,8 +43,9 @@ billingRouter.get('/', async (req, res) => {
     periods: listPeriods(),
     accessDays: config.accessDays,
     paymentsConfigured: infinitepayConfigured(),
+    addons: { settings: listAddonSettings().filter((s) => s.enabled), extras: extrasFor(req.user.id), purchases: addonPurchases(req.user.id), days: ADDON_DAYS },
     payments: rows.map((p) => ({
-      id: p.id, plan: p.plan, period: p.period, days: p.days, amountCents: p.amountCents, status: p.status, receiptUrl: p.receiptUrl,
+      id: p.id, kind: p.kind, plan: p.plan, period: p.period, days: p.days, amountCents: p.amountCents, status: p.status, receiptUrl: p.receiptUrl,
       createdAt: p.createdAt.getTime(), paidAt: p.paidAt ? p.paidAt.getTime() : null,
     })),
   });
@@ -67,6 +70,30 @@ billingRouter.post('/checkout', async (req, res) => {
     amountCents,
     redirectUrl: `${config.appUrl}/pagamento/retorno`,
     // A InfinitePay só consegue avisar se o sistema estiver publicado com https.
+    webhookUrl: config.appUrl.startsWith('https://') ? `${config.appUrl}/api/webhooks/infinitepay` : undefined,
+    customer: { name: req.user.name, email: req.user.email, ...(phone ? { phone_number: `+${phone}` } : {}) },
+  });
+  res.json({ url });
+});
+
+// Compra ou renova limites extras (WhatsApp, auditoria, contratos, portfólio, produtos). Valor e pacote vêm do que o admin configurou.
+billingRouter.post('/addons/checkout', async (req, res) => {
+  if (!infinitepayConfigured()) {
+    throw new AppError(503, 'O pagamento ainda não foi configurado pelo administrador.', 'PAYMENTS_NOT_CONFIGURED');
+  }
+  if (req.user.role === 'admin') throw new AppError(400, 'Administradores já têm acesso ilimitado.');
+  const { lines, total } = priceAddonItems(req.user.id, req.body?.items);
+  const orderNsu = `dm-${req.user.id}-${crypto.randomUUID()}`;
+  const items = lines.map(({ resource, units, addonId }) => ({ resource, units, ...(addonId != null ? { addonId } : {}) }));
+  await prisma.payment.create({ data: { userId: req.user.id, orderNsu, kind: 'addon', plan: req.user.plan, period: 'mensal', days: ADDON_DAYS, amountCents: total, items } });
+
+  const phone = normalizePhone(req.user.phone);
+  const summary = lines.map((l) => `${l.units} ${ADDON_RESOURCES[l.resource].units}`).join(', ');
+  const url = await pay.createCheckout({
+    orderNsu,
+    description: `DM Financeiro - Limites extras: ${summary} (${ADDON_DAYS} dias)`,
+    amountCents: total,
+    redirectUrl: `${config.appUrl}/pagamento/retorno`,
     webhookUrl: config.appUrl.startsWith('https://') ? `${config.appUrl}/api/webhooks/infinitepay` : undefined,
     customer: { name: req.user.name, email: req.user.email, ...(phone ? { phone_number: `+${phone}` } : {}) },
   });

@@ -1,6 +1,8 @@
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { loadPlans } from '../plans.js';
+import { loadAddons } from '../addons.js';
+import * as evo from './evolution.js';
 import { DAY } from '../utils/helpers.js';
 import { recountUnread, retentionCutoff } from './audit.js';
 
@@ -48,6 +50,23 @@ export async function purgeOldOrders(now = Date.now()) {
   return r.count;
 }
 
+// Só roda se EXPIRED_ACCOUNT_DAYS > 0: apaga contas cuja licença venceu há mais que isso (e remove as instâncias na Evolution).
+export async function purgeExpiredAccounts(now = Date.now()) {
+  if (!config.expiredAccountDays) return 0;
+  const cutoff = new Date(now - config.expiredAccountDays * DAY);
+  const users = await prisma.user.findMany({
+    where: { role: 'usuario', trialEndsAt: { lt: cutoff }, OR: [{ accessUntil: null }, { accessUntil: { lt: cutoff } }] },
+    select: { id: true },
+  });
+  for (const u of users) {
+    const instances = await prisma.instance.findMany({ where: { userId: u.id, provider: 'evolution' }, select: { name: true } });
+    await Promise.all(instances.map((i) => evo.deleteInstance(i.name).catch(() => {})));
+    await prisma.user.delete({ where: { id: u.id } });
+  }
+  if (users.length) console.log(`[manutenção] ${users.length} contas com licença vencida há mais de ${config.expiredAccountDays} dias foram apagadas.`);
+  return users.length;
+}
+
 export async function runMaintenance() {
   if (running) return;
   running = true;
@@ -57,7 +76,10 @@ export async function runMaintenance() {
     const orders = await purgeOldOrders();
     if (orders) console.log(`[manutenção] ${orders} pedidos arquivados há mais de ${config.orderRetentionDays} dias foram apagados.`);
     await prisma.verificationCode.deleteMany({ where: { expiresAt: { lt: new Date() } } });
+    await prisma.userAddon.deleteMany({ where: { paidUntil: { lt: new Date(Date.now() - 30 * DAY) } } }); // limite extra vencido há mais de 30 dias é perdido
     await loadPlans();
+    await loadAddons();
+    await purgeExpiredAccounts();
   } catch (e) {
     console.error('[manutenção] falha no ciclo:', e.message);
   } finally {

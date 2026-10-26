@@ -1,5 +1,6 @@
-import { useCallback, useEffect, useRef, useState } from 'react';
+﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
+import BuyMore from '../components/BuyMore.jsx';
 import { useAuth } from '../auth.jsx';
 import InstanceManager from '../components/InstanceManager.jsx';
 import ChatList from '../components/audit/ChatList.jsx';
@@ -247,7 +248,8 @@ export default function Audit() {
         <div className="btn-row">
           <span className={`au-live ${online ? 'is-on' : ''}`} role="status" title={online ? 'Recebendo mensagens em tempo real' : 'Sem o tempo real: a tela continua se atualizando a cada poucos segundos'}><i />{online ? 'Ao vivo' : 'Atualizando...'}</span>
           {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({instances.length}/{inst?.limit ?? user.limits.auditInstances})</button>}
-        </div>
+                   <BuyMore resource="auditInstances" label="Adquirir mais números" />
+                 </div>
       </header>
 
       {syncing && (
