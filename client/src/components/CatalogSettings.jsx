@@ -156,7 +156,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
                 <TextField label="Peso (gramas) *" value={f.correios.weightG} onChange={(v) => setCo('weightG')(v.replace(/\D/g, '').slice(0, 5))} id="cs-g" />
               </div>
               <p className="muted small">{info.hasSuperfreteToken ? 'O SuperFrete já está configurado pela administração do sistema.' : 'O SuperFrete ainda não está configurado no servidor. Avise o administrador para preencher SUPERFRETE_TOKEN.'}</p>
-              <Check label="Usar o ambiente de testes do SuperFrete (sandbox)" checked={f.correios.sandbox} onChange={setCo('sandbox')} />
+              {/* <Check label="Usar o ambiente de testes do SuperFrete (sandbox)" checked={f.correios.sandbox} onChange={setCo('sandbox')} /> */}
               {info.hasSuperfreteToken && (
                 <div className="cs-test">
                   <TextField label="Testar com um CEP de destino" value={zip} onChange={(v) => setZip(cepMask(v))} placeholder="00000-000" id="cs-tzip" />

@@ -388,7 +388,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           </ul>
           <div className="cat-totals"><span className="cat-grand">Subtotal <strong>{brl(subtotal)}</strong></span></div>
           {!meetsMinimum && <div className="cat-checkout-progress" role="status" aria-live="polite">
-            <div className="cat-checkout-progress-head"><strong>Quase lá!</strong><span>{progress}%</span></div>
+            <div className="cat-checkout-progress-head"><strong>Quase lá!</strong></div>
             <div className="cat-progress-track"><span style={{ width: `${progress}%` }} /></div>
             <ul>
               {!itemsMet && <li>Adicione mais {minimumItems - itemCount} {minimumItems - itemCount === 1 ? 'item' : 'itens'} para atingir o mínimo de {minimumItems}.</li>}
