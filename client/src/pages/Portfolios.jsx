@@ -147,6 +147,37 @@ export default function Portfolios() {
     try { await api.post(`/portfolios/${p.id}/duplicate`); toast('Página duplicada.'); load(); } catch (e) { toast(e.message, 'error'); }
   }
 
+  async function exportPage(p) {
+    try {
+      const { portfolio } = await api.get(`/portfolios/${p.id}`);
+      const file = { format: 'dm-portfolio', version: 1, name: portfolio.name, kind: portfolio.kind, data: portfolio.data };
+      const url = URL.createObjectURL(new Blob([JSON.stringify(file)], { type: 'application/json' }));
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${(portfolio.name || 'portfolio').replace(/[^\w-]+/g, '-').toLowerCase()}.portfolio.json`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      toast('Portfólio exportado.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+
+  async function importFile(e) {
+    const f = e.target.files?.[0];
+    e.target.value = '';
+    if (!f) return;
+    setBusy('import');
+    try {
+      let file;
+      try { file = JSON.parse(await f.text()); } catch { throw new Error('Arquivo inválido: não é um JSON.'); }
+      if (file?.format !== 'dm-portfolio' || !file.data) throw new Error('Arquivo inválido: não é um portfólio exportado.');
+      const { portfolio } = await api.post('/portfolios', { name: String(file.name || 'Portfólio importado').slice(0, 120), kind: file.kind, data: file.data });
+      toast('Portfólio importado.');
+      nav(`/portfolio/${portfolio.id}`);
+    } catch (err) { toast(err.message, 'error'); setBusy(''); }
+  }
+
   async function makeMain(p) {
     try { await api.post(`/portfolios/${p.id}/main`); toast('Agora é a página principal.'); load(); } catch (e) { toast(e.message, 'error'); }
   }
@@ -179,6 +210,10 @@ export default function Portfolios() {
           </p>
         </div>
         {getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
+        <label className={`btn btn-ghost ${!data || full || busy ? 'is-disabled' : ''}`} aria-disabled={!data || full || !!busy}>
+          Importar
+          <input type="file" accept=".json,application/json" hidden onChange={importFile} disabled={!data || full || !!busy} />
+        </label>
         <button className="btn btn-primary" onClick={() => setNewOpen(true)} disabled={!data || full || !!busy}><Icon name="plus" size={18} /> Nova página</button>
       </header>
 
@@ -237,6 +272,7 @@ export default function Portfolios() {
               <div className="pl-more">
                 {p.published && <a className="link-btn" href={pageUrl(p.path, p.customUrl)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
                 <button className="link-btn" onClick={() => duplicate(p)} disabled={full}>Duplicar</button>
+                <button className="link-btn" onClick={() => exportPage(p)}>Exportar</button>
                 {!p.isMain && <button className="link-btn" onClick={() => makeMain(p)}>Tornar principal</button>}
               </div>
             </li>
