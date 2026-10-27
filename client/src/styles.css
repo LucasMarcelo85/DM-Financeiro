@@ -905,7 +905,13 @@ button.fat-card:hover { border-color: #b9c4d2; }
 /* ---------- Editor: casca ---------- */
 .pe2 .ce-top { flex-wrap: wrap; row-gap: 0.4rem; }
 .pe-converted { margin: 0.5rem 1rem 0; }
-.pe2 .ce-body { grid-template-columns: 9.5rem minmax(0, 1fr) 20rem; }
+.pe2 .ce-body { grid-template-columns: var(--pe-l, 9.5rem) minmax(0, 1fr) var(--pe-r, 20rem); position: relative; }
+.pe-resizer { position: absolute; top: 0; bottom: 0; width: 9px; z-index: 20; cursor: col-resize; touch-action: none; background: transparent; }
+.pe-resizer.is-left { left: calc(var(--pe-l, 9.5rem) - 4px); }
+.pe-resizer.is-right { right: calc(var(--pe-r, 20rem) - 4px); }
+.pe-resizer:hover, body.is-resizing .pe-resizer { background: rgba(37, 99, 235, .35); }
+body.is-resizing { cursor: col-resize; user-select: none; }
+body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pe-left { width: auto; min-width: 0; }
 .pe-left-tabs { display: grid; grid-template-columns: 1fr 1fr; gap: 2px; padding: 2px; margin-bottom: 0.4rem; background: #e9eef5; border-radius: 8px; }
 .pe-left-tabs button { border: 0; background: transparent; padding: 0.3rem 0.1rem; border-radius: 6px; font: inherit; font-size: 0.78rem; font-weight: 700; color: var(--muted); cursor: pointer; }
@@ -943,6 +949,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 @media (hover: none) { .pe-stage-canvas .pv-el.is-selected, .pe-handle { touch-action: none; } }
 @media (max-width: 64rem) {
   .pe2 .ce-body { grid-template-columns: minmax(0, 1fr); }
+  .pe-resizer { display: none; }
 }
 
 /* ---------- Editor: painel de propriedades ---------- */

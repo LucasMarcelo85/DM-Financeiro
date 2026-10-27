@@ -1,4 +1,4 @@
-import { memo, useEffect, useRef, useState } from 'react';
+import { cloneElement, isValidElement, memo, useEffect, useRef, useState } from 'react';
 import './pv.css';
 import { DESIGN_W, autoHeight, boxOf, pageHeight, setCatalogContext } from '../../lib/portfolio/doc.js';
 import { CatalogScope, CatGridView, CatSearchView } from './Catalog.jsx';
@@ -274,24 +274,37 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
   const style = {
     '--card-r': `${k.radius}px`,
     ...(k.bg ? { background: k.bg } : {}), ...(k.text ? { color: k.text } : {}), ...(k.accent ? { '--p': k.accent } : {}),
+    ...(k.font ? { fontFamily: fontCss(k.font) } : {}),
+    '--nl': k.nameLines || 2,
+    ...(k.ratio === 'custom' ? { '--img-h': `${k.imgHeight || 180}px` } : {}),
   };
   const mods = [k.shadow && `sh-${k.shadow}`, k.border && 'has-border', k.padding && `pad-${k.padding}`, k.textSize && `ts-${k.textSize}`, k.priceSize && `ps-${k.priceSize}`, k.buttonStyle && `bt-${k.buttonStyle}`, k.buttonFull === false && 'bt-auto'].filter(Boolean).join(' ');
+  const iconNode = k.icon ? <span className="pv-card-ico" style={k.iconColor ? { color: k.iconColor } : undefined}><IconSvg name={k.icon} size="1.1em" /></span> : null;
+  const iconAt = (pos) => (k.icon && (k.iconPos || 'button') === pos ? iconNode : null);
+  const actionNode = action && iconAt('button') && isValidElement(action)
+    ? cloneElement(action, {}, iconNode, action.props.children)
+    : action;
+  const imgStyle = {
+    objectPosition: `${k.imgX ?? 50}% ${k.imgY ?? 50}%`,
+    ...(k.imgPad ? { padding: k.imgPad, boxSizing: 'border-box' } : {}),
+  };
   return (
     <div className={`pv-card cs-${cardStyle} is-${k.layout} ratio-${k.ratio} fit-${k.fit} al-${k.align} ${mods}`} style={style}>
       {k.showImage && (
-        <div className="pv-card-img">
-          {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" />}
+        <div className="pv-card-img" style={k.imgBg ? { background: k.imgBg } : undefined}>
+          {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />}
+          {iconAt('corner') && <span className="pv-card-corner">{iconNode}</span>}
           {k.showVariations && p.images.length > 1 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
         </div>
       )}
       <div className="pv-card-body">
         {k.showCategory && <span className="pv-card-cat">{p.category}</span>}
-        {k.showName && <span className="pv-card-name">{p.name}</span>}
+        {k.showName && <span className="pv-card-name">{iconAt('name')}{p.name}</span>}
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
         {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} a partir de {t.minQuantity || 1} un.</small>)}</span>}
         {k.showVariations && p.images.length > 1 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
-        {k.showButton && action}
+        {k.showButton && actionNode}
       </div>
     </div>
   );
@@ -324,6 +337,7 @@ function ProductsView({ el, device, products, mode }) {
 }
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
+const FULL_BLEED = 3000; // elementos de largura total passam das bordas do desenho; a página corta o excesso
 function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, cartCount, replay = 0 }) {
   const box = boxOf(el, device);
   const ref = useRef(null);
@@ -351,6 +365,7 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
     } else linked = el.link;
   }
   else if (el.t === 'shape') { content = <ShapeView el={el} />; linked = el.link; }
+  else if (el.t === 'spacer') content = <ShapeView el={{ ...el, shape: 'rect', radius: 0, borderStyle: 'solid' }} />;
   else if (el.t === 'video') content = <VideoView el={el} mode={mode} />;
   else if (el.t === 'carousel') content = <CarouselView el={el} mode={mode} />;
   else if (el.t === 'menu') content = <MenuView el={el} device={device} mode={mode} />;
@@ -369,10 +384,10 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   const href = linked && mode === 'public' ? linkHref(linked) : '';
   if (href) content = <a className="pv-link" href={href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{content}</a>;
 
-  const style = {
-    left: box.x, top: box.y, width: box.w, height: el.t === 'products' ? 'auto' : box.h, zIndex: z,
-    transform: box.r ? `rotate(${box.r}deg)` : undefined,
-  };
+  const bleed = el.full && (el.t === 'shape' || el.t === 'spacer') && (el.shape || 'rect') === 'rect';
+  const style = bleed
+    ? { left: -FULL_BLEED, top: box.y, width: DESIGN_W[device] + FULL_BLEED * 2, height: box.h, zIndex: z }
+    : { left: box.x, top: box.y, width: box.w, height: el.t === 'products' ? 'auto' : box.h, zIndex: z, transform: box.r ? `rotate(${box.r}deg)` : undefined };
   return (
     <div ref={ref} className={`pv-el pv-t-${el.t}${box.hide ? ' is-ghost' : ''}`} data-el={el.id} style={style}>
       <div className={`pv-enter${hasEnter ? ` has-enter e-${a.enter}${seen ? ' is-in' : ''}` : ''}`} style={{ '--dur': `${a.duration}ms`, '--delay': `${a.delay}ms` }}>

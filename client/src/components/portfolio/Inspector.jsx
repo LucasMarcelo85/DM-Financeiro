@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react';
 import EIcon from '../contract/EIcon.jsx';
 import { Check, ColorField, GalleryField, ImageField, LinkFields, RangeField, Section, Seg, TextField } from './Fields.jsx';
 import IconPicker from './IconPicker.jsx';
-import { fillBackground, ProductCard } from './Canvas.jsx';
+import { fillBackground } from './Canvas.jsx';
 import {
   BTN_STYLES, CARD_STYLES, CATALOG_DISPLAY, DESIGN_W, ELEMENT_LABELS, ENTER_OPTIONS, FILL_ANIM_OPTIONS, HOVER_OPTIONS, LOOP_OPTIONS, SHADOW_OPTIONS,
   TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, autoHeight, boxOf,
@@ -32,10 +32,11 @@ const Select = ({ label, value, options, onChange, id }) => (
   </label>
 );
 
-const FontSelect = ({ label, value, onChange }) => (
+const FontSelect = ({ label, value, onChange, allowDefault }) => (
   <label className="ce-field">
     <span>{label}</span>
     <select className="input input-sm" value={value} onChange={(e) => onChange(e.target.value)}>
+      {allowDefault && <option value="">Padrão da página</option>}
       {FONT_GROUPS.map((g) => (
         <optgroup key={g} label={g}>{FONTS.filter((f) => f.group === g).map((f) => <option key={f.key} value={f.key}>{f.label}</option>)}</optgroup>
       ))}
@@ -234,10 +235,36 @@ function ButtonSection({ el, api }) {
   );
 }
 
-function ShapeSection({ el, api }) {
+function FullWidthToggle({ el, device, api }) {
+  const W = DESIGN_W[device];
+  return (
+    <>
+      <Check label="Largura total da tela (de ponta a ponta)" checked={Boolean(el.full)} onChange={(v) => { api.patch({ full: v }, 'el:full'); if (v) api.box({ x: 0, w: W }, 'box:full'); }} />
+      {el.full && <p className="muted small">Ocupa a tela inteira, mesmo em monitores grandes. Ajuste só a altura e a posição vertical. Ideal para barra de menu, rodapé e faixas de fundo.</p>}
+    </>
+  );
+}
+
+function SpacerSection({ el, device, api }) {
+  const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
+  return (
+    <Section title="Espaçador / faixa de fundo">
+      <p className="muted small">Divide o fundo da página em faixas com cores diferentes. Posicione atrás dos outros elementos (ele já é criado no fundo) para montar navbar, rodapé e seções.</p>
+      <FullWidthToggle el={el} device={device} api={api} />
+      <FillFields fill={el.fill} onChange={(fill) => api.patch({ fill }, 'el:fill')} />
+      <RangeField label="Opacidade" value={el.opacity} min={0} max={100} suffix="%" onChange={f('opacity')} id="sp-op" />
+      <RangeField label="Borda" value={el.borderW} min={0} max={40} suffix="px" onChange={f('borderW')} id="sp-bw" />
+      {el.borderW > 0 && <ColorField label="Cor da borda" value={el.borderColor} onChange={f('borderColor')} id="sp-bc" />}
+      <Select label="Sombra" value={el.shadow} options={SHADOW_OPTIONS} onChange={f('shadow')} />
+    </Section>
+  );
+}
+
+function ShapeSection({ el, device, api }) {
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
   return (
     <Section title="Forma">
+      {el.shape === 'rect' && <FullWidthToggle el={el} device={device} api={api} />}
       <div className="ce-field">
         <span>Forma</span>
         <div className="pe-shapes" role="radiogroup" aria-label="Forma">
@@ -447,7 +474,8 @@ export function ElementInspector({ el, device, api, products }) {
       {el.t === 'image' && <ImageSection el={el} api={api} />}
       {el.t === 'icon' && <IconSection el={el} api={api} />}
       {el.t === 'button' && <ButtonSection el={el} api={api} />}
-      {el.t === 'shape' && <ShapeSection el={el} api={api} />}
+      {el.t === 'shape' && <ShapeSection el={el} device={device} api={api} />}
+      {el.t === 'spacer' && <SpacerSection el={el} device={device} api={api} />}
       {el.t === 'video' && <VideoSection el={el} api={api} />}
       {el.t === 'carousel' && <CarouselSection el={el} api={api} />}
       {el.t === 'menu' && <MenuSection el={el} api={api} />}
@@ -511,30 +539,45 @@ function PixelSection({ doc, api }) {
   );
 }
 
-const SAMPLE_PRODUCT = { id: 0, name: 'Nome do produto', category: 'Categoria', description: 'Descrição curta do produto para você ver como fica.', priceCents: 4990, images: [{ id: 1, label: 'Azul', priceCents: null, url: '' }, { id: 2, label: 'Rosa', priceCents: null, url: '' }], priceOptions: [{ id: 1, label: 'Atacado', priceCents: 3990, minQuantity: 10 }] };
-
-function CardDesigner({ doc, api, products = [] }) {
+function CardDesigner({ doc, api }) {
   const c = doc.catalog;
   const k = c.card;
-  const sample = products[0] || SAMPLE_PRODUCT;
   const set = (key) => (v) => api.patchCatalog({ card: { ...k, [key]: v } }, `cat:card:${key}`);
   const custom = Boolean(k.bg || k.text || k.accent);
   return (
     <Section title="Cartão do produto">
-      <div className="cd-live" aria-label="Pré-visualização do cartão">
-        <small>Pré-visualização ao vivo</small>
-        <div className="cd-live-card"><ProductCard p={sample} cardStyle={c.cardStyle} card={k} action={<span className="pv-card-btn">{c.addLabel}</span>} /></div>
-      </div>
       <Seg label="Disposição" value={k.layout} options={[['vertical', 'Foto em cima'], ['horizontal', 'Foto ao lado']]} onChange={set('layout')} id="cd-layout" />
-      <Seg label="Formato da foto" value={k.ratio} options={[['square', 'Quadrada'], ['portrait', 'Vertical'], ['landscape', 'Horizontal']]} onChange={set('ratio')} id="cd-ratio" />
+      <Select label="Formato da foto" value={k.ratio} onChange={set('ratio')} options={[['square', 'Quadrada'], ['portrait', 'Vertical (3:4)'], ['tall', 'Vertical alta (2:3)'], ['landscape', 'Horizontal (4:3)'], ['wide', 'Panorâmica (16:9)'], ['custom', 'Altura fixa (px)']]} />
+      {k.ratio === 'custom' && <RangeField label="Altura da foto" value={k.imgHeight} min={60} max={600} step={5} suffix="px" onChange={set('imgHeight')} id="cd-imgh" />}
       <Seg label="Ajuste da foto" value={k.fit} options={[['cover', 'Preencher'], ['contain', 'Inteira']]} onChange={set('fit')} id="cd-fit" />
+      {k.fit === 'cover' && (
+        <>
+          <RangeField label="Foco horizontal da foto" value={k.imgX} min={0} max={100} suffix="%" onChange={set('imgX')} id="cd-imgx" />
+          <RangeField label="Foco vertical da foto" value={k.imgY} min={0} max={100} suffix="%" onChange={set('imgY')} id="cd-imgy" />
+        </>
+      )}
+      <RangeField label="Margem dentro da foto" value={k.imgPad} min={0} max={40} suffix="px" onChange={set('imgPad')} id="cd-imgpad" />
+      <Check label="Cor de fundo atrás da foto" checked={Boolean(k.imgBg)} onChange={(on) => set('imgBg')(on ? '#f3f5f8' : '')} />
+      {k.imgBg && <ColorField label="Fundo da foto" value={k.imgBg} onChange={set('imgBg')} id="cd-imgbg" />}
+      <p className="muted small">Todos os cartões ficam do mesmo tamanho: a foto segue o formato escolhido e o botão fica sempre na base.</p>
+      <RangeField label="Espaço entre os cartões" value={k.gap} min={6} max={40} suffix="px" onChange={set('gap')} id="cd-gap" />
+      <FontSelect label="Fonte do cartão" value={k.font || ''} onChange={set('font')} allowDefault />
       <Seg label="Alinhamento do texto" value={k.align} options={[['left', 'Esquerda'], ['center', 'Centro']]} onChange={set('align')} id="cd-align" />
+      <RangeField label="Linhas do nome" value={k.nameLines} min={1} max={3} onChange={set('nameLines')} id="cd-nl" />
       <RangeField label="Arredondamento" value={k.radius} min={0} max={32} onChange={set('radius')} id="cd-radius" />
       <Seg label="Sombra" value={k.shadow} options={[['none', 'Nenhuma'], ['soft', 'Suave'], ['strong', 'Forte']]} onChange={set('shadow')} id="cd-shadow" />
       <Seg label="Espaço interno" value={k.padding} options={[['compact', 'Pequeno'], ['normal', 'Normal'], ['roomy', 'Grande']]} onChange={set('padding')} id="cd-pad" />
       <Seg label="Tamanho do nome" value={k.textSize} options={[['sm', 'Pequeno'], ['md', 'Médio'], ['lg', 'Grande']]} onChange={set('textSize')} id="cd-ts" />
       <Seg label="Tamanho do preço" value={k.priceSize} options={[['sm', 'Pequeno'], ['md', 'Médio'], ['lg', 'Grande']]} onChange={set('priceSize')} id="cd-ps" />
       <Check label="Borda no cartão" checked={k.border} onChange={set('border')} />
+      <IconPicker label="Ícone no cartão" value={k.icon} onChange={set('icon')} allowNone />
+      {k.icon && (
+        <>
+          <Seg label="Onde fica o ícone" value={k.iconPos} options={[['button', 'No botão'], ['name', 'Ao lado do nome'], ['corner', 'Canto da foto']]} onChange={set('iconPos')} id="cd-iconpos" />
+          <Check label="Cor própria no ícone" checked={Boolean(k.iconColor)} onChange={(on) => set('iconColor')(on ? doc.theme.primary : '')} />
+          {k.iconColor && <ColorField label="Cor do ícone" value={k.iconColor} onChange={set('iconColor')} id="cd-iconc" />}
+        </>
+      )}
       <Seg label="Estilo do botão" value={k.buttonStyle} options={[['solid', 'Cheio'], ['outline', 'Contorno'], ['soft', 'Suave']]} onChange={set('buttonStyle')} id="cd-bt" />
       <Check label="Botão ocupa toda a largura" checked={k.buttonFull} onChange={set('buttonFull')} />
       <Check label={'Escrever "a partir de" quando o preço varia'} checked={k.priceFrom} onChange={set('priceFrom')} />
@@ -577,7 +620,7 @@ function CatalogSection({ doc, api, categories, meta, products = [] }) {
       <RangeField label="Colunas no tablet" value={c.columns.tablet} min={1} max={6} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, tablet: v } }, 'cat:cols')} id="cc-t" />
       <RangeField label="Colunas no celular" value={c.columns.mobile} min={1} max={3} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, mobile: v } }, 'cat:cols')} id="cc-m" />
       <Seg label="Estilo do cartão" value={c.cardStyle} options={CARD_STYLES} onChange={set('cardStyle')} id="cc-style" />
-      <CardDesigner doc={doc} api={api} products={products} />
+      <CardDesigner doc={doc} api={api} />
       <Check label="Mostrar busca" checked={c.showSearch} onChange={set('showSearch')} />
       <Check label="Mostrar filtro de categorias" checked={c.showCategories} onChange={set('showCategories')} />
       <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />

@@ -198,6 +198,22 @@
 .pv-card.bt-soft .pv-card-btn { background: color-mix(in srgb, var(--p, #f2a33a) 16%, transparent); color: var(--p, #f2a33a); }
 .pv-card.bt-auto .pv-card-btn { justify-self: start; } .pv-card.bt-auto.al-center .pv-card-btn { justify-self: center; }
 .pv-dots i { width: 7px; height: 7px; border-radius: 50%; background: rgba(255, 255, 255, .9); box-shadow: 0 0 0 1px rgba(0, 0, 0, .25); }
+/* cartões do mesmo tamanho: o corpo estica e o botão fica sempre na base */
+.pv-card-body { display: flex; flex-direction: column; flex: 1 1 auto; min-height: 0; }
+.pv-card.al-center .pv-card-body { align-items: center; }
+.pv-card.is-horizontal .pv-card-body { justify-content: center; }
+.pv-card-body > .pv-card-btn { margin-top: auto; }
+.pv-card-body > :has(+ .pv-card-btn) { margin-bottom: .2rem; }
+.pv-card.bt-auto .pv-card-btn { align-self: flex-start; } .pv-card.bt-auto.al-center .pv-card-btn { align-self: center; }
+.pv-card-name { display: -webkit-box; -webkit-box-orient: vertical; -webkit-line-clamp: var(--nl, 2); overflow: hidden; }
+.pv-card-ico { display: inline-flex; vertical-align: middle; margin-right: .35em; color: var(--p, #f2a33a); }
+.pv-card-btn .pv-card-ico { color: inherit; margin: 0; }
+.pv-card-corner { position: absolute; top: 8px; right: 8px; width: 32px; height: 32px; display: grid; place-items: center; border-radius: 50%; background: rgba(255, 255, 255, .92); box-shadow: 0 2px 8px rgba(20, 32, 46, .22); }
+.pv-card-corner .pv-card-ico { margin: 0; }
+.pv-card.ratio-wide .pv-card-img { aspect-ratio: 16 / 9; } .pv-card.ratio-tall .pv-card-img { aspect-ratio: 2 / 3; }
+.pv-card.ratio-custom .pv-card-img { aspect-ratio: auto; height: var(--img-h, 180px); flex: none; }
+.pv-card.is-horizontal.ratio-custom .pv-card-img { flex: 0 0 42%; height: auto; min-height: var(--img-h, 180px); }
+.pv-card-img { flex: none; }
 
 /* ---------- rodapé discreto (em toda página) ---------- */
 .pv-credit { position: relative; z-index: 1; flex: none; padding: 14px 16px 18px; text-align: center; font: 400 11.5px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .01em; color: var(--credit, #14202e); opacity: .62; }

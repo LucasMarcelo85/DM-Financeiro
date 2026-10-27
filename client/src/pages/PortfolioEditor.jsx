@@ -21,7 +21,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
-  { t: 'shape', icon: 'shape' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' },
+  { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
@@ -56,6 +56,25 @@ export default function PortfolioEditor() {
   const [catalogCfg, setCatalogCfg] = useState(false);
   const [converted, setConverted] = useState(false);
   const [interacting, setInteracting] = useState(false);
+  const [panelW, setPanelW] = useState(() => {
+    try { const s = JSON.parse(localStorage.getItem('pe-panels') || '{}'); return { l: Number(s.l) || 152, r: Number(s.r) || 320 }; } catch { return { l: 152, r: 320 }; }
+  });
+  useEffect(() => { try { localStorage.setItem('pe-panels', JSON.stringify(panelW)); } catch { /* sem armazenamento */ } }, [panelW]);
+
+  function startResize(side, e) {
+    e.preventDefault();
+    const startX = e.clientX;
+    const start = panelW[side];
+    const move = (ev) => {
+      const dx = ev.clientX - startX;
+      const next = side === 'l' ? start + dx : start - dx;
+      setPanelW((w) => ({ ...w, [side]: Math.round(Math.min(side === 'l' ? 360 : 640, Math.max(side === 'l' ? 96 : 240, next))) }));
+    };
+    const up = () => { window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); document.body.classList.remove('is-resizing'); };
+    document.body.classList.add('is-resizing');
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', up);
+  }
 
   const docRef = useRef(null);
   const nameRef = useRef('');
@@ -222,8 +241,9 @@ export default function PortfolioEditor() {
     const W = DESIGN_W[dv];
     let b = { ...el.box[dv] };
     if (el.t === 'text' || el.t === 'button' || el.t === 'icon') b = { ...el.box.desktop, ...(dv !== 'desktop' ? el.box[dv] : {}) };
-    if (b.w > W - 40) { b.h = Math.round(b.h * ((W - 40) / b.w)); b.w = W - 40; }
-    b.x = Math.max(0, Math.round(x ?? (W - b.w) / 2));
+    if (b.w > W - 40 && el.t !== 'spacer') { b.h = Math.round(b.h * ((W - 40) / b.w)); b.w = W - 40; }
+    b.x = el.t === 'spacer' ? 0 : Math.max(0, Math.round(x ?? (W - b.w) / 2));
+    if (el.t === 'spacer') b.w = W;
     b.y = Math.max(0, Math.round(y ?? 60));
     const next = { ...el, box: { ...el.box, [dv]: b } };
     for (const d of DEVICES.map((v) => v.id)) if (d !== dv) next.box[d] = { ...next.box[d], ...scaleBox(b, dv, d, el.t), hide: false };
@@ -241,7 +261,8 @@ export default function PortfolioEditor() {
     if (d.elements.length >= MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return null; }
     let el = newElement(t, d.theme, over);
     el = place(el, at?.x, at?.y ?? topOfView());
-    commit(addElement(d, el));
+    const withEl = addElement(d, el);
+    commit(el.t === 'spacer' ? moveLayer(withEl, el.id, 'back') : withEl);
     setSelectedId(el.id);
     setPreview(false);
     setPanelOpen(true);
@@ -399,7 +420,9 @@ export default function PortfolioEditor() {
 
       {converted && <p className="banner banner-amber pe-converted" role="status">Esta página foi criada no editor antigo e foi convertida para o editor livre. Confira como ficou em cada tela (computador, tablet e celular) e ajuste. Ela só é salva quando você salvar ou editar.</p>}
 
-      <div className="ce-body">
+      <div className="ce-body" style={{ '--pe-l': `${panelW.l}px`, '--pe-r': `${panelW.r}px` }}>
+        <div className="pe-resizer is-left" role="separator" aria-orientation="vertical" aria-label="Arrastar para alterar a largura das ferramentas" title="Arraste para ajustar" onPointerDown={(e) => startResize('l', e)} />
+        <div className="pe-resizer is-right" role="separator" aria-orientation="vertical" aria-label="Arrastar para alterar a largura das propriedades" title="Arraste para ajustar" onPointerDown={(e) => startResize('r', e)} />
         <nav className="ce-palette pe-left" aria-label="Elementos">
           <div className="pe-left-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>

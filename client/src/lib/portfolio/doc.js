@@ -18,7 +18,9 @@ export const DESIGN_W = { desktop: 1200, tablet: 768, mobile: 375 };
 export const MAX_ELEMENTS = 200;
 export const MAX_PAGE_H = 30000;
 
-export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', video: 'Vídeo', carousel: 'Carrossel', menu: 'Menu', products: 'Produtos', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
+export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', spacer: 'Espaçador', video: 'Vídeo', carousel: 'Carrossel', menu: 'Menu', products: 'Produtos', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
+// Elementos que podem ocupar a largura inteira da tela (barra de topo, rodapé, faixas de fundo).
+export const canBeFull = (el) => el.t === 'spacer' || el.t === 'shape';
 export const CATALOG_ELEMENTS = new Set(['catsearch', 'catgrid']);
 // Elementos cuja altura é calculada (não dá para esticar à mão).
 export const autoHeight = (el) => el.t === 'products' || el.t === 'catgrid';
@@ -38,6 +40,7 @@ export const CATALOG_DISPLAY = [['category', 'Em ordem de categorias'], ['mixed'
 export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e9eef5', bgAngle: 135, bgAnimate: 'none' };
 export const CARD_DEFAULTS = () => ({
   layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, bg: '', text: '', accent: '',
+  imgHeight: 180, imgX: 50, imgY: 50, imgPad: 0, imgBg: '', font: '', nameLines: 2, gap: 14, icon: '', iconPos: 'button', iconColor: '',
   showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true,
   shadow: 'soft', border: false, padding: 'normal', textSize: 'md', priceSize: 'md', buttonStyle: 'solid', buttonFull: true, priceFrom: true,
 });
@@ -58,7 +61,8 @@ const TYPE_DEFAULTS = {
   image: () => ({ src: '', alt: '', fit: 'cover', zoom: 1, px: 50, py: 50, flipX: false, flipY: false, radius: 0, mask: 'none', borderW: 0, borderColor: '#ffffff', shadow: 'none', opacity: 100, filters: FILTERS0(), link: emptyLink() }),
   icon: (th) => ({ name: 'star', color: th.text, bg: 'none', bgColor: th.primary, borderW: 0, borderColor: th.text, shadow: 'none', link: emptyLink() }),
   button: (th) => ({ label: 'Fale conosco', style: 'solid', color: th.primary, color2: '#d6336c', textColor: readableOn(th.primary), font: th.bodyFont, weight: 700, radius: 12, icon: '', iconPos: 'left', link: { ...emptyLink(), kind: 'whatsapp' } }),
-  shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, link: emptyLink() }),
+  shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, full: false, link: emptyLink() }),
+  spacer: (th) => ({ fill: FILL0({ c1: th.primary }), full: true, opacity: 100, borderW: 0, borderColor: '#14202e', shadow: 'none' }),
   video: () => ({ url: '', radius: 12 }),
   carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
   menu: (th) => ({ items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
@@ -66,10 +70,10 @@ const TYPE_DEFAULTS = {
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };
-const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], video: [480, 270], carousel: [640, 360], menu: [360, 56], products: [720, 300], catsearch: [1080, 104], catgrid: [1080, 400] };
+const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], spacer: [1200, 120], video: [480, 270], carousel: [640, 360], menu: [360, 56], products: [720, 300], catsearch: [1080, 104], catgrid: [1080, 400] };
 const FONT_SIZES = { text: [24, 20, 17], button: [18, 17, 16] };
 
-export const emptyBox = (t) => ({ x: 60, y: 60, w: SIZES[t][0], h: SIZES[t][1], r: 0, hide: false, ...(FONT_SIZES[t] ? { fs: FONT_SIZES[t][0] } : {}) });
+export const emptyBox = (t) => ({ x: t === 'spacer' ? 0 : 60, y: 60, w: SIZES[t][0], h: SIZES[t][1], r: 0, hide: false, ...(FONT_SIZES[t] ? { fs: FONT_SIZES[t][0] } : {}) });
 const hasFont = (t) => t === 'text' || t === 'button';
 
 // Escala uma caixa de um dispositivo para outro (proporcional). Fonte diminui menos que a largura, para continuar legível.
@@ -184,7 +188,7 @@ export function productsHeight(el, device, count = el.ids.length) {
 let CAT = { products: [], catalog: null };
 export const setCatalogContext = (products, catalog) => { CAT = { products: products || [], catalog: catalog || null }; };
 
-const CARD_RATIO = { square: 1, portrait: 4 / 3, landscape: 3 / 4 };
+const CARD_RATIO = { square: 1, portrait: 4 / 3, landscape: 3 / 4, wide: 9 / 16, tall: 3 / 2 };
 const CARD_PAD = { compact: 14, normal: 22, roomy: 34 };
 const CARD_TEXT = { sm: 14, md: 16, lg: 20 };
 const CARD_PRICE = { sm: 16, md: 20, lg: 26 };
@@ -192,21 +196,22 @@ const CARD_PRICE = { sm: 16, md: 20, lg: 26 };
 // Medidas da grade de produtos do catálogo: as linhas têm altura fixa, então a página não "pula" ao filtrar.
 export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.catalog) {
   const k = { ...CARD_DEFAULTS(), ...(cfg?.card || {}) };
-  const gap = 14; const titleH = 44; const groupGap = 28;
+  const gap = clamp(k.gap || 14, 6, 40); const titleH = 44; const groupGap = 28;
   const cols = clamp(el.cols?.[device] || 2, 1, 6);
   const w = el.box[device].w;
   const cardW = (w - gap * (cols - 1)) / cols;
   const hasVars = products.some((p) => (p.images || []).length > 1);
   const tierLines = clamp(Math.max(0, ...products.map((p) => (p.priceOptions || []).filter((o) => o.priceCents !== null).length)), 1, 4);
   const parts = [
-    k.showCategory && 16, k.showName && Math.ceil(CARD_TEXT[k.textSize] * 1.25 * 2), k.showDescription && 42,
+    k.showCategory && 16, k.showName && Math.ceil(CARD_TEXT[k.textSize] * 1.25 * (k.nameLines || 2)), k.showDescription && 42,
     k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), k.showTiers && tierLines * 15, k.showVariations && hasVars && 22, k.showButton && 44,
   ].filter(Boolean);
   const body = (CARD_PAD[k.padding] || 22) + parts.reduce((s, n) => s + n, 0) + Math.max(0, parts.length - 1) * 4;
   const ratio = CARD_RATIO[k.ratio] || 1;
+  const imgH = k.ratio === 'custom' ? k.imgHeight || 180 : cardW * ratio;
   const cardH = Math.ceil(k.layout === 'horizontal'
-    ? Math.max(k.showImage ? Math.max(112, cardW * 0.42 * ratio) : 0, body)
-    : (k.showImage ? cardW * ratio : 0) + body);
+    ? Math.max(k.showImage ? (k.ratio === 'custom' ? imgH : Math.max(112, cardW * 0.42 * ratio)) : 0, body)
+    : (k.showImage ? imgH : 0) + body);
   const only = cfg?.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
   const list = products.filter((p) => !only || p.category === only);
   const counts = cfg?.display === 'category'

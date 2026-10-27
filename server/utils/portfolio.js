@@ -261,7 +261,7 @@ export const MAX_ELEMENTS = 200;
 export const DEVICES = ['desktop', 'tablet', 'mobile'];
 export const KINDS = new Set(['site', 'catalog']);
 
-const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid', 'carousel', 'menu']);
+const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid', 'carousel', 'menu', 'spacer']);
 const ENTER = new Set(['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce', 'rotate', 'blur', 'drop']);
 const LOOP = new Set(['none', 'float', 'pulse', 'shake', 'spin', 'wiggle', 'glow', 'swing', 'heartbeat', 'rubber', 'bounce', 'tada', 'flash', 'hue']);
 const HOVER = new Set(['none', 'grow', 'shrink', 'lift', 'glow', 'rotate', 'tilt', 'shake', 'brighten', 'pulse']);
@@ -368,7 +368,13 @@ function cleanElement(raw) {
       Object.assign(el, {
         shape: pick(raw.shape, SHAPES, 'rect'), fill: cleanFill(raw.fill, FILL_DEFAULT), borderW: num(raw.borderW, 0, 40, 0),
         borderColor: color(raw.borderColor, '#14202e'), borderStyle: pick(raw.borderStyle, BORDER_STYLE, 'solid'), shadow: pick(raw.shadow, SHADOWS, 'none'),
-        radius: num(raw.radius, 0, 500, 0), opacity: num(raw.opacity, 5, 100, 100), link: cleanLink(raw.link),
+        radius: num(raw.radius, 0, 500, 0), opacity: num(raw.opacity, 5, 100, 100), full: bool(raw.full, false), link: cleanLink(raw.link),
+      });
+      break;
+    case 'spacer':
+      Object.assign(el, {
+        fill: cleanFill(raw.fill, FILL_DEFAULT), full: bool(raw.full, true), opacity: num(raw.opacity, 0, 100, 100),
+        borderW: num(raw.borderW, 0, 40, 0), borderColor: color(raw.borderColor, '#14202e'), shadow: pick(raw.shadow, SHADOWS, 'none'),
       });
       break;
     case 'video':
@@ -457,7 +463,16 @@ function cleanDocV2(raw, kindHint) {
         const optColor = (v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : '');
         return {
           layout: pick(k.layout, new Set(['vertical', 'horizontal']), 'vertical'),
-          ratio: pick(k.ratio, new Set(['square', 'portrait', 'landscape']), 'square'),
+          ratio: pick(k.ratio, new Set(['square', 'portrait', 'landscape', 'wide', 'tall', 'custom']), 'square'),
+          imgHeight: Math.round(num(k.imgHeight, 60, 600, 180)),
+          imgX: Math.round(num(k.imgX, 0, 100, 50)), imgY: Math.round(num(k.imgY, 0, 100, 50)),
+          imgPad: Math.round(num(k.imgPad, 0, 40, 0)), imgBg: optColor(k.imgBg),
+          font: FONT_KEYS.has(k.font) ? k.font : '',
+          nameLines: Math.round(num(k.nameLines, 1, 3, 2)),
+          gap: Math.round(num(k.gap, 6, 40, 14)),
+          icon: typeof k.icon === 'string' && ICON_NAME.test(k.icon) ? k.icon : '',
+          iconPos: pick(k.iconPos, new Set(['button', 'name', 'corner']), 'button'),
+          iconColor: optColor(k.iconColor),
           fit: pick(k.fit, new Set(['cover', 'contain']), 'cover'),
           align: pick(k.align, new Set(['left', 'center']), 'left'),
           radius: Math.round(num(k.radius, 0, 32, 14)),
