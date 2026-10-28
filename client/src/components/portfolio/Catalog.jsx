@@ -1,8 +1,10 @@
 ﻿import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import { api } from '../../api.js';
 import { ProductCard, minPrice } from './Canvas.jsx';
 import { IconSvg } from './Canvas.jsx';
 import { catgridMetrics } from '../../lib/portfolio/doc.js';
+import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
 
@@ -89,7 +91,7 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 );
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
-function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], directOrder = false, storeWhatsapp = '', onDirectOrder }) {
+function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder }) {
   const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
   const [qty, setQty] = useState(1);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
@@ -123,9 +125,9 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
   }, [onClose]);
-  return (
+  return createPortal(
     <div className="cat-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
-      <div className="cat-modal" role="dialog" aria-modal="true" aria-label={p.name}>
+      <div className="cat-modal" style={themeVars(theme)} role="dialog" aria-modal="true" aria-label={p.name}>
         <button type="button" className="cat-x" onClick={onClose} aria-label="Fechar">×</button>
         <div className="cat-modal-img">{img && <img src={img.url} alt={p.name} />}</div>
         <div className="cat-modal-body">
@@ -167,7 +169,8 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           )}
         </div>
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }
 
@@ -179,7 +182,7 @@ const sortBR = (a, b) => a.localeCompare(b, 'pt-BR');
 export function CatalogScope({ doc, products, shop, mode, children }) {
   const [q, setQ] = useState('');
   const [cat, setCat] = useState('');
-  const value = useMemo(() => ({ catalog: doc.catalog, products: products || [], shop, mode, q, setQ, cat, setCat }), [doc.catalog, products, shop, mode, q, cat]);
+  const value = useMemo(() => ({ catalog: doc.catalog, theme: doc.theme, products: products || [], shop, mode, q, setQ, cat, setCat }), [doc.catalog, doc.theme, products, shop, mode, q, cat]);
   return <CatCtx.Provider value={value}>{children}</CatCtx.Provider>;
 }
 
@@ -210,7 +213,7 @@ export function CatGridView({ el, device, mode }) {
   const ctx = useContext(CatCtx);
   const [open, setOpen] = useState(null);
   if (!ctx) return null;
-  const { catalog: cfg, products, shop, q, cat } = ctx;
+  const { catalog: cfg, theme, products, shop, q, cat } = ctx;
   const edit = mode === 'edit';
   const m = catgridMetrics(el, device, products, cfg);
   const only = cfg.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
@@ -250,6 +253,7 @@ export function CatGridView({ el, device, mode }) {
         onClose={() => setOpen(null)}
         cartItems={shop?.cart?.items || []}
         products={products}
+        theme={theme}
         directOrder={directOrder}
         storeWhatsapp={shop?.whatsapp}
         onDirectOrder={trackDirectOrder}
