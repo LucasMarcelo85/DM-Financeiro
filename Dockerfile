@@ -13,6 +13,7 @@ ENV DATABASE_URL="postgresql://build:build@localhost:5432/build"
 WORKDIR /app
 
 COPY package.json package-lock.json ./
+COPY postcss.config.cjs tailwind.config.cjs ./
 COPY prisma ./prisma
 RUN npm ci
 
