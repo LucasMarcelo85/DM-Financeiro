@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api, isShopMode } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
 import StoreBar from '../components/StoreBar.jsx';
+import ProductWorkspace from '../components/ProductWorkspace.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -61,6 +62,20 @@ export default function Products() {
 
   const blocked = data && data.limit < 1;
   const full = data && data.limit > 0 && data.count >= data.limit;
+
+  if (editing) return (
+    <>
+      <StoreBar />
+      <ProductWorkspace
+        product={editing === 'new' ? null : editing}
+        categories={data?.categories || []}
+        preferences={data?.preferences}
+        available={Math.max(0, (data?.limit || 0) - (data?.count || 0))}
+        onClose={() => setEditing(null)}
+        onSaved={() => { setEditing(null); load(); }}
+      />
+    </>
+  );
 
   async function toggle(p) {
     try { await api.patch(`/products/${p.id}`, { active: !p.active }); load(); } catch (e) { toast(e.message, 'error'); }
@@ -152,7 +167,6 @@ export default function Products() {
         </ul>
       )}
 
-      {editing && <ProductForm product={editing === 'new' ? null : editing} categories={data?.categories || []} preferences={data?.preferences} onClose={() => { setEditing(null); setBatchDrafts([]); }} onSaved={() => { setEditing(null); setBatchDrafts([]); load(); }} batchDrafts={batchDrafts} setBatchDrafts={setBatchDrafts} />}
       {managePreferences && <ProductPreferencesModal preferences={data?.preferences} onClose={() => setManagePreferences(false)} onSaved={(preferences) => {
         setData((current) => current ? { ...current, preferences } : current);
         setManagePreferences(false);
