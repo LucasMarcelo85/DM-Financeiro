@@ -107,6 +107,7 @@ model User {
   addons             UserAddon[]
   stores             Store[]
   apiTokens          ApiToken[]
+  webhookEndpoints   ApiWebhookEndpoint[]
 
   @@map("users")
 }
@@ -117,6 +118,7 @@ model Instance {
   name      String           @unique
   purpose   InstancePurpose  @default(envio)
   provider  InstanceProvider @default(evolution)
+  auditScope String          @default("main") @map("audit_scope")
   // Nome amigável (ex.: "Atendimento"). Opcional.
   label     String?
   // Campos da API oficial da Meta (só usados quando provider = meta).
@@ -138,6 +140,7 @@ model Instance {
   auditContacts AuditContact[]
 
   @@index([userId, purpose])
+  @@index([userId, purpose, auditScope])
   @@index([metaPhoneNumberId])
   @@map("instances")
 }
@@ -416,16 +419,17 @@ model AuditContact {
 
 // Etiqueta criada pelo usuário (ex.: "Cliente VIP") para marcar conversas.
 model AuditLabel {
-  id        Int      @id @default(autoincrement())
-  userId    Int      @map("user_id")
-  name      String
-  color     String   @default("#1f55a6")
-  createdAt DateTime @default(now()) @map("created_at")
+  id         Int      @id @default(autoincrement())
+  userId     Int      @map("user_id")
+  auditScope String   @default("main") @map("audit_scope")
+  name       String
+  color      String   @default("#1f55a6")
+  createdAt  DateTime @default(now()) @map("created_at")
 
   user  User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   chats AuditChatLabel[]
 
-  @@unique([userId, name])
+  @@unique([userId, auditScope, name])
   @@map("audit_labels")
 }
 
@@ -666,6 +670,7 @@ model Order {
   totalCents    Int      @map("total_cents")
   notes         String   @default("")
   status        String   @default("novo") // 'novo' | 'atendido'
+  stockReserved Boolean  @default(true) @map("stock_reserved")
   paymentStatus String   @default("unpaid") @map("payment_status")
   paymentProvider String? @map("payment_provider")
   paymentId     String?  @map("payment_id")
@@ -735,6 +740,45 @@ model ApiToken {
 
   @@index([userId])
   @@map("api_tokens")
+}
+
+model ApiWebhookEndpoint {
+  id         Int                  @id @default(autoincrement())
+  userId     Int                  @map("user_id")
+  storeId    Int?                 @map("store_id")
+  name       String
+  url        String
+  events     Json
+  secret     String
+  createdAt  DateTime             @default(now()) @map("created_at")
+  updatedAt  DateTime             @updatedAt @map("updated_at")
+
+  user       User                 @relation(fields: [userId], references: [id], onDelete: Cascade)
+  deliveries ApiWebhookDelivery[]
+
+  @@index([userId, storeId])
+  @@map("api_webhook_endpoints")
+}
+
+model ApiWebhookDelivery {
+  id          Int               @id @default(autoincrement())
+  endpointId  Int               @map("endpoint_id")
+  eventId     String            @map("event_id")
+  event       String
+  payload     Json
+  status      String            @default("queued")
+  attempts    Int               @default(0)
+  nextAttemptAt DateTime        @default(now()) @map("next_attempt_at")
+  lastStatus  Int?              @map("last_status")
+  lastError   String?           @map("last_error")
+  deliveredAt DateTime?         @map("delivered_at")
+  createdAt   DateTime          @default(now()) @map("created_at")
+
+  endpoint    ApiWebhookEndpoint @relation(fields: [endpointId], references: [id], onDelete: Cascade)
+
+  @@index([status, nextAttemptAt])
+  @@index([endpointId, createdAt])
+  @@map("api_webhook_deliveries")
 }
 
 model OrderCustomerProfile {

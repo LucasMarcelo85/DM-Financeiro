@@ -54,7 +54,7 @@ export async function recountUnread(chatId) {
 export async function markChatSeen(chat) {
   await prisma.auditMessage.updateMany({ where: { chatId: chat.id, fromMe: false, seenAt: null }, data: { seenAt: new Date() } });
   const updated = await recountUnread(chat.id);
-  publish(updated.userId, { type: 'chat', chat: chatDTO(updated) });
+  publish(updated.userId, { type: 'chat', chat: chatDTO(updated) }, chat.instance?.auditScope || 'main');
   return updated;
 }
 
@@ -65,7 +65,7 @@ async function applyChatName(inst, jid, name) {
   const chat = await prisma.auditChat.findUnique({ where: { instanceId_jid: { instanceId: inst.id, jid } } });
   if (!chat || chat.name === name) return;
   const updated = await prisma.auditChat.update({ where: { id: chat.id }, data: { name, nameSearch: norm(name) } });
-  publish(inst.userId, { type: 'chat', chat: chatDTO(updated) });
+  publish(inst.userId, { type: 'chat', chat: chatDTO(updated) }, inst.auditScope);
 }
 
 // Guarda o nome que o WhatsApp mostra para uma pessoa (contato ou participante de grupo).
@@ -134,7 +134,7 @@ export function ensureMedia(messageId) {
       }
       const finalMime = cleanMime(mime || msg.mediaMime, msg.type);
       if (!(await storeMedia(msg.id, buffer, finalMime))) return null;
-      publish(inst.userId, { type: 'media', chatId: msg.chatId, messageId: msg.id });
+      publish(inst.userId, { type: 'media', chatId: msg.chatId, messageId: msg.id }, inst.auditScope);
       return { mime: finalMime, data: buffer };
     } catch (e) {
       console.warn(`[auditoria] mídia ${msg.id} indisponível: ${e.message}`);
@@ -222,7 +222,7 @@ export async function recordMessage(inst, m, { live = true } = {}) {
   if (m.chatName && !m.isGroup && !m.fromMe) learnName(inst, m.jid, m.chatName).catch(() => {});
 
   const result = { chat: chatDTO(updated), message: messageDTO(saved, m.senderName) };
-  publish(inst.userId, { type: 'message', ...result });
+  publish(inst.userId, { type: 'message', ...result }, inst.auditScope);
   return result;
 }
 
@@ -234,14 +234,14 @@ export async function updateStatus(inst, externalId, status) {
     if (status === 'read' && !msg.seenAt) {
       await prisma.auditMessage.update({ where: { id: msg.id }, data: { seenAt: new Date() } });
       const updated = await recountUnread(msg.chatId);
-      publish(inst.userId, { type: 'chat', chat: chatDTO(updated) });
+      publish(inst.userId, { type: 'chat', chat: chatDTO(updated) }, inst.auditScope);
     }
     return;
   }
   const order = { sent: 1, delivered: 2, read: 3, failed: 0 };
   if (msg.status === status || (status !== 'failed' && (order[msg.status] ?? 0) >= order[status])) return; // só avança
   await prisma.auditMessage.update({ where: { id: msg.id }, data: { status } });
-  publish(inst.userId, { type: 'status', chatId: msg.chatId, messageId: msg.id, status });
+  publish(inst.userId, { type: 'status', chatId: msg.chatId, messageId: msg.id, status }, inst.auditScope);
 }
 
 // Mensagem editada no WhatsApp: atualiza o texto (e a busca) da original.
@@ -249,7 +249,7 @@ async function applyEdit(inst, externalId, text) {
   const msg = await prisma.auditMessage.findFirst({ where: { externalId, chat: { instanceId: inst.id } }, select: { id: true, chatId: true } });
   if (!msg || !text) return;
   await prisma.auditMessage.update({ where: { id: msg.id }, data: { body: text.slice(0, 20000), search: norm(text) } });
-  publish(inst.userId, { type: 'edit', chatId: msg.chatId, messageId: msg.id, body: text.slice(0, 20000) });
+  publish(inst.userId, { type: 'edit', chatId: msg.chatId, messageId: msg.id, body: text.slice(0, 20000) }, inst.auditScope);
 }
 
 // ---------- Evolution ----------
@@ -357,7 +357,7 @@ export async function ingestEvolution(inst, event, data) {
       if (id && edited) await applyEdit(inst, id, evolutionContent(edited)?.body);
     }
   } else if (ev === 'connection.update') {
-    publish(inst.userId, { type: 'connection', instanceId: inst.id, state: data?.state || null });
+    publish(inst.userId, { type: 'connection', instanceId: inst.id, state: data?.state || null }, inst.auditScope);
   } else if (['contacts.upsert', 'contacts.update'].includes(ev)) {
     for (const c of items.slice(0, 3000)) {
       const jid = c.remoteJid || c.id;
@@ -395,7 +395,7 @@ export async function syncInstance(inst, { deep = false } = {}) {
   syncs.set(inst.id, state);
   const startedAt = Date.now();
   const since = inst.lastSyncAt ? inst.lastSyncAt.getTime() : null;
-  const emit = () => publish(inst.userId, { type: 'sync', instanceId: inst.id, running: state.running, done: state.done, total: state.total, imported: state.imported });
+  const emit = () => publish(inst.userId, { type: 'sync', instanceId: inst.id, running: state.running, done: state.done, total: state.total, imported: state.imported }, inst.auditScope);
   const touched = new Set();
   try {
     const remote = (await evo.findChats(inst.name))

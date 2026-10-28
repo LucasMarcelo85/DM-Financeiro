@@ -12,6 +12,7 @@ const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
 const toForm = (c) => ({
   storeName: c.storeName, whatsapp: c.whatsapp ? formatStoredPhone(c.whatsapp) : '',
+  orderNotifications: { enabled: Boolean(c.orderNotifications?.enabled), instanceId: String(c.orderNotifications?.instanceId || '') },
   checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
   pickup: { ...c.pickup },
   excursion: { ...c.excursion },
@@ -21,6 +22,7 @@ const toForm = (c) => ({
 
 const toConfig = (f) => ({
   storeName: f.storeName, whatsapp: f.whatsapp.replace(/\D/g, ''),
+  orderNotifications: { enabled: f.orderNotifications.enabled, instanceId: f.orderNotifications.instanceId || null },
   checkout: { minItems: Number(f.checkout.minItems) || 1, minSubtotalCents: moneyToCents(f.checkout.minSubtotal) },
   pickup: f.pickup,
   excursion: { enabled: f.excursion.enabled },
@@ -47,6 +49,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
   const [paymentProviders, setPaymentProviders] = useState([]);
   const [infiniteHandle, setInfiniteHandle] = useState('');
   const [paymentBusy, setPaymentBusy] = useState('');
+  const [instances, setInstances] = useState([]);
 
   useEffect(() => {
     api.get('/catalog/settings').then((r) => { setF(toForm(r.config)); setInfo(r); }).catch((e) => setError(e.message));
@@ -54,6 +57,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
       setPaymentProviders(r.providers || []);
       setInfiniteHandle(r.providers?.find((p) => p.provider === 'infinitepay')?.handle || '');
     }).catch((e) => setError(e.message));
+    api.get('/instances').then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
   }, []);
 
   if (!f) return <Modal title="Entregas e frete" onClose={onClose}><p className="muted">{error || 'Carregando...'}</p></Modal>;
@@ -115,6 +119,35 @@ export default function CatalogSettings({ onClose, onSaved }) {
       <div className="form cs-form">
         <TextField label="Nome da loja" value={f.storeName} onChange={setTop('storeName')} maxLength={80} id="cs-store" />
         <TextField label="WhatsApp da loja" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Após finalizar o pedido, o cliente poderá enviar o resumo para este número. Inclua o DDD." />
+        <fieldset className="cs-box">
+          <Check
+            label="Receber notificações de novos pedidos neste WhatsApp"
+            checked={f.orderNotifications.enabled}
+            onChange={(enabled) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, enabled } }))}
+          />
+          {f.orderNotifications.enabled && <>
+            <label className="field">
+              <span>Instância que enviará as notificações</span>
+              <select
+                className="input"
+                value={f.orderNotifications.instanceId}
+                onChange={(e) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, instanceId: e.target.value } }))}
+              >
+                <option value="">Selecione uma instância</option>
+                {instances.filter((instance) => instance.connected || String(instance.id) === f.orderNotifications.instanceId).map((instance) => (
+                  <option key={instance.id} value={instance.id}>
+                    {instance.label || instance.metaPhoneDisplay || instance.name}{instance.connected ? '' : ' · desconectada'}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <p className="muted small">
+              A notificação será enviada para o WhatsApp da loja informado acima.               Escolha a instância correspondente ao número da loja e deixe-a conectada. Se usar QR Code, dê um nome identificável à conexão em WhatsApp conectado.
+              Pedidos novos e pagamentos confirmados pela InfinitePay serão notificados; marcar um pedido como pago manualmente não envia aviso de pagamento.
+            </p>
+            {!instances.some((instance) => instance.connected) && <p className="muted small">Conecte um WhatsApp em “WhatsApp conectado” para habilitar o envio.</p>}
+          </>}
+        </fieldset>
         <fieldset className="cs-box">
           <div className="cs-payment-row">
             <span><InfinitePayMark /><small>{infinitePayConnection?.connected ? `Recebimentos ativos para a InfiniteTag ${infinitePayConnection.handle}.` : 'Receba pagamentos online diretamente na conta InfinitePay da sua loja.'}</small></span>

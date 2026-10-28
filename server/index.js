@@ -35,6 +35,7 @@ import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
 import { startAuditSync, stopAuditSync } from './services/audit-sync.js';
 import { startMaintenance, stopMaintenance } from './services/maintenance.js';
+import { startApiWebhookWorker, stopApiWebhookWorker } from './services/api-webhooks.js';
 import { customDomainMiddleware } from './services/domains.js';
 
 try {
@@ -228,12 +229,14 @@ const server = app.listen(config.port, () => {
   startScheduler();
   startAuditSync();
   startMaintenance();
+  startApiWebhookWorker();
 });
 
 async function shutdown() {
   stopScheduler();
   stopAuditSync();
   stopMaintenance();
+  stopApiWebhookWorker();
   server.close();
   await prisma.$disconnect().catch(() => {});
   process.exit(0);

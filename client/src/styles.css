@@ -632,8 +632,13 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .au-live.is-on i { background: var(--green); box-shadow: 0 0 0 0 rgba(31, 169, 113, 0.6); animation: au-pulse 2s infinite; }
 @keyframes au-pulse { 70% { box-shadow: 0 0 0 7px rgba(31, 169, 113, 0); } 100% { box-shadow: 0 0 0 0 rgba(31, 169, 113, 0); } }
 .au-legal { margin: 0.75rem 0 0; }
+.au-scope { display: flex; align-items: center; flex-wrap: wrap; gap: 0.5rem; padding: 0.75rem 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.au-layout-controls { display: flex; align-items: center; gap: 1rem; flex-wrap: wrap; padding: 0.55rem 0.8rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.au-layout-controls label { display: flex; align-items: center; gap: 0.55rem; font-size: 0.82rem; font-weight: 700; color: var(--muted); }
+.au-layout-controls input { width: 7rem; accent-color: var(--blue); }
+.au-instance-scope { width: auto; min-width: 9.5rem; }
 
-.au-app { display: grid; grid-template-columns: minmax(16rem, 21rem) minmax(0, 1fr) 19rem; height: max(32rem, calc(100dvh - 12.5rem)); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.au-app { display: grid; grid-template-columns: minmax(15rem, var(--au-list-width, 330px)) minmax(0, 1fr) minmax(15rem, var(--au-side-width, 300px)); height: max(32rem, calc(100dvh - 15rem)); background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .au-app > * { min-height: 0; min-width: 0; }
 .au-list { display: flex; flex-direction: column; border-right: 1px solid var(--line); }
 .au-search { padding: 0.7rem 0.7rem 0.4rem; }
@@ -721,6 +726,46 @@ button.fat-card:hover { border-color: #b9c4d2; }
   .au-app.is-open .au-view { display: flex; }
   .au-back { display: inline-grid; }
   .au-list { border-right: 0; }
+}
+@media (max-width: 80rem) { .au-layout-controls { display: none; } }
+@media (max-width: 40rem) {
+  .au-scope { padding: 0.65rem; }
+  .au-scope .btn { flex: 1; }
+  .au-scope .muted { flex-basis: 100%; }
+}
+
+/* ---------- API e webhooks ---------- */
+.api-section { display: grid; gap: 0.9rem; margin-bottom: 1rem; }
+.api-section h2, .api-docs h2 { margin: 0; }
+.api-section > p, .api-docs p { margin: -0.5rem 0 0; }
+.api-form-row { display: grid; grid-template-columns: minmax(12rem, 1fr) minmax(12rem, 1fr) auto; gap: 0.65rem; align-items: center; }
+.api-token-list, .api-webhook-list { display: grid; gap: 0.6rem; list-style: none; padding: 0; margin: 0; }
+.api-token-list li, .api-webhook-list li { display: flex; align-items: center; justify-content: space-between; gap: 1rem; padding: 0.75rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.api-token-info, .api-webhook-info { display: flex; flex-wrap: wrap; align-items: center; gap: 0.45rem 0.7rem; min-width: 0; }
+.api-webhook-info { display: grid; grid-template-columns: auto auto; justify-content: start; }
+.api-webhook-info > :nth-child(n+3) { grid-column: 1 / -1; }
+.api-webhook-destination { max-width: 100%; overflow-wrap: anywhere; }
+.api-docs { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 1rem; margin-bottom: 1rem; }
+.api-docs .card { display: grid; align-content: start; gap: 0.7rem; }
+.api-docs ul { display: grid; gap: 0.75rem; padding-left: 1.2rem; margin: 0; }
+.api-docs li { overflow-wrap: anywhere; }
+.api-webhook-form { display: grid; gap: 1rem; }
+.api-webhook-url { grid-column: span 1; }
+.api-event-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.5rem; border: 1px solid var(--line); border-radius: var(--r-sm); padding: 0.75rem; }
+.api-event-list legend { padding: 0 0.3rem; font-weight: 700; }
+.api-event-list label { display: flex; align-items: center; gap: 0.45rem; min-width: 0; font-size: 0.88rem; }
+.api-event-list input { accent-color: var(--blue); flex: none; }
+.api-event-list code { margin-left: auto; font-size: 0.75rem; color: var(--muted); }
+.api-delivery-ok { grid-column: 1 / -1; color: var(--green-d); }
+.api-delivery-error { grid-column: 1 / -1; color: var(--red-d); overflow-wrap: anywhere; }
+.api-code { margin: 0; overflow-x: auto; }
+@media (max-width: 64rem) { .api-docs { grid-template-columns: minmax(0, 1fr); } }
+@media (max-width: 42rem) {
+  .api-form-row { grid-template-columns: minmax(0, 1fr); }
+  .api-event-list { grid-template-columns: minmax(0, 1fr); }
+  .api-token-list li, .api-webhook-list li { align-items: flex-start; }
+  .api-token-info { display: grid; grid-template-columns: repeat(2, minmax(0, max-content)); }
+  .api-webhook-info { grid-template-columns: minmax(0, 1fr); }
 }
 
 /* ---------- Contratos: variáveis e cliente (vp-, cp-, ce-client) ---------- */

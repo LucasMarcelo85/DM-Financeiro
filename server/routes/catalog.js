@@ -5,7 +5,9 @@ import { cleanCatalogConfig, defaultCatalogConfig } from '../utils/catalog.js';
 import { config } from '../config.js';
 import { decrypt } from '../utils/secret.js';
 import { orderDTO, quoteShipping } from '../services/orders.js';
+import { changeOrderStock } from '../services/order-stock.js';
 import { storeScope } from '../utils/store.js';
+import { emitApiWebhook } from '../services/api-webhooks.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -44,6 +46,13 @@ router.put('/settings', async (req, res) => {
   const current = await loadSettings(req.user.id, storeId);
   const token = current.token;
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
+  if (cfg.orderNotifications.enabled) {
+    const instance = await prisma.instance.findFirst({
+      where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio' },
+      select: { id: true },
+    });
+    if (!instance) throw new AppError(400, 'Escolha uma instância de WhatsApp conectada a esta conta.');
+  }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
   else await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
   res.json({ config: cfg, ...tokenInfo(token) });
@@ -68,7 +77,7 @@ router.get('/orders', async (req, res) => {
     prisma.order.count({ where }),
     prisma.order.count({ where: { ...statsWhere, status: 'novo' } }),
     prisma.order.count({ where: { userId: req.user.id, storeId, deletedAt: { not: null } } }),
-    prisma.order.aggregate({ where: statsWhere, _sum: { totalCents: true }, _avg: { totalCents: true }, _count: { _all: true } }),
+    prisma.order.aggregate({ where: { ...statsWhere, paymentStatus: 'paid' }, _sum: { totalCents: true }, _avg: { totalCents: true }, _count: { _all: true } }),
   ]);
   res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays });
 });
@@ -77,11 +86,12 @@ router.get('/customers', async (req, res) => {
   const requestedDays = Number(req.query.days);
   const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
   const cutoff = new Date(Date.now() - days * 86400000);
+  const storeId = await storeScope(req);
   const [profiles, aggregates] = await Promise.all([
     prisma.orderCustomerProfile.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' }, take: 1000 }),
     prisma.order.groupBy({
       by: ['customerPhone'],
-      where: { userId: req.user.id, createdAt: { gte: cutoff } },
+      where: { userId: req.user.id, storeId, deletedAt: null, paymentStatus: 'paid', createdAt: { gte: cutoff } },
       _sum: { totalCents: true },
       _avg: { totalCents: true },
       _count: { _all: true },
@@ -107,10 +117,11 @@ router.get('/customers/:phone', async (req, res) => {
   if (!phone) throw new AppError(400, 'Telefone inválido.');
   const requestedDays = Number(req.query.days);
   const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
+  const storeId = await storeScope(req);
   const [profile, orders] = await Promise.all([
     prisma.orderCustomerProfile.findUnique({ where: { userId_customerPhone: { userId: req.user.id, customerPhone: phone } } }),
     prisma.order.findMany({
-      where: { userId: req.user.id, customerPhone: phone, createdAt: { gte: new Date(Date.now() - days * 86400000) } },
+      where: { userId: req.user.id, storeId, customerPhone: phone, deletedAt: null, createdAt: { gte: new Date(Date.now() - days * 86400000) } },
       orderBy: { createdAt: 'desc' }, take: 50,
     }),
   ]);
@@ -139,7 +150,7 @@ router.patch('/customers/:phone', async (req, res) => {
 
 async function ownedOrder(req) {
   const id = Number(req.params.id);
-  const o = Number.isInteger(id) ? await prisma.order.findFirst({ where: { id, userId: req.user.id } }) : null;
+  const o = Number.isInteger(id) ? await prisma.order.findFirst({ where: { id, userId: req.user.id, storeId: await storeScope(req) } }) : null;
   if (!o) throw new AppError(404, 'Pedido não encontrado.');
   return o;
 }
@@ -149,13 +160,48 @@ router.patch('/orders/:id', async (req, res) => {
   if (o.deletedAt) throw new AppError(409, 'Pedidos arquivados não podem ser alterados.');
   const status = req.body?.status;
   if (status !== 'novo' && status !== 'atendido') throw new AppError(400, 'Situação inválida.');
-  res.json({ order: orderDTO(await prisma.order.update({ where: { id: o.id }, data: { status } })) });
+  const data = { status };
+  if (status === 'atendido' && o.paymentStatus !== 'paid') {
+    Object.assign(data, { paymentStatus: 'paid', paymentProvider: 'manual', paymentId: null, paymentProofUrl: null, paidAt: new Date() });
+  } else if (status === 'novo' && o.paymentProvider === 'manual') {
+    Object.assign(data, { paymentStatus: 'unpaid', paymentProvider: null, paymentId: null, paymentProofUrl: null, paidAt: null });
+  }
+  const updated = await prisma.order.updateMany({
+    where: { id: o.id, userId: req.user.id, deletedAt: null, status: o.status },
+    data,
+  });
+  if (updated.count !== 1) throw new AppError(409, 'O pedido foi alterado em outra tela. Atualize e tente novamente.');
+  const saved = await prisma.order.findUnique({ where: { id: o.id } });
+  emitApiWebhook({ userId: req.user.id, storeId: saved.storeId, event: 'order.updated', data: orderDTO(saved) })
+    .catch((error) => console.error(`[api-webhook] pedido ${saved.id}: ${error.message}`));
+  if (saved.paymentStatus === 'paid' && o.paymentStatus !== 'paid') {
+    emitApiWebhook({ userId: req.user.id, storeId: saved.storeId, event: 'order.paid', data: orderDTO(saved) })
+      .catch((error) => console.error(`[api-webhook] pagamento do pedido ${saved.id}: ${error.message}`));
+  }
+  res.json({ order: orderDTO(saved) });
 });
+
+async function archiveOrders(where) {
+  return prisma.$transaction(async (tx) => {
+    const orders = await tx.order.findMany({ where, select: { id: true, userId: true, storeId: true, items: true, stockReserved: true } });
+    if (!orders.length) return 0;
+    for (const order of orders) {
+      if (order.stockReserved) await changeOrderStock(tx, order, 'restore');
+    }
+    const archived = await tx.order.updateMany({ where, data: { deletedAt: new Date(), stockReserved: false } });
+    if (archived.count !== orders.length) throw new AppError(409, 'Alguns pedidos foram alterados em outra tela. Atualize e tente novamente.');
+    return archived.count;
+  });
+}
 
 router.delete('/orders/:id', async (req, res) => {
   const o = await ownedOrder(req);
-  if (!o.deletedAt) await prisma.order.update({ where: { id: o.id }, data: { deletedAt: new Date() } });
-  res.json({ ok: true });
+  if (o.deletedAt) return res.json({ ok: true, removed: 0 });
+  const removed = await archiveOrders({ id: o.id, userId: req.user.id, deletedAt: null });
+  const saved = await prisma.order.findUnique({ where: { id: o.id } });
+  emitApiWebhook({ userId: req.user.id, storeId: saved.storeId, event: 'order.updated', data: orderDTO(saved) })
+    .catch((error) => console.error(`[api-webhook] pedido ${saved.id}: ${error.message}`));
+  res.json({ ok: true, removed });
 });
 
 // Arquiva vários pedidos de uma vez (`ids`) ou todos os que correspondem aos filtros (`all: true`).
@@ -166,10 +212,30 @@ router.post('/orders/bulk-delete', async (req, res) => {
   else {
     const ids = (Array.isArray(b.ids) ? b.ids : []).map(Number).filter(Number.isInteger).slice(0, 500);
     if (!ids.length) throw new AppError(400, 'Escolha os pedidos para excluir.');
-    where = { userId: req.user.id, id: { in: ids }, deletedAt: null };
+    where = { userId: req.user.id, storeId: await storeScope(req), id: { in: ids }, deletedAt: null };
   }
-  const r = await prisma.order.updateMany({ where, data: { deletedAt: new Date() } });
-  res.json({ ok: true, removed: r.count });
+  const removed = await archiveOrders(where);
+  res.json({ ok: true, removed });
+});
+
+router.post('/orders/:id/restore', async (req, res) => {
+  const id = Number(req.params.id);
+  const storeId = await storeScope(req);
+  if (!Number.isInteger(id)) throw new AppError(404, 'Pedido não encontrado.');
+  const restored = await prisma.$transaction(async (tx) => {
+    const order = await tx.order.findFirst({ where: { id, userId: req.user.id, storeId, deletedAt: { not: null } } });
+    if (!order) throw new AppError(404, 'Pedido arquivado não encontrado.');
+    if (!order.stockReserved) await changeOrderStock(tx, order, 'reserve');
+    const result = await tx.order.updateMany({
+      where: { id, userId: req.user.id, storeId, deletedAt: { not: null } },
+      data: { deletedAt: null, stockReserved: true },
+    });
+    if (result.count !== 1) throw new AppError(409, 'O pedido foi alterado em outra tela. Atualize e tente novamente.');
+    return tx.order.findUnique({ where: { id } });
+  });
+  emitApiWebhook({ userId: req.user.id, storeId: restored.storeId, event: 'order.updated', data: orderDTO(restored) })
+    .catch((error) => console.error(`[api-webhook] pedido ${restored.id}: ${error.message}`));
+  res.json({ ok: true, order: orderDTO(restored) });
 });
 
 export default router;

@@ -9,7 +9,7 @@ import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 
 const DAY = 86400000;
 const TYPE = { retirada: 'Retirada', excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
-const PAYMENT_PROVIDER = { infinitepay: 'InfinitePay' };
+const PAYMENT_PROVIDER = { infinitepay: 'InfinitePay', manual: 'manualmente' };
 const timeSince = (timestamp) => {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes === 0) return 'agora';
@@ -65,6 +65,13 @@ export default function Orders({ allow }) {
   async function setDone(o) {
     try { await api.patch(`/catalog/orders/${o.id}`, { status: o.status === 'novo' ? 'atendido' : 'novo' }); load(); } catch (e) { toast(e.message, 'error'); }
   }
+  async function restoreOrder(o) {
+    try {
+      await api.post(`/catalog/orders/${o.id}/restore`);
+      toast('Pedido voltou para Pedidos e o estoque foi atualizado.');
+      load();
+    } catch (e) { toast(e.message, 'error'); }
+  }
   async function doDelete(c) {
     setConfirm(null);
     try {
@@ -111,7 +118,7 @@ export default function Orders({ allow }) {
         <div className="od-stats">
           <article><span>Pedidos ativos</span><strong>{data.total}</strong></article>
           <article><span>Novos</span><strong>{data.fresh}</strong></article>
-          <article><span>Vendido</span><strong>{brl(data.stats.totalCents)}</strong></article>
+          <article><span>Vendido (pagos)</span><strong>{brl(data.stats.totalCents)}</strong></article>
           <article><span>Ticket médio</span><strong>{brl(data.stats.averageCents)}</strong></article>
         </div>
       )}
@@ -181,8 +188,11 @@ export default function Orders({ allow }) {
                 <div className="od-total"><span>Subtotal {brl(o.subtotalCents)}</span><span>{o.deliveryType === 'excursao' ? 'Frete a combinar' : `Frete ${brl(o.shippingCents)}${o.deliveryType === 'correios' ? ' (SuperFrete)' : ''}`}</span><strong>Total {brl(o.totalCents)}{o.deliveryType === 'excursao' ? ' + frete' : ''}</strong></div>
                 {!isLog && <div className="od-actions">
                   <a className="btn btn-primary btn-sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16} /> Chamar no WhatsApp</a>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setDone(o)}><Icon name="check" size={16} /> {o.status === 'novo' ? 'Marcar como atendido' : 'Voltar para novo'}</button>
+                  <button className="btn btn-ghost btn-sm" onClick={() => setDone(o)}><Icon name="check" size={16} /> {o.status === 'novo' ? (o.paymentStatus === 'paid' ? 'Marcar como atendido' : 'Marcar como pago e atendido') : 'Voltar para novo'}</button>
                   <button className="icon-btn" onClick={() => setConfirm({ ids: [o.id] })} aria-label={`Arquivar pedido ${o.code}`} title="Arquivar"><Icon name="archive" size={17} /></button>
+                </div>}
+                {isLog && <div className="od-actions">
+                  <button className="btn btn-primary btn-sm" onClick={() => restoreOrder(o)}><Icon name="undo" size={16} /> Voltar para pedidos e estoque</button>
                 </div>}
               </li>
             );

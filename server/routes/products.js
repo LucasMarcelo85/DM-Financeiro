@@ -4,6 +4,7 @@ import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { cleanProduct, publicProduct } from '../utils/catalog.js';
 import { storeScope } from '../utils/store.js';
+import { emitApiWebhook } from '../services/api-webhooks.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
@@ -11,6 +12,9 @@ const imgSelect = { select: { id: true, position: true, isPrimary: true, label: 
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
+const publishProduct = (userId, product, event) => emitApiWebhook({
+  userId, storeId: product.storeId, event, data: dto(product),
+}).catch((error) => console.error(`[api-webhook] produto ${product.id}: ${error.message}`));
 const defaultPreferences = {
   categories: [],
   variationTypes: ['Cor', 'Tamanho', 'Litros'],
@@ -108,6 +112,7 @@ router.post('/', async (req, res) => {
   await assertCanCreate(req.user);
   const data = cleanProduct(req.body);
   const p = await prisma.product.create({ data: createData(data, req.user.id, await storeScope(req)), include: productInclude });
+  publishProduct(req.user.id, p, 'product.created');
   res.status(201).json({ product: dto(p) });
 });
 
@@ -129,6 +134,7 @@ router.post('/bulk', async (req, res) => {
     }
     return created;
   });
+  for (const product of products) publishProduct(req.user.id, product, 'product.created');
   res.status(201).json({ products: products.map(dto) });
 });
 
@@ -138,6 +144,7 @@ router.patch('/:id', async (req, res) => {
   // Só ativar/desativar (botão rápido da lista).
   if (Object.keys(body).length === 1 && typeof body.active === 'boolean') {
     const p = await prisma.product.update({ where: { id: current.id }, data: { active: body.active }, include: productInclude });
+    publishProduct(req.user.id, p, 'product.updated');
     return res.json({ product: dto(p) });
   }
   const { images, priceOptions, ...data } = cleanProduct(body);
@@ -163,12 +170,14 @@ router.patch('/:id', async (req, res) => {
     }
     return tx.product.update({ where: { id: current.id }, data, include: productInclude });
   });
+  publishProduct(req.user.id, p, 'product.updated');
   res.json({ product: dto(p) });
 });
 
 router.delete('/:id', async (req, res) => {
   const p = await owned(req);
   await prisma.product.delete({ where: { id: p.id } });
+  publishProduct(req.user.id, p, 'product.deleted');
   res.json({ ok: true });
 });
 

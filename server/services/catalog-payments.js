@@ -2,6 +2,8 @@ import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import * as infinitePay from './infinitepay.js';
+import { notifyCatalogOrder } from './catalog-notifications.js';
+import { emitApiWebhook } from './api-webhooks.js';
 
 const scopeFor = (storeId) => storeId ? `store:${storeId}` : 'main';
 const safeUrl = (value) => {
@@ -66,7 +68,7 @@ export async function createOnlineCheckout(order, slug) {
 
 async function markPaid(order, { paymentId, proofUrl }) {
   const validProofUrl = safeUrl(proofUrl);
-  await prisma.order.updateMany({
+  const updated = await prisma.order.updateMany({
     where: {
       id: order.id,
       OR: [
@@ -82,6 +84,19 @@ async function markPaid(order, { paymentId, proofUrl }) {
       paidAt: new Date(),
     },
   });
+  if (updated.count && order.paymentStatus !== 'paid') {
+    const paidOrder = { ...order, paymentStatus: 'paid', paymentProvider: 'infinitepay', paymentId: String(paymentId || order.paymentId || '') };
+    notifyCatalogOrder(paidOrder, 'paid').catch((e) => console.error(`[catálogo] falha na notificação de pagamento do pedido ${order.id}: ${e.message}`));
+    emitApiWebhook({
+      userId: order.userId, storeId: order.storeId, event: 'order.paid',
+      data: {
+        id: order.id, code: order.code, customerName: order.customerName, customerPhone: order.customerPhone,
+        totalCents: order.totalCents, paymentStatus: 'paid', paymentProvider: 'infinitepay',
+        paymentId: paidOrder.paymentId, paymentProofUrl: validProofUrl || order.paymentProofUrl || null,
+        paidAt: paidOrder.paidAt?.toISOString() || new Date().toISOString(),
+      },
+    }).catch((e) => console.error(`[api-webhook] pagamento do pedido ${order.id}: ${e.message}`));
+  }
 }
 
 async function verifyInfinitePay(order, data = {}) {

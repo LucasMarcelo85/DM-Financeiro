@@ -9,6 +9,7 @@ import { config } from '../config.js';
 import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
 import { resolvePublicOwner } from '../utils/store.js';
 import { paymentConnections, infinitePayReady } from './catalog-payments.js';
+import { emitApiWebhook } from './api-webhooks.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -117,7 +118,7 @@ export async function createOrder(userSlug, body = {}) {
     const priceOption = eligible.at(-1) || null;
     const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
-    items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
+    items.push({ productId: p.id, imageId: img?.id || null, stockTracked: p.stockEnabled, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
     if (p.stockEnabled) {
       const key = img ? `image:${img.id}` : `product:${p.id}`;
       const previous = stockDemand.get(key);
@@ -172,6 +173,10 @@ export async function createOrder(userSlug, body = {}) {
     ? { street: delivery.address, city: delivery.city, state: delivery.state || null, complement: `Galpão: ${delivery.warehouse}` }
     : { zip: delivery.zip || null, street: delivery.street || null, number: delivery.number || null, complement: delivery.complement || null, district: delivery.district || null, city: delivery.city || null, state: delivery.state || null };
   const clean = Object.fromEntries(Object.entries(addr).filter(([, v]) => v));
+  const knownCustomer = await prisma.order.findFirst({
+    where: { userId: owner.id, storeId: store?.id ?? null, customerPhone: phone, deletedAt: null },
+    select: { id: true },
+  });
 
   let order;
   for (let attempt = 0; attempt < 3; attempt++) {
@@ -200,6 +205,14 @@ export async function createOrder(userSlug, body = {}) {
       if (e?.code !== 'P2002' || attempt === 2) throw e; // outro pedido criou o mesmo cliente agora: tenta de novo
     }
   }
+  emitApiWebhook({ userId: owner.id, storeId: store?.id ?? null, event: 'order.created', data: orderDTO(order) })
+    .catch((error) => console.error(`[api-webhook] pedido ${order.id}: ${error.message}`));
+  emitApiWebhook({
+    userId: owner.id,
+    storeId: store?.id ?? null,
+    event: knownCustomer ? 'customer.updated' : 'customer.created',
+    data: { phone, name: customerName, orderId: order.id, orderCode: order.code },
+  }).catch((error) => console.error(`[api-webhook] cliente ${phone}: ${error.message}`));
   return { order, cfg, paymentMethod };
 }
 

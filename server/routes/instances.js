@@ -10,12 +10,14 @@ import * as evo from '../services/evolution.js';
 import * as meta from '../services/meta.js';
 import * as wa from '../services/whatsapp.js';
 import { syncInstance, syncState } from '../services/audit.js';
+import { publish as publishAudit } from '../services/audit-hub.js';
 
-const SELECT = { id: true, name: true, label: true, provider: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
+const SELECT = { id: true, name: true, label: true, provider: true, auditScope: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
+const MAX_AUDIT_LABELS = 40;
 
 // Nunca devolve o token nem o App Secret: só diz se estão cadastrados.
 const publicInstance = (i, extra = {}) => ({
-  id: i.id, name: i.name, label: i.label, provider: i.provider,
+  id: i.id, name: i.name, label: i.label, provider: i.provider, auditScope: i.auditScope,
   lastSyncAt: i.lastSyncAt ? i.lastSyncAt.getTime() : null, lastEventAt: i.lastEventAt ? i.lastEventAt.getTime() : null, sync: syncState(i.id),
   ...(i.provider === 'meta'
     ? { metaPhoneNumberId: i.metaPhoneNumberId, metaBusinessId: i.metaBusinessId, metaPhoneDisplay: i.metaPhoneDisplay, metaVerifyToken: i.metaVerifyToken, hasToken: Boolean(i.metaAccessToken), hasAppSecret: Boolean(i.metaAppSecret) }
@@ -63,6 +65,15 @@ export function instanceRouter(purpose) {
   const noun = audit ? 'número para auditoria' : 'WhatsApp conectado';
   const nouns = audit ? 'números para auditoria' : 'WhatsApps conectados';
 
+  function cleanAuditScope(value, user) {
+    if (value !== undefined && value !== 'main' && value !== 'app') throw new AppError(400, 'Origem da conexão inválida.');
+    const scope = value === 'app' ? 'app' : 'main';
+    if (audit && scope === 'app' && limitsFor(user).stores < 1) {
+      throw new AppError(403, 'A Auditoria do app não está incluída no seu plano.', 'SCOPE_NOT_IN_PLAN');
+    }
+    return scope;
+  }
+
   async function own(req) {
     const id = Number(req.params.id);
     const inst = Number.isInteger(id) ? await prisma.instance.findFirst({ where: { id, userId: req.user.id, purpose } }) : null;
@@ -93,8 +104,52 @@ export function instanceRouter(purpose) {
     try { await evo.setWebhook(name, evolutionWebhookUrl(name)); } catch (e) { console.warn(`[auditoria] webhook de ${name}: ${e.message}`); }
   }
 
+  async function saveInstance(inst, data) {
+    if (!audit || !data.auditScope || data.auditScope === inst.auditScope) {
+      return prisma.instance.update({ where: { id: inst.id }, data, select: SELECT });
+    }
+    return prisma.$transaction(async (tx) => {
+      const chats = await tx.auditChat.findMany({ where: { instanceId: inst.id }, select: { id: true } });
+      if (chats.length) {
+        const chatIds = chats.map((chat) => chat.id);
+        const links = await tx.auditChatLabel.findMany({
+          where: { chatId: { in: chatIds } },
+          include: { label: { select: { id: true, name: true, color: true } } },
+        });
+        const labels = [...new Map(links.map((link) => [link.label.id, link.label])).values()];
+        const existing = labels.length ? await tx.auditLabel.findMany({
+          where: { userId: inst.userId, auditScope: data.auditScope, name: { in: labels.map((label) => label.name) } },
+          select: { id: true, name: true },
+        }) : [];
+        const existingNames = new Set(existing.map((label) => label.name));
+        const currentCount = await tx.auditLabel.count({ where: { userId: inst.userId, auditScope: data.auditScope } });
+        if (currentCount + labels.filter((label) => !existingNames.has(label.name)).length > MAX_AUDIT_LABELS) {
+          throw new AppError(409, 'Remova algumas etiquetas do destino antes de mover esta conexão.');
+        }
+        const targetIds = new Map(existing.map((label) => [label.name, label.id]));
+        for (const label of labels) {
+          if (targetIds.has(label.name)) continue;
+          const created = await tx.auditLabel.create({
+            data: { userId: inst.userId, auditScope: data.auditScope, name: label.name, color: label.color },
+            select: { id: true },
+          });
+          targetIds.set(label.name, created.id);
+        }
+        await tx.auditChatLabel.deleteMany({ where: { chatId: { in: chatIds } } });
+        const relinked = links.map((link) => ({ chatId: link.chatId, labelId: targetIds.get(link.label.name) }));
+        if (relinked.length) await tx.auditChatLabel.createMany({ data: relinked });
+      }
+      return tx.instance.update({ where: { id: inst.id }, data, select: SELECT });
+    });
+  }
+
   router.get('/', async (req, res) => {
-    const rows = await prisma.instance.findMany({ where: { userId: req.user.id, purpose }, orderBy: { id: 'asc' }, select: SELECT });
+    const auditScope = audit ? cleanAuditScope(req.query.scope, req.user) : undefined;
+    const where = { userId: req.user.id, purpose, ...(audit ? { auditScope } : {}) };
+    const [rows, count] = await Promise.all([
+      prisma.instance.findMany({ where, orderBy: { id: 'asc' }, select: SELECT }),
+      prisma.instance.count({ where: { userId: req.user.id, purpose } }),
+    ]);
     const configured = evolutionConfigured();
     let failed = false;
     const instances = await Promise.all(
@@ -110,7 +165,9 @@ export function instanceRouter(purpose) {
       })
     );
     res.json({
-      instances, purpose, limit: limitOf(req.user), evolutionConfigured: configured, unreachable: failed,
+      instances, purpose, limit: limitOf(req.user), count, auditScope,
+      availableScopes: { main: true, app: !audit || limitsFor(req.user).stores > 0 },
+      evolutionConfigured: configured, unreachable: failed,
       metaWebhookUrl: metaWebhookUrl(), appUrlIsPublic: appUrlIsPublic(),
     });
   });
@@ -119,6 +176,7 @@ export function instanceRouter(purpose) {
     await assertCanAdd(req.user);
     const b = req.body || {};
     const label = cleanLabel(b.label);
+    const auditScope = audit ? cleanAuditScope(b.auditScope, req.user) : 'main';
     const name = await nextName(req.user);
 
     if (b.provider === 'meta') {
@@ -131,7 +189,7 @@ export function instanceRouter(purpose) {
       if (audit) await meta.subscribeApp({ businessId: m.businessId, token: m.accessToken });
       const created = await prisma.instance.create({
         data: {
-          userId: req.user.id, name, purpose, provider: 'meta', label,
+          userId: req.user.id, name, purpose, provider: 'meta', label, auditScope,
           metaPhoneNumberId: m.phoneNumberId, metaBusinessId: m.businessId, metaAccessToken: encrypt(m.accessToken),
           metaAppSecret: m.appSecret ? encrypt(m.appSecret) : null, metaVerifyToken: crypto.randomBytes(18).toString('hex'),
           metaPhoneDisplay: info.display || null,
@@ -150,7 +208,7 @@ export function instanceRouter(purpose) {
       if (e.upstreamStatus === 403 || e.upstreamStatus === 409) data = await evo.connectInstance(name);
       else throw e;
     }
-    const created = await prisma.instance.create({ data: { userId: req.user.id, name, purpose, provider: 'evolution', label }, select: SELECT });
+    const created = await prisma.instance.create({ data: { userId: req.user.id, name, purpose, provider: 'evolution', label, auditScope }, select: SELECT });
     await ensureAuditWebhook(name);
     res.status(201).json({ instance: publicInstance(created), connected: false, ...evo.normalizeQr(data) });
   });
@@ -161,6 +219,7 @@ export function instanceRouter(purpose) {
     const b = req.body || {};
     const data = {};
     if (b.label !== undefined) data.label = cleanLabel(b.label);
+    if (audit && b.auditScope !== undefined) data.auditScope = cleanAuditScope(b.auditScope, req.user);
     if (inst.provider === 'meta' && b.meta && typeof b.meta === 'object') {
       const m = cleanMeta(b.meta, { partial: true });
       const phoneNumberId = m.phoneNumberId ?? inst.metaPhoneNumberId;
@@ -177,7 +236,11 @@ export function instanceRouter(purpose) {
       meta.forget(inst.id);
     }
     if (!Object.keys(data).length) throw new AppError(400, 'Nada para atualizar.');
-    const updated = await prisma.instance.update({ where: { id: inst.id }, data, select: SELECT });
+    const updated = await saveInstance(inst, data);
+    if (audit && data.auditScope && data.auditScope !== inst.auditScope) {
+      publishAudit(req.user.id, { type: 'scopeChanged', instanceId: inst.id }, inst.auditScope);
+      publishAudit(req.user.id, { type: 'scopeChanged', instanceId: inst.id }, data.auditScope);
+    }
     res.json({ instance: publicInstance(updated) });
   });
 

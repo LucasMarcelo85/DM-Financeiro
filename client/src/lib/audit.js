@@ -56,7 +56,12 @@ export function ago(ms) {
   return `há ${d} ${d === 1 ? 'dia' : 'dias'}`;
 }
 
-export const mediaUrl = (id, query = '') => `/api/audit/messages/${id}/media${query}`;
+export const mediaUrl = (id, query = '') => {
+  const scope = sessionStorage.getItem('dm:audit-scope');
+  if (scope !== 'app') return `/api/audit/messages/${id}/media${query}`;
+  const separator = query ? '&' : '?';
+  return `/api/audit/messages/${id}/media${query}${separator}scope=app`;
+};
 
 export const TYPE_LABEL = { image: 'Foto', video: 'Vídeo', audio: 'Áudio', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contact: 'Contato' };
 

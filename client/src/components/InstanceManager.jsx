@@ -13,7 +13,7 @@ import { ago } from '../lib/audit.js';
 // Conexões de WhatsApp. `purpose`: 'envio' (cobranças e lembretes) ou 'auditoria' (só leitura das conversas).
 // Cada conexão pode ser por QR Code (WhatsApp comum) ou pela API oficial da Meta (WhatsApp Cloud API).
 
-function QrModal({ base, instance, initial, onClose, onConnected }) {
+function QrModal({ base, listBase = base, instance, initial, onClose, onConnected }) {
   const [qr, setQr] = useState(initial?.qr || null);
   const [pairing, setPairing] = useState(initial?.pairingCode || null);
   const [error, setError] = useState('');
@@ -38,7 +38,7 @@ function QrModal({ base, instance, initial, onClose, onConnected }) {
           }
           setPairing(r.pairingCode);
         } else {
-          const list = await api.get(base);
+          const list = await api.get(listBase);
           if (!alive) return;
           if (list.instances.find((i) => i.id === instance.id)?.connected) doneRef.current();
         }
@@ -130,22 +130,37 @@ function WebhookModal({ instance, url, publicUrl, onClose }) {
   );
 }
 
-export default function InstanceManager({ purpose = 'envio' }) {
+function LabelModal({ value, busy, onClose, onSubmit }) {
+  const [label, setLabel] = useState(value || '');
+  return (
+    <Modal title="Nome desta conexão" onClose={busy ? () => {} : onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={() => onSubmit(label)} disabled={busy}>{busy ? 'Salvando...' : 'Salvar nome'}</button></>}>
+      <label className="field">
+        <span>Nome pessoal <small>(não altera o número nem a conexão)</small></span>
+        <input className="input" value={label} onChange={(e) => setLabel(e.target.value)} maxLength={60} placeholder="Ex.: Loja Centro" autoFocus />
+      </label>
+    </Modal>
+  );
+}
+
+export default function InstanceManager({ purpose = 'envio', auditScope = 'main' }) {
   const audit = purpose === 'auditoria';
   const base = audit ? '/audit/instances' : '/instances';
+  const listPath = audit ? `${base}?scope=${auditScope}` : base;
   const { user } = useAuth();
   const toast = useToast();
-  const { data, error, reload } = useInstances(5000, base);
+  const { data, error, reload } = useInstances(5000, listPath);
   const [busy, setBusy] = useState('');
   const [qrFor, setQrFor] = useState(null);
   const [confirmDel, setConfirmDel] = useState(null);
   const [choose, setChoose] = useState(false);
   const [metaFor, setMetaFor] = useState(null); // { instance? }
   const [hookFor, setHookFor] = useState(null);
+  const [labelFor, setLabelFor] = useState(null);
 
   const instances = data?.instances || [];
   const limit = data?.limit ?? user.limits[audit ? 'auditInstances' : 'instances'];
-  const canAdd = instances.length < limit;
+  const canAdd = (data?.count ?? instances.length) < limit;
   const noun = audit ? ['número para auditoria', 'números para auditoria'] : ['WhatsApp conectado', 'WhatsApps conectados'];
 
   async function run(key, fn, okMsg) {
@@ -164,7 +179,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
 
   async function addQr() {
     setChoose(false);
-    const r = await run('add', () => api.post(base, { provider: 'evolution' }));
+    const r = await run('add', () => api.post(base, { provider: 'evolution', ...(audit ? { auditScope } : {}) }));
     if (r) setQrFor({ instance: r.instance, initial: r });
   }
 
@@ -172,7 +187,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
     const editing = metaFor?.instance;
     setBusy('meta');
     try {
-      const r = editing ? await api.patch(`${base}/${editing.id}`, values) : await api.post(base, { provider: 'meta', ...values });
+      const r = editing ? await api.patch(`${base}/${editing.id}`, values) : await api.post(base, { provider: 'meta', ...values, ...(audit ? { auditScope } : {}) });
       setMetaFor(null);
       toast(editing ? 'Dados da API oficial atualizados.' : 'API oficial conectada!');
       if (!editing && audit) setHookFor(r.instance);
@@ -181,6 +196,16 @@ export default function InstanceManager({ purpose = 'envio' }) {
     } finally {
       setBusy('');
       reload();
+    }
+  }
+
+  async function saveLabel(label) {
+    if (!labelFor) return;
+    const instance = labelFor;
+    const result = await run(`label${instance.id}`, () => api.patch(`${base}/${instance.id}`, { label }));
+    if (result) {
+      setLabelFor(null);
+      toast('Nome da conexão atualizado.');
     }
   }
 
@@ -233,7 +258,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
             <li key={i.id} className={`instance ${i.connected ? 'is-on' : ''}`}>
               <Lamp on={i.connected} pending={i.state === 'unknown' && (i.provider === 'meta' || data?.evolutionConfigured)} size="lg" />
               <div className="instance-info">
-                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span></strong>
+                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope === 'app' ? 'App' : 'Loja principal'}</span>}</strong>
                 <span>
                   {status(i)}
                   {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
@@ -258,6 +283,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
                   </>
                 ) : (
                   <>
+                    {audit && <button className="btn btn-ghost btn-sm" onClick={() => setLabelFor(i)}><Icon name="edit" size={16} /> Nome</button>}
                     {!i.connected && <button className="btn btn-primary btn-sm" onClick={() => connect(i)} disabled={busy === `c${i.id}`}>{busy === `c${i.id}` ? 'Gerando...' : 'Ler QR Code'}</button>}
                     {i.connected && audit && <button className="btn btn-ghost btn-sm" onClick={() => sync(i)} disabled={busy === `s${i.id}`}>{busy === `s${i.id}` ? 'Iniciando...' : 'Importar tudo agora'}</button>}
                     {i.connected && (
@@ -266,6 +292,11 @@ export default function InstanceManager({ purpose = 'envio' }) {
                       </button>
                     )}
                   </>
+                )}
+                {audit && data?.availableScopes?.app && (
+                  <select className="input input-sm au-instance-scope" aria-label="Separar esta conexão" value={i.auditScope} onChange={(e) => run(`scope${i.id}`, () => api.patch(`${base}/${i.id}`, { auditScope: e.target.value }), 'Origem da conexão atualizada.')}>
+                    <option value="main">Loja principal</option><option value="app">App do lojista</option>
+                  </select>
                 )}
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(i)} aria-label={`Remover ${title(i)}`} title="Remover"><Icon name="trash" size={18} /></button>
               </div>
@@ -279,7 +310,7 @@ export default function InstanceManager({ purpose = 'envio' }) {
           {canAdd ? (
             <button className="btn btn-ghost" onClick={() => setChoose(true)} disabled={busy === 'add'}><Icon name="plus" size={18} /> {audit ? 'Adicionar outro número' : 'Adicionar outro WhatsApp'}</button>
           ) : (
-            <p className="muted small">Você usou {instances.length} de {limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.</p>
+            <p className="muted small">Você usou {data?.count ?? instances.length} de {limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.</p>
           )}
           <BuyMore resource={audit ? 'auditInstances' : 'instances'} />
         </div>
@@ -302,10 +333,11 @@ export default function InstanceManager({ purpose = 'envio' }) {
       )}
 
       {metaFor && <MetaModal audit={audit} instance={metaFor.instance} busy={busy === 'meta'} onClose={() => setMetaFor(null)} onSubmit={saveMeta} />}
+      {labelFor && <LabelModal value={labelFor.label} busy={busy === `label${labelFor.id}`} onClose={() => setLabelFor(null)} onSubmit={saveLabel} />}
       {hookFor && <WebhookModal instance={hookFor} url={data?.metaWebhookUrl || ''} publicUrl={data?.appUrlIsPublic} onClose={() => setHookFor(null)} />}
 
       {qrFor && (
-        <QrModal base={base} instance={qrFor.instance} initial={qrFor.initial}
+        <QrModal base={base} listBase={listPath} instance={qrFor.instance} initial={qrFor.initial}
           onClose={() => { setQrFor(null); reload(); }}
           onConnected={() => { setQrFor(null); toast('WhatsApp conectado!'); reload(); }} />
       )}

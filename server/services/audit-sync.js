@@ -22,7 +22,7 @@ export async function auditSyncTick() {
     const now = Date.now();
     for (const inst of instances) {
       if (!computeAccess(inst.user).hasAccess) continue;
-      const every = listenerCount(inst.userId) > 0 ? config.auditSync.intervalMs : config.auditSync.idleMs;
+      const every = listenerCount(inst.userId, inst.auditScope) > 0 ? config.auditSync.intervalMs : config.auditSync.idleMs;
       if (now - (lastRun.get(inst.id) || 0) < every) continue;
       lastRun.set(inst.id, now);
       // Cada conexão roda por conta própria: um histórico grande de uma não atrasa a tela ao vivo das outras.

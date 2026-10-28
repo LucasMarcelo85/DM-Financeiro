@@ -15,10 +15,19 @@ const STORE_KEY = 'dm:store';
 export const getActiveStore = () => localStorage.getItem(STORE_KEY) || null;
 export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
 const SCOPED = /^\/(products|catalog|portfolios)(\/|\?|$)/;
+const AUDIT_SCOPE_KEY = 'dm:audit-scope';
+export const getActiveAuditScope = () => sessionStorage.getItem(AUDIT_SCOPE_KEY) === 'app' ? 'app' : 'main';
+export const setActiveAuditScope = (scope) => { if (scope === 'app') sessionStorage.setItem(AUDIT_SCOPE_KEY, 'app'); else sessionStorage.removeItem(AUDIT_SCOPE_KEY); };
 const scoped = (url) => {
   const store = getActiveStore();
-  if (!store || !SCOPED.test(url) || /^\/portfolios\/domain/.test(url) || /[?&]store=/.test(url)) return url;
-  return `${url}${url.includes('?') ? '&' : '?'}store=${store}`;
+  if (store && SCOPED.test(url) && !/^\/portfolios\/domain/.test(url) && !/[?&]store=/.test(url)) {
+    url = `${url}${url.includes('?') ? '&' : '?'}store=${store}`;
+  }
+  const scope = getActiveAuditScope();
+  if (scope === 'app' && /^\/audit\//.test(url) && !/[?&]scope=/.test(url)) {
+    url = `${url}${url.includes('?') ? '&' : '?'}scope=app`;
+  }
+  return url;
 };
 
 // Aplicativo do lojista (/app): o login é outro e as telas de Produtos e Pedidos reaproveitam as mesmas chamadas, redirecionadas para /shop-app.

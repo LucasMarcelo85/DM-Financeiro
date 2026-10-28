@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, setActiveAuditScope } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
 import { useAuth } from '../auth.jsx';
 import InstanceManager from '../components/InstanceManager.jsx';
@@ -19,7 +19,8 @@ const REFRESH_MS = 30000; // atualiza a lista inteira (nomes, não lidas, ordem)
 export default function Audit() {
   const { user } = useAuth();
   const toast = useToast();
-  const { data: inst, reload: reloadInst } = useInstances(15000, '/audit/instances');
+  const [scope, setScope] = useState(() => sessionStorage.getItem('dm:audit-scope') === 'app' ? 'app' : 'main');
+  const { data: inst, reload: reloadInst } = useInstances(15000, `/audit/instances?scope=${scope}`);
   const [labels, setLabels] = useState([]);
   const [filters, setFilters] = useState(EMPTY);
   const [chats, setChats] = useState([]);
@@ -36,6 +37,8 @@ export default function Audit() {
   const [syncing, setSyncing] = useState(null);
   const [manager, setManager] = useState(false);
   const [side, setSide] = useState(false);
+  const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem('dm:audit-list-width')) || 330);
+  const [sideWidth, setSideWidth] = useState(() => Number(localStorage.getItem('dm:audit-side-width')) || 300);
 
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
@@ -52,6 +55,7 @@ export default function Audit() {
   const instances = inst?.instances || [];
   const hasInstances = instances.length > 0;
   const canSend = Boolean(user.limits.auditSend);
+  const canUseApp = Number(user.limits.stores || 0) > 0;
 
   const matchesFilters = (dto) => {
     const f = filtersRef.current;
@@ -116,14 +120,14 @@ export default function Audit() {
     } finally {
       if (mine === seq.current) setLoading(false);
     }
-  }, [toast]);
+  }, [toast, scope]);
 
   useEffect(() => {
     const t = setTimeout(() => loadChats(), filters.q ? 350 : 0);
     return () => clearTimeout(t);
   }, [filters, loadChats]);
 
-  useEffect(() => { api.get('/audit/labels').then((r) => setLabels(r.labels)).catch(() => {}); }, []);
+  useEffect(() => { api.get('/audit/labels').then((r) => setLabels(r.labels)).catch((e) => toast(e.message, 'error')); }, [scope, toast]);
 
   // Atualização da lista sem perder o que você já rolou: troca/adiciona as conversas do topo e mantém o resto.
   const refreshTop = useCallback(async () => {
@@ -136,7 +140,7 @@ export default function Audit() {
         return [...byId.values()].sort((a, b) => b.lastMessageAt - a.lastMessageAt || b.id - a.id);
       });
     } catch { /* tenta de novo no próximo ciclo */ }
-  }, []);
+  }, [scope]);
 
   // ---------- chegada de mensagens (qualquer canal) ----------
   const deliver = useCallback((items) => {
@@ -153,7 +157,7 @@ export default function Audit() {
 
   // Canal 1: tempo real (Server-Sent Events). O navegador reconecta sozinho.
   useEffect(() => {
-    const es = new EventSource('/api/audit/stream');
+    const es = new EventSource(`/api/audit/stream?scope=${scope}`);
     let first = true;
     es.onopen = () => {
       setOnline(true);
@@ -170,10 +174,20 @@ export default function Audit() {
       else if (ev.type === 'edit') setLiveEdit(ev);
       else if (ev.type === 'media') setLiveMedia(ev);
       else if (ev.type === 'sync') { setSyncing(ev.running ? ev : null); if (!ev.running) { refreshTop(); reloadInst(); } }
+      else if (ev.type === 'scopeChanged') {
+        if (chatsRef.current.some((chat) => chat.id === selectedRef.current && chat.instanceId === ev.instanceId)) {
+          selectedRef.current = null;
+          setSelectedId(null);
+          setDetail(null);
+          setSide(false);
+        }
+        loadChats();
+        reloadInst();
+      }
       else if (ev.type === 'connection') reloadInst();
     };
     return () => es.close();
-  }, [deliver, upsertChat, refreshTop, reloadInst]);
+  }, [deliver, upsertChat, refreshTop, reloadInst, loadChats, scope]);
 
   // Canal 2: pergunta ao servidor a cada poucos segundos o que chegou depois da última mensagem conhecida.
   useEffect(() => {
@@ -196,12 +210,28 @@ export default function Audit() {
     const onVisible = () => { if (!document.hidden) poll(); };
     document.addEventListener('visibilitychange', onVisible);
     return () => { stop = true; clearInterval(t); document.removeEventListener('visibilitychange', onVisible); };
-  }, [deliver]);
+  }, [deliver, scope]);
 
   useEffect(() => {
     const t = setInterval(() => { if (!document.hidden) refreshTop(); }, REFRESH_MS);
     return () => clearInterval(t);
-  }, [refreshTop]);
+  }, [refreshTop, scope]);
+
+  useEffect(() => {
+    setActiveAuditScope(scope);
+    setChats([]);
+    setLabels([]);
+    setSelectedId(null);
+    setDetail(null);
+    setNextBefore(null);
+    setStats({ unreadTotal: 0, unreadChats: 0, totalChats: 0 });
+    cursor.current = null;
+    seen.current.clear();
+  }, [scope]);
+
+  useEffect(() => {
+    if (!canUseApp && scope === 'app') switchScope('main');
+  }, [canUseApp, scope]);
 
   // O título da aba mostra quantas conversas têm mensagens não lidas.
   useEffect(() => {
@@ -231,6 +261,17 @@ export default function Audit() {
     setChats((l) => l.map((c) => (c.id === selectedId ? { ...c, labelIds: ids } : c)));
   };
   const back = () => { setSelectedId(null); setDetail(null); setSide(false); };
+  function switchScope(next) {
+    setActiveAuditScope(next);
+    selectedRef.current = null;
+    setScope(next);
+    setFilters(EMPTY);
+    setLiveItems([]);
+    setLiveStatus(null);
+    setLiveEdit(null);
+    setLiveMedia(null);
+    setSyncing(null);
+  }
 
   const shown = detail && chats.find((c) => c.id === detail.id);
   const view = detail ? { ...detail, ...(shown ? { name: shown.name, phone: shown.phone } : {}) } : null;
@@ -247,10 +288,40 @@ export default function Audit() {
         </div>
         <div className="btn-row">
           <span className={`au-live ${online ? 'is-on' : ''}`} role="status" title={online ? 'Recebendo mensagens em tempo real' : 'Sem o tempo real: a tela continua se atualizando a cada poucos segundos'}><i />{online ? 'Ao vivo' : 'Atualizando...'}</span>
-          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({instances.length}/{inst?.limit ?? user.limits.auditInstances})</button>}
+          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({inst?.count ?? instances.length}/{inst?.limit ?? user.limits.auditInstances})</button>}
                    <BuyMore resource="auditInstances" label="Adquirir mais números" />
                  </div>
       </header>
+
+      {canUseApp && (
+        <nav className="au-scope flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Origem das conversas">
+          <button type="button" className={`btn ${scope === 'main' ? 'btn-primary' : 'btn-ghost'}`} aria-pressed={scope === 'main'} onClick={() => switchScope('main')}>Loja principal</button>
+          <button type="button" className={`btn ${scope === 'app' ? 'btn-primary' : 'btn-ghost'}`} aria-pressed={scope === 'app'} onClick={() => switchScope('app')}>App do lojista</button>
+          <span className="muted small">Conexões, conversas e etiquetas ficam separadas.</span>
+        </nav>
+      )}
+
+      {hasInstances && (
+        <div className="au-layout-controls flex flex-wrap items-center gap-4 rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+          <label>
+            <span>Largura da lista</span>
+            <input type="range" min="250" max="420" step="10" value={listWidth} onChange={(e) => {
+              const value = Number(e.target.value);
+              setListWidth(value);
+              localStorage.setItem('dm:audit-list-width', String(value));
+            }} aria-label="Ajustar largura da lista de conversas" />
+          </label>
+          <label>
+            <span>Painel lateral</span>
+            <input type="range" min="240" max="420" step="10" value={sideWidth} onChange={(e) => {
+              const value = Number(e.target.value);
+              setSideWidth(value);
+              localStorage.setItem('dm:audit-side-width', String(value));
+            }} aria-label="Ajustar largura do painel lateral" />
+          </label>
+          <span className="muted small">Ajuste salvo neste dispositivo.</span>
+        </div>
+      )}
 
       {syncing && (
         <div className="banner banner-amber au-sync" role="status">
@@ -260,13 +331,13 @@ export default function Audit() {
 
       {(manager || (inst && !hasInstances)) && (
         <section className="card">
-          <InstanceManager purpose="auditoria" />
+          <InstanceManager purpose="auditoria" auditScope={scope} />
           <p className="muted small au-legal">Conecte apenas números que você tem autorização para acompanhar e avise as pessoas envolvidas, conforme a LGPD.</p>
         </section>
       )}
 
       {hasInstances && (
-        <div className={`au-app ${selectedId ? 'is-open' : ''} ${side ? 'is-side' : ''}`}>
+        <div className={`au-app ${selectedId ? 'is-open' : ''} ${side ? 'is-side' : ''}`} style={{ '--au-list-width': `${listWidth}px`, '--au-side-width': `${sideWidth}px` }}>
           <ChatList chats={chats} selectedId={selectedId} onSelect={select} filters={filters} setFilters={setFilters} instances={instances} labels={labels}
             loading={loading} hasMore={Boolean(nextBefore)} onMore={() => loadChats({ more: true, before: nextBefore })} stats={stats} />
           {view ? (

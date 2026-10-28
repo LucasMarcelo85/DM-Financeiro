@@ -15,6 +15,14 @@ const MAX_SEND = 4000;
 
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 const int = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
+const scopeOf = (req) => req.query.scope === 'app' ? 'app' : 'main';
+
+function assertScopeAccess(req, scope = scopeOf(req)) {
+  if (scope === 'app' && limitsFor(req.user).stores < 1) {
+    throw new AppError(403, 'A Auditoria do app não está incluída no seu plano.', 'SCOPE_NOT_IN_PLAN');
+  }
+  return scope;
+}
 
 // Filtro de período da auditoria: 7, 30 ou 60 dias (60 = tudo que fica guardado; o que passa disso é apagado sozinho).
 const RANGES = [7, 30, 60];
@@ -26,7 +34,8 @@ const sinceOf = (v) => {
 
 async function ownChat(req, id = req.params.id) {
   const n = int(id);
-  const chat = n ? await prisma.auditChat.findFirst({ where: { id: n, userId: req.user.id }, include: { labels: { select: { labelId: true } }, instance: { select: { id: true, name: true, label: true, provider: true, metaPhoneDisplay: true } } } }) : null;
+  const auditScope = assertScopeAccess(req);
+  const chat = n ? await prisma.auditChat.findFirst({ where: { id: n, userId: req.user.id, instance: { auditScope } }, include: { labels: { select: { labelId: true } }, instance: { select: { id: true, name: true, label: true, provider: true, metaPhoneDisplay: true, auditScope: true } } } }) : null;
   if (!chat) throw new AppError(404, 'Conversa não encontrada.');
   return chat;
 }
@@ -38,10 +47,11 @@ const cursorWhere = (ts, id, dir) => (dir === 'lt' ? { OR: [{ ts: { lt: ts } }, 
 
 // ---------- Tempo real ----------
 router.get('/stream', (req, res) => {
+  const scope = assertScopeAccess(req);
   res.set({ 'Content-Type': 'text/event-stream; charset=utf-8', 'Cache-Control': 'no-cache, no-transform', Connection: 'keep-alive', 'X-Accel-Buffering': 'no' });
   res.flushHeaders();
   res.write('retry: 3000\n\n');
-  const unsubscribe = subscribe(req.user.id, res);
+  const unsubscribe = subscribe(req.user.id, scope, res);
   const beat = setInterval(() => res.write(': ping\n\n'), 25000);
   const done = () => { clearInterval(beat); unsubscribe(); };
   req.on('close', done);
@@ -53,9 +63,10 @@ const INST_SELECT = { select: { id: true, name: true, label: true, metaPhoneDisp
 
 router.get('/chats', async (req, res) => {
   const userId = req.user.id;
+  const auditScope = assertScopeAccess(req);
   const limit = clamp(int(req.query.limit) || 40, 1, 100);
   const since = sinceOf(req.query.days);
-  const where = { userId, lastMessageAt: { gte: since } };
+  const where = { userId, instance: { auditScope }, lastMessageAt: { gte: since } };
   if (int(req.query.instanceId)) where.instanceId = int(req.query.instanceId);
   if (int(req.query.labelId)) where.labels = { some: { labelId: int(req.query.labelId) } };
   if (req.query.unread === '1') where.unread = { gt: 0 };
@@ -90,10 +101,10 @@ router.get('/chats', async (req, res) => {
   }
 
   const [unread, newest] = await Promise.all([
-    prisma.auditChat.aggregate({ where: { userId }, _sum: { unread: true }, _count: { _all: true } }),
-    prisma.auditMessage.aggregate({ where: { chat: { userId } }, _max: { id: true } }),
+    prisma.auditChat.aggregate({ where: { userId, instance: { auditScope } }, _sum: { unread: true }, _count: { _all: true } }),
+    prisma.auditMessage.aggregate({ where: { chat: { userId, instance: { auditScope } } }, _max: { id: true } }),
   ]);
-  const unreadChats = await prisma.auditChat.count({ where: { userId, unread: { gt: 0 } } });
+  const unreadChats = await prisma.auditChat.count({ where: { userId, instance: { auditScope }, unread: { gt: 0 } } });
   res.json({
     chats: page.map((c) => listDTO(c, snippets.has(c.id) ? { match: snippets.get(c.id) } : {})),
     nextBefore: more ? page.at(-1).lastMessageAt.getTime() : null,
@@ -105,9 +116,10 @@ router.get('/chats', async (req, res) => {
 // Canal de segurança do "ao vivo": tudo que chegou depois de `after`. A tela pergunta a cada poucos segundos,
 // então mesmo que o tempo real (SSE) seja barrado por um proxy, nada deixa de aparecer.
 router.get('/updates', async (req, res) => {
+  const auditScope = assertScopeAccess(req);
   const after = int(req.query.after) || 0;
   const rows = await prisma.auditMessage.findMany({
-    where: { id: { gt: after }, chat: { userId: req.user.id } }, orderBy: { id: 'asc' }, take: 200,
+    where: { id: { gt: after }, chat: { userId: req.user.id, instance: { auditScope } } }, orderBy: { id: 'asc' }, take: 200,
     include: { chat: { include: { labels: { select: { labelId: true } }, instance: INST_SELECT } } },
   });
   const chats = new Map(rows.map((r) => [r.chatId, r.chat]));
@@ -179,8 +191,9 @@ router.post('/chats/:id/read', async (req, res) => {
 // Foto, áudio, vídeo ou documento de uma mensagem. Baixa da Evolution/Meta na primeira vez e guarda.
 // Aceita "avançar" no vídeo/áudio (Range). ?thumb=1 devolve só a miniatura; ?download=1 força o download.
 router.get('/messages/:id/media', async (req, res) => {
+  const auditScope = assertScopeAccess(req);
   const id = int(req.params.id);
-  const msg = id ? await prisma.auditMessage.findFirst({ where: { id, chat: { userId: req.user.id } }, select: { id: true, hasMedia: true, thumb: true, mediaName: true, type: true } }) : null;
+  const msg = id ? await prisma.auditMessage.findFirst({ where: { id, chat: { userId: req.user.id, instance: { auditScope } } }, select: { id: true, hasMedia: true, thumb: true, mediaName: true, type: true } }) : null;
   if (!msg?.hasMedia) throw new AppError(404, 'Mídia não encontrada.');
 
   let file = req.query.thumb ? null : await ensureMedia(msg.id);
@@ -217,8 +230,9 @@ router.put('/chats/:id/note', async (req, res) => {
 
 router.put('/chats/:id/labels', async (req, res) => {
   const chat = await ownChat(req);
+  const auditScope = assertScopeAccess(req);
   const ids = [...new Set((Array.isArray(req.body?.labelIds) ? req.body.labelIds : []).map(Number).filter(Number.isInteger))];
-  const valid = ids.length ? await prisma.auditLabel.findMany({ where: { userId: req.user.id, id: { in: ids } }, select: { id: true } }) : [];
+  const valid = ids.length ? await prisma.auditLabel.findMany({ where: { userId: req.user.id, auditScope, id: { in: ids } }, select: { id: true } }) : [];
   await prisma.$transaction([
     prisma.auditChatLabel.deleteMany({ where: { chatId: chat.id } }),
     prisma.auditChatLabel.createMany({ data: valid.map((l) => ({ chatId: chat.id, labelId: l.id })) }),
@@ -269,15 +283,17 @@ function cleanLabelInput(b, { partial = false } = {}) {
 }
 
 router.get('/labels', async (req, res) => {
-  const rows = await prisma.auditLabel.findMany({ where: { userId: req.user.id }, orderBy: { name: 'asc' }, include: { _count: { select: { chats: true } } } });
+  const auditScope = assertScopeAccess(req);
+  const rows = await prisma.auditLabel.findMany({ where: { userId: req.user.id, auditScope }, orderBy: { name: 'asc' }, include: { _count: { select: { chats: true } } } });
   res.json({ labels: rows.map((l) => ({ ...labelDTO(l), count: l._count.chats })) });
 });
 
 router.post('/labels', async (req, res) => {
+  const auditScope = assertScopeAccess(req);
   const data = cleanLabelInput(req.body || {});
-  if ((await prisma.auditLabel.count({ where: { userId: req.user.id } })) >= MAX_LABELS) throw new AppError(400, `Você pode ter até ${MAX_LABELS} etiquetas.`);
+  if ((await prisma.auditLabel.count({ where: { userId: req.user.id, auditScope } })) >= MAX_LABELS) throw new AppError(400, `Você pode ter até ${MAX_LABELS} etiquetas.`);
   try {
-    const l = await prisma.auditLabel.create({ data: { userId: req.user.id, ...data } });
+    const l = await prisma.auditLabel.create({ data: { userId: req.user.id, auditScope, ...data } });
     res.status(201).json({ label: labelDTO(l) });
   } catch (e) {
     if (e.code === 'P2002') throw new AppError(409, 'Você já tem uma etiqueta com esse nome.');
@@ -287,7 +303,8 @@ router.post('/labels', async (req, res) => {
 
 async function ownLabel(req) {
   const id = int(req.params.id);
-  const l = id ? await prisma.auditLabel.findFirst({ where: { id, userId: req.user.id } }) : null;
+  const auditScope = assertScopeAccess(req);
+  const l = id ? await prisma.auditLabel.findFirst({ where: { id, userId: req.user.id, auditScope } }) : null;
   if (!l) throw new AppError(404, 'Etiqueta não encontrada.');
   return l;
 }

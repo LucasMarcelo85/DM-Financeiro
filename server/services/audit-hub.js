@@ -1,10 +1,12 @@
-// Canal de tempo real da auditoria: cada aba aberta do usuário recebe os eventos (Server-Sent Events).
-const clients = new Map(); // userId -> Set<res>
+// Canal de tempo real da auditoria, isolado por usuário e pela loja principal/app.
+const clients = new Map(); // userId -> Map<scope, Set<res>>
 const MAX_TABS = 6;
 
-export function subscribe(userId, res) {
-  let set = clients.get(userId);
-  if (!set) clients.set(userId, (set = new Set()));
+export function subscribe(userId, scope, res) {
+  let scopes = clients.get(userId);
+  if (!scopes) clients.set(userId, (scopes = new Map()));
+  let set = scopes.get(scope);
+  if (!set) scopes.set(scope, (set = new Set()));
   while (set.size >= MAX_TABS) {
     const oldest = set.values().next().value;
     set.delete(oldest);
@@ -13,15 +15,16 @@ export function subscribe(userId, res) {
   set.add(res);
   return () => {
     set.delete(res);
-    if (!set.size) clients.delete(userId);
+    if (!set.size) scopes.delete(scope);
+    if (!scopes.size) clients.delete(userId);
   };
 }
 
-export function publish(userId, event) {
-  const set = clients.get(userId);
+export function publish(userId, event, scope = 'main') {
+  const set = clients.get(userId)?.get(scope);
   if (!set) return;
-  const frame = `data: ${JSON.stringify(event)}\n\n`;
+  const frame = `data: ${JSON.stringify({ ...event, auditScope: scope })}\n\n`;
   for (const res of set) res.write(frame);
 }
 
-export const listenerCount = (userId) => clients.get(userId)?.size || 0;
+export const listenerCount = (userId, scope) => clients.get(userId)?.get(scope)?.size || 0;
