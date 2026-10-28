@@ -130,7 +130,7 @@ export default function Layout() {
       </aside>
 
       <main className="main">
-        <div className={`page ${pathname.startsWith('/auditoria') ? 'page-wide' : ''}`}>
+        <div className={`page ${pathname.startsWith('/auditoria') || pathname.startsWith('/produtos') ? 'page-wide' : ''}`}>
           {outOfPlan ? <Navigate to={fallbackPath} replace /> : locked ? <PinPrompt tab={tab} /> : <Outlet />}
         </div>
       </main>

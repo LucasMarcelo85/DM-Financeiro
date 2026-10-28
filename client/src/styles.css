@@ -1249,7 +1249,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-variation-thumb { display: grid; grid-row: span 2; gap: .25rem; min-width: 0; }
 .pr-variation-thumb > img { width: 100%; height: 5.25rem; object-fit: cover; border: 1px solid var(--line); border-radius: 9px; background: #eef2f6; }
 .pr-variation-thumb > span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }
-.pr-remove-variation { grid-column: 2; justify-self: end; align-self: end; min-width: 0; white-space: nowrap; }
+.pr-remove-variation { grid-column: 1 / -1; justify-self: end; align-self: end; min-width: 0; white-space: nowrap; }
 .pr-base-price, .pr-price-rule { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; align-items: center; gap: .7rem; min-width: 0; padding: .7rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #fbfcfe; }
 .pr-current-product-image { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; overflow: hidden; border-radius: 8px; background: #edf1f6; }
 .pr-current-product-image img { width: 100%; height: 100%; object-fit: cover; }
@@ -1285,7 +1285,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .pr-variation-thumb { grid-row: span 2; }
   .pr-variation-thumb > img { height: 5rem; }
   .pr-variation-fields { grid-template-columns: repeat(2, minmax(0,1fr)); }
-  .pr-remove-variation { grid-column: 2; justify-self: start; }
+  .pr-remove-variation { grid-column: 1 / -1; justify-self: start; }
 }
 @media (max-width: 34rem) {
   .pr-product-card-head { padding: .65rem; }
@@ -1298,7 +1298,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .pr-variation-thumb > img { height: 4.5rem; }
   .pr-variation-fields { grid-template-columns: minmax(0,1fr); }
   .pr-variation-fields > .field { grid-column: 1; }
-  .pr-remove-variation { grid-column: 2; justify-self: start; }
+  .pr-remove-variation { grid-column: 1 / -1; justify-self: start; }
   .pr-price-rule { grid-template-columns: 2.6rem minmax(0,1fr); padding-inline: .5rem; }
   .pr-current-product-image { width: 2.6rem; height: 2.6rem; }
   .pr-price-rule-fields, .pr-details-fields { grid-template-columns: minmax(0,1fr); }
