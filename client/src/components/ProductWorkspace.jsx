@@ -370,19 +370,21 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => <div className="pr-variation-row" key={image.key}>
                 <div className="pr-variation-thumb"><img src={image.url} alt={`Variação ${variationIndex + 1} de ${draft.name || `produto ${index + 1}`}`} /><span>Variação {variationIndex + 1}</span></div>
-                <label className="field"><span>Cor <small>(opcional)</small></span><input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" /></label>
-                <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
-                <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
-                  <option value="">Não se aplica</option>
-                  {[...new Set([
-                    ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
-                    ...(image.variationType ? [image.variationType] : []),
-                  ])].filter((type) => !['cor', 'tamanho'].includes(type.toLocaleLowerCase('pt-BR'))).map((type) => <option key={type} value={type}>{type}</option>)}
-                  <option value="Outro">Outro</option>
-                </select></label>
-                {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
-                <label className="field"><span>Valor da característica</span><input className="input" value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
-                <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}>Remover</button>
+                <div className="pr-variation-fields">
+                  <label className="field"><span>Cor <small>(opcional)</small></span><input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" /></label>
+                  <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
+                  <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
+                    <option value="">Não se aplica</option>
+                    {[...new Set([
+                      ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
+                      ...(image.variationType ? [image.variationType] : []),
+                    ])].filter((type) => !['cor', 'tamanho'].includes(type.toLocaleLowerCase('pt-BR'))).map((type) => <option key={type} value={type}>{type}</option>)}
+                    <option value="Outro">Outro</option>
+                  </select></label>
+                  {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
+                  <label className="field"><span>Valor da característica</span><input className="input" value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
               </div>)}
             </div>
             {draft.variations.length < MAX_IMAGES - 1 && <>
