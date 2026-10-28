@@ -29,5 +29,5 @@ export function tabOfPath(pathname) {
 export const isTabLocked = (user, pinUnlocked, tab) => Boolean(tab && user?.pin?.enabled && user.pin.tabs.includes(tab) && !pinUnlocked);
 
 // Abas que o administrador pode liberar ou esconder em cada plano (mesmas chaves do servidor: server/plans.js).
-export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
+export const PLAN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
 export const isTabInPlan = (user, tab) => !PLAN_TABS.includes(tab) || (user?.limits?.tabs || PLAN_TABS).includes(tab);

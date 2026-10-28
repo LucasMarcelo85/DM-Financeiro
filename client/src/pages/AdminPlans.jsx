@@ -40,7 +40,18 @@ function toBody(form) {
 }
 
 const hasTab = (csv, key) => csv.split(',').includes(key);
-const toggleTab = (csv, key) => PLAN_TABS.filter((t) => (t === key ? !hasTab(csv, key) : csv.split(',').includes(t))).join(',');
+const toggleTab = (csv, key) => {
+  const tabs = csv.split(',').filter(Boolean);
+  return (tabs.includes(key) ? tabs.filter((tab) => tab !== key) : [...tabs, key]).join(',');
+};
+const moveTab = (csv, key, direction) => {
+  const tabs = csv.split(',').filter(Boolean);
+  const from = tabs.indexOf(key);
+  const to = from + direction;
+  if (from < 0 || to < 0 || to >= tabs.length) return csv;
+  [tabs[from], tabs[to]] = [tabs[to], tabs[from]];
+  return tabs.join(',');
+};
 
 function PlanFields({ form, setForm, withId }) {
   const set = (k) => (e) => setForm((f) => ({ ...f, [k]: e.target.value }));
@@ -77,18 +88,22 @@ function PlanFields({ form, setForm, withId }) {
       <fieldset className="field">
         <legend>Abas visíveis para o usuário deste plano</legend>
         <div className="pin-tabs">
-          {PLAN_TABS.map((key) => {
+          {[...form.tabs.split(',').filter(Boolean), ...PLAN_TABS.filter((key) => !hasTab(form.tabs, key))].map((key) => {
             const on = hasTab(form.tabs, key);
             const toggle = () => setForm((f) => ({ ...f, tabs: toggleTab(f.tabs, key) }));
             return (
-              <label key={key} className={`pin-tab ${on ? 'is-on' : ''}`}>
+              <div key={key} className={`pin-tab ${on ? 'is-on' : ''}`}>
                 <input type="checkbox" checked={on} onChange={toggle} />
-                {tabLabel(key)}
-              </label>
+                <span>{tabLabel(key)}</span>
+                {on && <span className="pin-tab-order">
+                  <button type="button" className="icon-btn" disabled={form.tabs.split(',')[0] === key} onClick={() => setForm((f) => ({ ...f, tabs: moveTab(f.tabs, key, -1) }))} aria-label={`Mover ${tabLabel(key)} para cima`}>↑</button>
+                  <button type="button" className="icon-btn" disabled={form.tabs.split(',').at(-1) === key} onClick={() => setForm((f) => ({ ...f, tabs: moveTab(f.tabs, key, 1) }))} aria-label={`Mover ${tabLabel(key)} para baixo`}>↓</button>
+                </span>}
+              </div>
             );
           })}
         </div>
-        <small>Início, Plano e Perfil aparecem sempre. Produtos e Pedidos também exigem o limite de produtos/serviços acima maior que 0.</small>
+        <small>Use as setas para ordenar as abas visíveis. Plano e Perfil permanecem sempre disponíveis. Produtos e Pedidos também exigem limite de produtos/serviços maior que 0.</small>
       </fieldset>
     </>
   );

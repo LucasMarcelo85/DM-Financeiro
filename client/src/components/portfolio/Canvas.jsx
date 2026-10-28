@@ -262,14 +262,17 @@ function VideoView({ el, mode }) {
 export function ProductCard({ p, cardStyle = 'soft', price = true, action, card }) {
   const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
   const img = p.images[0];
-  const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null).sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1));
+  const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null);
+  const tierThreshold = (option) => option.scope === 'cart_value'
+    ? `a partir de ${brl(option.minCartCents || 0)} no carrinho`
+    : `a partir de ${option.minQuantity || 1} ${option.scope === 'cart_quantity' ? 'peças no carrinho' : 'un.'}`;
   const imagePrice = (p.images || []).filter((image) => image.priceCents !== null).sort((a, b) => a.priceCents - b.priceCents)[0];
   const displayedPrice = p.priceCents > 0
     ? { cents: p.priceCents, label: '' }
     : imagePrice
       ? { cents: imagePrice.priceCents, label: k.priceFrom === false ? '' : 'a partir de ' }
-      : tiers[0]
-        ? { cents: tiers[0].priceCents, label: k.priceFrom === false ? '' : `a partir de ${tiers[0].minQuantity || 1} un. · ` }
+      : tiers.length
+        ? { cents: Math.min(...tiers.map((option) => option.priceCents)), label: k.priceFrom === false ? '' : 'a partir de ' }
         : null;
   const style = {
     '--card-r': `${k.radius}px`,
@@ -302,7 +305,7 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
         {k.showName && <span className="pv-card-name">{iconAt('name')}{p.name}</span>}
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
-        {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} a partir de {t.minQuantity || 1} un.</small>)}</span>}
+        {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} {tierThreshold(t)}</small>)}</span>}
         {k.showVariations && p.images.length > 1 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
         {k.showButton && actionNode}
       </div>

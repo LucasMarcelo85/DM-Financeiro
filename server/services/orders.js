@@ -76,21 +76,47 @@ export async function createOrder(userSlug, body = {}) {
   const requestedCount = rawItems.reduce((sum, item) => sum + (Number.isInteger(Number(item?.qty)) && Number(item.qty) > 0 ? Number(item.qty) : 0), 0);
   if (requestedCount < (cfg.checkout?.minItems || 1)) throw new AppError(400, `Este pedido precisa ter pelo menos ${cfg.checkout.minItems} itens.`);
   const ids = [...new Set(rawItems.map((i) => Number(i?.productId)).filter(Number.isInteger))];
-  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: store?.id ?? null, active: true }, include: { images: true, priceOptions: true } });
+  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: store?.id ?? null, active: true }, include: { images: true, priceOptions: { orderBy: { position: 'asc' } } } });
   const byId = new Map(products.map((p) => [p.id, p]));
+  const qtyByProduct = new Map();
+  for (const item of rawItems) {
+    const productId = Number(item?.productId);
+    const qty = Number(item?.qty);
+    if (Number.isInteger(productId) && Number.isInteger(qty) && qty > 0) qtyByProduct.set(productId, (qtyByProduct.get(productId) || 0) + qty);
+  }
+  const cartQuantity = [...qtyByProduct.values()].reduce((sum, qty) => sum + qty, 0);
+  const cartBaseCents = rawItems.reduce((sum, item) => {
+    const product = byId.get(Number(item?.productId));
+    const image = product?.images.find((row) => row.id === Number(item?.imageId)) || (product?.images.length === 1 ? product.images[0] : null);
+    const qty = Number(item?.qty);
+    return sum + (product && Number.isInteger(qty) && qty > 0 ? (image?.priceCents ?? product.priceCents) * qty : 0);
+  }, 0);
   const items = [];
+  const stockDemand = new Map();
   for (const it of rawItems) {
     const p = byId.get(Number(it?.productId));
     const qty = Number(it?.qty);
     if (!p || !Number.isInteger(qty) || qty < 1 || qty > 99) throw new AppError(400, 'Um dos itens do carrinho não está mais disponível. Atualize a página.');
-    const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : null;
+    const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : p.images.length === 1 ? p.images[0] : null;
     if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
-    const priceOption = [...p.priceOptions]
-      .filter((option) => option.priceCents !== null && (option.minQuantity || 1) <= qty)
-      .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
+    const eligible = p.priceOptions.filter((option) => {
+      if (option.priceCents === null) return false;
+      if (option.scope === 'cart_quantity') return (option.minQuantity || 1) <= cartQuantity;
+      if (option.scope === 'cart_value') return (option.minCartCents || 0) <= cartBaseCents;
+      return (option.minQuantity || 1) <= (qtyByProduct.get(p.id) || qty);
+    });
+    const priceOption = eligible.at(-1) || null;
     const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
+    if (p.stockEnabled) {
+      if (p.images.length && !img) throw new AppError(400, `Escolha uma variação de ${p.name} para conferir o estoque.`);
+      const key = img ? `image:${img.id}` : `product:${p.id}`;
+      const previous = stockDemand.get(key);
+      stockDemand.set(key, { product: p, image: img, qty: qty + (previous?.qty || 0) });
+      const stock = img ? img.stockQuantity : p.stockQuantity;
+      if (stock < qty + (previous?.qty || 0)) throw new AppError(409, `Estoque insuficiente para ${p.name}${img?.label ? ` (${img.label})` : ''}. Disponível: ${stock}.`);
+    }
   }
   const subtotalCents = items.reduce((s, i) => s + i.totalCents, 0);
   if (subtotalCents < (cfg.checkout?.minSubtotalCents || 0)) throw new AppError(400, `O valor mínimo do pedido é R$ ${(cfg.checkout.minSubtotalCents / 100).toFixed(2).replace('.', ',')}.`);
@@ -143,6 +169,12 @@ export async function createOrder(userSlug, body = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       order = await prisma.$transaction(async (tx) => {
+        for (const demand of stockDemand.values()) {
+          const result = demand.image
+            ? await tx.productImage.updateMany({ where: { id: demand.image.id, productId: demand.product.id, stockQuantity: { gte: demand.qty } }, data: { stockQuantity: { decrement: demand.qty } } })
+            : await tx.product.updateMany({ where: { id: demand.product.id, stockEnabled: true, stockQuantity: { gte: demand.qty } }, data: { stockQuantity: { decrement: demand.qty } } });
+          if (result.count !== 1) throw new AppError(409, `O estoque de ${demand.product.name} acabou de mudar. Atualize o carrinho e tente novamente.`);
+        }
         await tx.orderCustomerProfile.upsert({
           where: { userId_customerPhone: { userId: owner.id, customerPhone: phone } },
           create: { userId: owner.id, customerPhone: phone, customerName },

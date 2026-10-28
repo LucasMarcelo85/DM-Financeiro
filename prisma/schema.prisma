@@ -479,7 +479,7 @@ model PlanSetting {
   auditSend      Boolean  @default(false) @map("audit_send")
   stores         Int      @default(0) // lojas que o plano permite criar (0 = sem a função "Criar loja")
   dmCredit       Boolean  @default(true) @map("dm_credit") // mostra "Desenvolvido por Solução DM" no rodapé dos portfólios
-  visibleTabs    String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs") // abas do menu liberadas no plano
+  visibleTabs    String[] @default(["inicio", "whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs") // abas do menu liberadas no plano
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("plan_settings")
@@ -522,7 +522,7 @@ model TrialSetting {
   portfolios      Int      @default(1)
   catalogProducts Int      @default(0) @map("catalog_products")
   auditSend       Boolean  @default(false) @map("audit_send")
-  visibleTabs     String[] @default(["whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs")
+  visibleTabs     String[] @default(["inicio", "whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs")
   updatedAt       DateTime @default(now()) @updatedAt @map("updated_at")
 
   @@map("trial_settings")
@@ -556,6 +556,8 @@ model Product {
   category    String   @default("")
   description String   @default("")
   priceCents  Int      @default(0) @map("price_cents")
+  stockEnabled Boolean @default(false) @map("stock_enabled")
+  stockQuantity Int    @default(0) @map("stock_quantity")
   active      Boolean  @default(true)
   createdAt   DateTime @default(now()) @map("created_at")
   updatedAt   DateTime @updatedAt @map("updated_at")
@@ -579,6 +581,7 @@ model ProductImage {
   color      String @default("")
   colorHex   String @default("") @map("color_hex")
   priceCents Int?   @map("price_cents")
+  stockQuantity Int @default(0) @map("stock_quantity")
   mime       String
   data       Bytes
 
@@ -594,6 +597,8 @@ model ProductPriceOption {
   label      String
   priceCents Int?   @map("price_cents")
   minQuantity Int   @default(1) @map("min_quantity")
+  scope       String @default("same_product")
+  minCartCents Int  @default(0) @map("min_cart_cents")
   position   Int    @default(0)
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)

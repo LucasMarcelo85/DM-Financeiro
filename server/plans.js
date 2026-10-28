@@ -12,9 +12,11 @@ const DEFAULT_PLANS = [
   { id: 'prata', name: 'Prata', color: '#6f7c8c', sortOrder: 2, instances: 1, auditInstances: 3, contracts: 7, portfolios: 2, catalogProducts: 40, auditSend: false },
   { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, auditSend: true },
 ];
-// Abas do menu que o administrador pode liberar ou esconder em cada plano (Início, Plano e Perfil sempre aparecem).
-export const PLAN_TABS = ['whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
-const cleanTabs = (list) => (Array.isArray(list) ? PLAN_TABS.filter((t) => list.includes(t)) : [...PLAN_TABS]);
+// Abas do menu que o administrador pode liberar, esconder e ordenar em cada plano.
+export const PLAN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
+const cleanTabs = (list) => (Array.isArray(list)
+  ? [...new Set(list.filter((tab) => PLAN_TABS.includes(tab)))]
+  : [...PLAN_TABS]);
 const DEFAULT_TRIAL = { days: config.trialDays, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, auditSend: false, tabs: [...PLAN_TABS] };
 const seedPrice = (id) => Math.round((config.prices[id] ?? 49.9) * 100);
 

@@ -7,8 +7,8 @@ import { storeScope } from '../utils/store.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, label: true, size: true, color: true, colorHex: true, priceCents: true }, orderBy: { position: 'asc' } };
-const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, label: true, size: true, color: true, colorHex: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
+const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
 const defaultPreferences = {
@@ -41,11 +41,24 @@ async function owned(req) {
   return p;
 }
 
-async function assertCanCreate(user) {
+async function assertCanCreate(user, requested = 1) {
   const limit = limitsFor(user).catalogProducts;
   if (limit < 1) throw new AppError(403, 'O seu plano não inclui produtos e catálogo digital. Mude para um plano com catálogo para cadastrar.', 'LIMIT_REACHED');
   const count = await prisma.product.count({ where: { userId: user.id } });
-  if (count >= limit) throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? 'produto/serviço' : 'produtos/serviços'}. Exclua algum ou mude de plano para cadastrar mais.`, 'LIMIT_REACHED');
+  if (count + requested > limit) throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? 'produto/serviço' : 'produtos/serviços'} e há espaço para mais ${Math.max(0, limit - count)}. Exclua algum ou mude de plano para cadastrar mais.`, 'LIMIT_REACHED');
+}
+
+function createData(data, userId, storeId) {
+  const { images, priceOptions, ...product } = data;
+  if (priceOptions.some((option) => option.id !== undefined)) throw new AppError(400, 'Não envie formas de preço existentes ao cadastrar um item.');
+  if (images.some((image) => !image.upload)) throw new AppError(400, 'Envie novamente as imagens do produto.');
+  return {
+    ...product,
+    userId,
+    storeId,
+    images: { create: images.map((image, position) => ({ position, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
+    priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
+  };
 }
 
 router.get('/', async (req, res) => {
@@ -93,20 +106,29 @@ router.get('/:id', async (req, res) => {
 
 router.post('/', async (req, res) => {
   await assertCanCreate(req.user);
-  const { images, priceOptions, ...data } = cleanProduct(req.body);
-  if (priceOptions.some((option) => option.id !== undefined)) throw new AppError(400, 'Não envie formas de preço existentes ao cadastrar um item.');
-  if (images.some((i) => !i.upload)) throw new AppError(400, 'Envie as imagens do produto.');
-  const p = await prisma.product.create({
-    data: {
-      ...data,
-      userId: req.user.id,
-      storeId: await storeScope(req),
-      images: { create: images.map((im, position) => ({ position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data })) },
-      priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
-    },
-    include: productInclude,
-  });
+  const data = cleanProduct(req.body);
+  const p = await prisma.product.create({ data: createData(data, req.user.id, await storeScope(req)), include: productInclude });
   res.status(201).json({ product: dto(p) });
+});
+
+router.post('/bulk', async (req, res) => {
+  const list = req.body?.products;
+  if (!Array.isArray(list) || list.length < 1 || list.length > 30) throw new AppError(400, 'Envie de 1 a 30 produtos por cadastro.');
+  const imagePayloadSize = list.reduce((total, product) => total + (Array.isArray(product?.images)
+    ? product.images.reduce((size, image) => size + (typeof image?.data === 'string' ? image.data.length : 0), 0)
+    : 0), 0);
+  if (imagePayloadSize > 32 * 1024 * 1024) throw new AppError(413, 'O lote de fotos ficou muito grande. Cadastre menos produtos ou reduza o número de imagens por produto.');
+  await assertCanCreate(req.user, list.length);
+  const prepared = list.map((product) => cleanProduct(product));
+  const storeId = await storeScope(req);
+  const products = await prisma.$transaction(async (tx) => {
+    const created = [];
+    for (const data of prepared) {
+      created.push(await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude }));
+    }
+    return created;
+  });
+  res.status(201).json({ products: products.map(dto) });
 });
 
 router.patch('/:id', async (req, res) => {
@@ -127,15 +149,15 @@ router.patch('/:id', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
-      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents } });
-      else await tx.productImage.create({ data: { productId: current.id, position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, mime: im.upload.mime, data: im.upload.data } });
+      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
+      else await tx.productImage.create({ data: { productId: current.id, position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {
       if (option.id !== undefined) {
-        await tx.productPriceOption.update({ where: { id: option.id }, data: { label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, position } });
+        await tx.productPriceOption.update({ where: { id: option.id }, data: { label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, scope: option.scope, minCartCents: option.minCartCents, position } });
       } else {
-        await tx.productPriceOption.create({ data: { productId: current.id, label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, position } });
+        await tx.productPriceOption.create({ data: { productId: current.id, label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, scope: option.scope, minCartCents: option.minCartCents, position } });
       }
     }
     return tx.product.update({ where: { id: current.id }, data, include: productInclude });

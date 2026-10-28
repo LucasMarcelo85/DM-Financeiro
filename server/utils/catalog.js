@@ -45,6 +45,9 @@ export function cleanProduct(b = {}) {
   if (!category) throw new AppError(400, 'Informe a categoria.');
   const description = typeof b.description === 'string' ? b.description.replace(/\r/g, '').trim().slice(0, 2000) : '';
   const priceCents = intIn(b.priceCents ?? 0, 0, MAX_PRICE, 'Preço');
+  if (b.stockEnabled !== undefined && typeof b.stockEnabled !== 'boolean') throw new AppError(400, 'Informe se o produto controla estoque.');
+  const stockEnabled = Boolean(b.stockEnabled);
+  const stockQuantity = intIn(b.stockQuantity ?? 0, 0, 1_000_000, 'Estoque');
   const rawPriceOptions = Array.isArray(b.priceOptions) ? b.priceOptions : [];
   if (rawPriceOptions.length > MAX_PRODUCT_PRICE_OPTIONS) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_PRICE_OPTIONS} formas de preço.`);
   const priceOptions = rawPriceOptions.map((option) => {
@@ -53,29 +56,32 @@ export function cleanProduct(b = {}) {
     const label = line(option.label, 40);
     if (!label) throw new AppError(400, 'Informe o nome de cada forma de preço.');
     const minQuantity = intIn(option.minQuantity ?? 1, 1, 999, `Quantidade mínima de ${label}`);
+    const scope = option.scope === undefined ? 'same_product' : option.scope;
+    if (!['same_product', 'cart_quantity', 'cart_value'].includes(scope)) throw new AppError(400, `Critério de preço inválido para ${label}.`);
+    const minCartCents = intIn(option.minCartCents ?? 0, 0, MAX_PRICE, `Valor mínimo do carrinho para ${label}`);
     const priceCents = option.priceCents === null || option.priceCents === undefined || option.priceCents === ''
       ? null
       : intIn(option.priceCents, 0, MAX_PRICE, `Preço de ${label}`);
-    return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents, minQuantity };
+    return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents, minQuantity, scope, minCartCents };
   });
   const rawImages = Array.isArray(b.images) ? b.images : [];
-  if (rawImages.length < 1) throw new AppError(400, 'Adicione pelo menos uma imagem.');
   if (rawImages.length > MAX_PRODUCT_IMAGES) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens (uma por variação).`);
-  const varied = rawImages.length > 1;
+  const varied = rawImages.length > 1 || rawImages.some((im) => im && (im.color || im.size || im.label));
   const images = rawImages.map((im, i) => {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');
     const size = varied ? line(im.size, 20) : '';
     const color = varied ? line(im.color, 20) : '';
     const colorHex = varied && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
+    const stockQuantity = intIn(im.stockQuantity ?? 0, 0, 1_000_000, `Estoque da variação ${i + 1}`);
     const label = varied ? ([color, size].filter(Boolean).join(' · ') || line(im.label, 40)) : '';
     if (varied && !label) throw new AppError(400, `Informe a cor ou o tamanho da variação ${i + 1}.`);
-    const out = { label, size, color, colorHex, priceCents: null };
+    const out = { label, size, color, colorHex, priceCents: null, stockQuantity };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');
     return out;
   });
-  return { kind, name, category, description, priceCents, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
+  return { kind, name, category, description, priceCents, stockEnabled, stockQuantity, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
 }
 
 // ---------- Configuração do catálogo (entregas e frete) ----------
@@ -170,6 +176,7 @@ export function publicCatalogConfig(cfg) {
 
 export const publicProduct = (p) => ({
   id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
-  images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, size: i.size || '', color: i.color || '', colorHex: i.colorHex || '', priceCents: i.priceCents, url: `/api/public/product-image/${i.id}` })),
-  priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1 })),
+  stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
+  images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, size: i.size || '', color: i.color || '', colorHex: i.colorHex || '', priceCents: i.priceCents, stockQuantity: i.stockQuantity ?? 0, url: `/api/public/product-image/${i.id}` })),
+  priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
 });

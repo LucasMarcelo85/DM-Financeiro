@@ -57,12 +57,20 @@ export default function Layout() {
     ? [...base, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
     : base;
   // Abas fora do plano ou protegidas por PIN (ainda travadas) não aparecem no menu.
-  const items = all.filter((i) => isTabInPlan(user, tabOfPath(i.to)) && !isTabLocked(user, pinUnlocked, tabOfPath(i.to)));
+  const planOrder = user?.limits?.tabs || [];
+  const items = all
+    .filter((i) => isTabInPlan(user, tabOfPath(i.to)) && !isTabLocked(user, pinUnlocked, tabOfPath(i.to)))
+    .sort((a, b) => {
+      const aIndex = planOrder.indexOf(tabOfPath(a.to));
+      const bIndex = planOrder.indexOf(tabOfPath(b.to));
+      return (aIndex < 0 ? Number.MAX_SAFE_INTEGER : aIndex) - (bIndex < 0 ? Number.MAX_SAFE_INTEGER : bIndex);
+    });
   // Aba protegida por código PIN e ainda não destravada: mostra o pedido do PIN no lugar da página.
   const tab = tabOfPath(pathname);
   const locked = isTabLocked(user, pinUnlocked, tab);
   const outOfPlan = !isTabInPlan(user, tab);
   const blocked = !user.access.hasAccess;
+  const fallbackPath = all.find((item) => isTabInPlan(user, tabOfPath(item.to)) && !isTabLocked(user, pinUnlocked, tabOfPath(item.to)))?.to || '/perfil';
 
   useEffect(() => {
     if ((user.limits?.catalogProducts ?? 0) < 1) return undefined;
@@ -123,7 +131,7 @@ export default function Layout() {
 
       <main className="main">
         <div className={`page ${pathname.startsWith('/auditoria') ? 'page-wide' : ''}`}>
-          {outOfPlan ? <Navigate to="/" replace /> : locked ? <PinPrompt tab={tab} /> : <Outlet />}
+          {outOfPlan ? <Navigate to={fallbackPath} replace /> : locked ? <PinPrompt tab={tab} /> : <Outlet />}
         </div>
       </main>
     </div>

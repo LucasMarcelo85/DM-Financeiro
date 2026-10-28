@@ -165,11 +165,11 @@ app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.j
 app.use('/api/stores', auth, requireAccess, pinGuard('portfolio'), storeRoutes);
 app.use('/api/tokens', auth, requireAccess, pinGuard('api'), tokenRoutes);
 app.use('/api/shop-app/login', limiter(30, 15 * 60 * 1000));
-app.use('/api/shop-app', express.json({ limit: '8mb' }), shopAppRoutes);
+app.use('/api/shop-app', express.json({ limit: '40mb' }), shopAppRoutes);
 app.use('/api/v1', limiter(300, 60 * 1000), publicApi);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);
-app.use('/api/products', auth, requireAccess, express.json({ limit: '8mb' }), productRoutes);
+app.use('/api/products', auth, requireAccess, express.json({ limit: '40mb' }), productRoutes);
 app.use('/api/catalog', auth, requireAccess, pinGuard('pedidos'), catalogRoutes);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));

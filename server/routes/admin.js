@@ -250,7 +250,7 @@ function planFields(b) {
     auditSend: b.auditSend,
     tabs: (() => {
       if (!Array.isArray(b.tabs) || b.tabs.some((t) => !PLAN_TABS.includes(t))) throw new AppError(400, 'Escolha as abas liberadas no plano.');
-      return PLAN_TABS.filter((t) => b.tabs.includes(t));
+      return [...new Set(b.tabs)];
     })(),
   };
 }

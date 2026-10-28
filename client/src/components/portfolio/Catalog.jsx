@@ -39,45 +39,72 @@ export function useCart(slug) {
 }
 
 // Faixa de preço vigente: a de maior quantidade mínima já atingida (faixas sem valor não se aplicam).
-export const pickTier = (options, qty) => [...(options || [])]
-  .filter((o) => o.priceCents !== null && (o.minQuantity || 1) <= qty)
-  .sort((a, b) => (b.minQuantity || 1) - (a.minQuantity || 1))[0] || null;
-export const nextTier = (options, qty) => [...(options || [])]
-  .filter((o) => o.priceCents !== null && (o.minQuantity || 1) > qty)
-  .sort((a, b) => (a.minQuantity || 1) - (b.minQuantity || 1))[0] || null;
+const tierReached = (option, productQty, cartQty, cartCents) => option.scope === 'cart_quantity'
+  ? (option.minQuantity || 1) <= cartQty
+  : option.scope === 'cart_value'
+    ? (option.minCartCents || 0) <= cartCents
+    : (option.minQuantity || 1) <= productQty;
+export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0) => [...(options || [])]
+  .filter((option) => option.priceCents !== null && tierReached(option, productQty, cartQty, cartCents))
+  .at(-1) || null;
+export const nextTier = (options, productQty, cartQty = productQty, cartCents = 0) => [...(options || [])]
+  .filter((option) => option.priceCents !== null && !tierReached(option, productQty, cartQty, cartCents))
+  .sort((a, b) => (a.scope === 'cart_value' ? a.minCartCents : a.minQuantity) - (b.scope === 'cart_value' ? b.minCartCents : b.minQuantity))[0] || null;
 
 // Junta o carrinho com os dados atuais dos produtos (preço e imagem sempre vêm do cadastro).
 export function priced(items, products) {
   const byId = new Map(products.map((p) => [p.id, p]));
+  const qtyByProduct = new Map();
+  for (const item of items) qtyByProduct.set(item.productId, (qtyByProduct.get(item.productId) || 0) + item.qty);
+  const cartQty = items.reduce((sum, item) => sum + item.qty, 0);
+  const cartBaseCents = items.reduce((sum, item) => {
+    const product = byId.get(item.productId);
+    const image = product?.images.find((row) => row.id === item.imageId) || (product?.images.length === 1 ? product.images[0] : null);
+    return sum + (product ? (image?.priceCents ?? product.priceCents) * item.qty : 0);
+  }, 0);
   const lines = [];
   for (const it of items) {
     const p = byId.get(it.productId);
     if (!p) continue;
-    const img = p.images.find((i) => i.id === it.imageId) || null;
-    const staleSelection = Boolean(it.imageId && !img);
-    const priceOption = pickTier(p.priceOptions, it.qty);
-    const upcoming = nextTier(p.priceOptions, it.qty);
+    const img = p.images.find((i) => i.id === it.imageId) || (p.images.length === 1 ? p.images[0] : null);
+    const staleSelection = Boolean((it.imageId && !img) || (p.stockEnabled && p.images.length > 1 && !img));
+    const priceOption = pickTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
+    const upcoming = nextTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
     const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
-    lines.push({ ...it, p, img, priceOption, upcoming, staleSelection, unit, total: unit * it.qty });
+    const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
+    const reservedInCart = items.filter((item) => item.productId === p.id && item.imageId === (img?.id || null)).reduce((sum, item) => sum + item.qty, 0);
+    const stockAvailable = p.stockEnabled ? Math.max(0, stockQuantity - reservedInCart) : 99;
+    lines.push({ ...it, p, img, priceOption, upcoming, staleSelection, unit, total: unit * it.qty, stockAvailable, stockExceeded: p.stockEnabled && it.qty > stockQuantity });
   }
-  return { lines, subtotal: lines.reduce((s, l) => s + l.total, 0), count: lines.reduce((s, l) => s + l.qty, 0) };
+  return { lines, subtotal: lines.reduce((s, l) => s + l.total, 0), count: lines.reduce((s, l) => s + l.qty, 0), cartQty, cartBaseCents };
 }
 
-const Qty = ({ value, onChange, label }) => (
+const Qty = ({ value, onChange, label, max = 99 }) => (
   <span className="cat-qty" role="group" aria-label={label}>
     <button type="button" onClick={() => onChange(value - 1)} aria-label="Diminuir">−</button>
     <span aria-live="polite">{value}</span>
-    <button type="button" onClick={() => onChange(value + 1)} aria-label="Aumentar">+</button>
+    <button type="button" onClick={() => onChange(value + 1)} aria-label="Aumentar" disabled={value >= max}>+</button>
   </span>
 );
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
-function ProductModal({ p, addLabel, onAdd, onClose }) {
+function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [] }) {
   const [idx, setIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const img = p.images[idx] || p.images[0];
-  const priceOption = pickTier(p.priceOptions, qty);
+  const productQty = cartItems.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0) + qty;
+  const cartQty = cartItems.reduce((sum, item) => sum + item.qty, 0) + qty;
+  const productById = new Map(products.map((product) => [product.id, product]));
+  const cartBaseCents = cartItems.reduce((sum, item) => {
+    const product = productById.get(item.productId);
+    const image = product?.images.find((row) => row.id === item.imageId) || (product?.images.length === 1 ? product.images[0] : null);
+    return sum + (product ? item.qty * (image?.priceCents ?? product.priceCents) : 0);
+  }, 0) + qty * (img?.priceCents ?? p.priceCents);
+  const priceOption = pickTier(p.priceOptions, productQty, cartQty, cartBaseCents);
   const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+  const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
+  const inCart = cartItems.filter((item) => item.productId === p.id && item.imageId === (p.images.length > 1 ? img?.id : null)).reduce((sum, item) => sum + item.qty, 0);
+  const maxQty = p.stockEnabled ? Math.max(0, stockQuantity - inCart) : 99;
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -104,15 +131,16 @@ function ProductModal({ p, addLabel, onAdd, onClose }) {
           )}
           {p.priceOptions.length > 0 && <div className="cat-price-options" aria-label="Valores por quantidade">
             <strong>Descontos por quantidade</strong>
-            {p.priceOptions.map((option) => <span key={option.id}>{option.label} a partir de {option.minQuantity || 1} un. — {option.priceCents === null ? 'Sob consulta' : `${brl(option.priceCents)} cada`}</span>)}
-            <small>O valor correspondente é aplicado automaticamente no carrinho.</small>
+            {p.priceOptions.map((option) => <span key={option.id}>{option.label} {option.scope === 'cart_value' ? `a partir de ${brl(option.minCartCents || 0)} no carrinho` : `a partir de ${option.minQuantity || 1} ${option.scope === 'cart_quantity' ? 'peças no carrinho' : 'peças deste produto'}`} — {option.priceCents === null ? 'Sob consulta' : `${brl(option.priceCents)} cada`}</span>)}
+            <small>As faixas por valor consideram o subtotal dos itens antes da aplicação dessa faixa.</small>
           </div>}
           {p.description && <p className="cat-desc">{p.description}</p>}
+          {p.stockEnabled && <small className={maxQty ? '' : 'cat-error'}>{maxQty ? `${maxQty} unidade(s) disponível(is) para adicionar` : 'Esta variação está sem estoque.'}</small>}
           <div className="cat-buy">
             <strong className="cat-price">{unit > 0 ? brl(unit) : 'Sob consulta'}</strong>
-            <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(99, n)))} label="Quantidade" />
+            {maxQty > 0 && <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(maxQty, n)))} label="Quantidade" />}
           </div>
-          <button type="button" className="cat-btn" onClick={() => { onAdd(p, img, qty); onClose(); }}>{addLabel}</button>
+          <button type="button" className="cat-btn" disabled={maxQty < 1} onClick={() => { onAdd(p, img, qty); onClose(); }}>{addLabel}</button>
         </div>
       </div>
     </div>
@@ -189,7 +217,7 @@ export function CatGridView({ el, device, mode }) {
           </div>
         </div>
       ))}
-      {open && !edit && <ProductModal p={open} addLabel={cfg.addLabel} onAdd={add} onClose={() => setOpen(null)} />}
+      {open && !edit && <ProductModal p={open} addLabel={cfg.addLabel} onAdd={add} onClose={() => setOpen(null)} cartItems={shop?.cart?.items || []} products={products} />}
     </div>
   );
 }
@@ -291,6 +319,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     e?.preventDefault();
     setError('');
     if (!lines.length) return setError('O carrinho está vazio.');
+    if (lines.some((line) => line.stockExceeded)) return setError('A quantidade de algum item ultrapassa o estoque disponível. Ajuste o carrinho antes de finalizar.');
     if (name.trim().length < 2) return setError('Informe o seu nome.');
     if (phone.replace(/\D/g, '').length < 10) return setError('Informe o seu telefone com DDD.');
     if (!type) return setError('Escolha a forma de entrega.');
@@ -338,7 +367,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const STEPS = ['Carrinho', 'Seus dados', 'Entrega', 'Revisão'];
   const STEP_HINTS = ['Confira os itens e as quantidades.', 'Diga quem está fazendo o pedido.', 'Escolha como quer receber.', 'Confirme tudo e finalize.'];
   const stepError = (n) => {
-    if (n === 0) return !lines.length ? 'O carrinho está vazio.' : !meetsMinimum ? 'Continue adicionando itens para atingir o mínimo do pedido.' : lines.some((l) => l.staleSelection) ? 'Uma opção mudou. Remova e adicione o item novamente.' : '';
+    if (n === 0) return !lines.length ? 'O carrinho está vazio.' : !meetsMinimum ? 'Continue adicionando itens para atingir o mínimo do pedido.' : lines.some((l) => l.staleSelection) ? 'Uma opção mudou. Remova e adicione o item novamente.' : lines.some((l) => l.stockExceeded) ? 'A quantidade de algum item ultrapassa o estoque disponível. Ajuste o carrinho.' : '';
     if (n === 1) return name.trim().length < 2 ? 'Informe o seu nome.' : phone.replace(/\D/g, '').length < 10 ? 'Informe o seu telefone com DDD.' : '';
     if (!type) return 'Escolha a forma de entrega.';
     if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome do galpão, a cidade e o endereço do galpão.';
@@ -379,8 +408,8 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             {lines.map((l) => (
               <li key={l.id}>
                 <span className="cat-line-img">{(l.img || l.p.images[0]) && <img src={(l.img || l.p.images[0]).url} alt="" />}</span>
-                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · a partir de {l.priceOption.minQuantity || 1} un.</small>}{l.upcoming && <small className="cat-tier-hint">Leve {l.upcoming.minQuantity} e pague {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
-                <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} label={`Quantidade de ${l.p.name}`} />
+                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming && <small className="cat-tier-hint">{l.upcoming.scope === 'cart_value' ? `Carrinho a partir de ${brl(l.upcoming.minCartCents)}` : `Leve ${l.upcoming.minQuantity} ${l.upcoming.scope === 'cart_quantity' ? 'itens no carrinho' : 'deste produto'}`} para pagar {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
+                <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} max={l.p.stockEnabled ? (l.img ? l.img.stockQuantity : l.p.stockQuantity) : 99} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>
                 <button type="button" className="cat-line-x" onClick={() => cart.remove(l.id)} aria-label={`Remover ${l.p.name}`}>×</button>
               </li>
