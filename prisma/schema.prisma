@@ -486,6 +486,7 @@ model PlanSetting {
   catalogProducts Int     @default(0) @map("catalog_products") // 0 = sem catálogo digital nem produtos
   auditSend      Boolean  @default(false) @map("audit_send")
   stores         Int      @default(0) // lojas que o plano permite criar (0 = sem a função "Criar loja")
+  appUsers       Int      @default(10) @map("app_users")
   dmCredit       Boolean  @default(true) @map("dm_credit") // mostra "Desenvolvido por Solução DM" no rodapé dos portfólios
   visibleTabs    String[] @default(["inicio", "whatsapp", "clientes", "cobrancas", "lembretes", "contratos", "auditoria", "portfolio", "produtos", "pedidos", "api"]) @map("visible_tabs") // abas do menu liberadas no plano
   updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
@@ -703,6 +704,7 @@ model Store {
   appEnabled             Boolean   @default(false) @map("app_enabled")
   appName                String?   @map("app_name")
   appColor               String?   @map("app_color")
+  appUserLimit           Int       @default(10) @map("app_user_limit")
   appUsers               StoreUser[]
   instances              Instance[]
   createdAt              DateTime  @default(now()) @map("created_at")

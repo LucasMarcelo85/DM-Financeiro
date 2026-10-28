@@ -246,6 +246,7 @@ function planFields(b) {
     portfolios: intIn(b.portfolios, 0, 1000, 'Páginas de portfólio'),
     catalogProducts: intIn(b.catalogProducts, 0, 100000, 'Produtos/serviços do catálogo (0 = sem catálogo digital)'),
     stores: intIn(b.stores ?? 0, 0, 1000, 'Lojas que o plano permite criar (0 = sem a função Criar loja)'),
+    appUsers: intIn(b.appUsers ?? 10, 0, 1000, 'Usuários por aplicativo'),
     dmCredit: b.dmCredit !== false,
     auditSend: b.auditSend,
     tabs: (() => {

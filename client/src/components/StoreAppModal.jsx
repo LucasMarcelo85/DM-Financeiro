@@ -32,14 +32,14 @@ function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A' });
+  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10 });
   const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS });
   const [busy, setBusy] = useState(false);
   const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key));
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
     setData(r);
-    setCfg({ enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A' });
+    setCfg({ enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A', userLimit: r.store.app.userLimit });
   }).catch((e) => toast(e.message, 'error')), [storeId, toast]);
   useEffect(() => { load(); }, [load]);
 
@@ -73,6 +73,13 @@ export default function StoreAppModal({ storeId, onClose }) {
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             Cor <input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
           </label>
+          <label style={{ display: 'grid', gap: 4 }}>
+            <span>Quantidade de acessos permitidos nesta loja</span>
+            <input className="input" type="number" min="1" max={data.maxAppUsers} step="1" value={cfg.userLimit}
+              onChange={(e) => setCfg({ ...cfg, userLimit: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Quantidade de acessos permitidos nesta loja" />
+            <small className="muted">Seu plano permite até {data.maxAppUsers} acessos por aplicativo. Acessos desativados também ocupam uma vaga.</small>
+          </label>
+          {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
           {store.app.enabled && data.appAvailable ? (
@@ -86,7 +93,7 @@ export default function StoreAppModal({ storeId, onClose }) {
             </div>
           ) : <p className="muted small">{data.appAvailable ? 'Ative o aplicativo e salve para liberar o link de compartilhamento.' : 'O aplicativo desta loja não está disponível no plano atual.'}</p>}
 
-          <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas</h3>
+          <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas ({data.users.length}/{Math.min(cfg.userLimit || 0, data.maxAppUsers)})</h3>
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
             {data.users.map((u) => (
@@ -111,7 +118,7 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="Senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Senha" />
             <strong className="small">O que este acesso pode usar:</strong>
             <PermChecks labels={permissionLabels} value={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} onChange={(perms) => setNu({ ...nu, perms })} />
-            <button className="btn btn-primary" disabled={busy || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
+            <button className="btn btn-primary" disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers) || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
               onClick={() => run(async () => {
                 const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
                 await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });

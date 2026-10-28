@@ -14,7 +14,7 @@ const router = Router();
 const dto = (s) => ({
   id: s.id, name: s.name, slug: s.slug, path: `/${s.slug}`,
   domain: { name: s.customDomain || '', verified: !!s.customDomainVerifiedAt },
-  app: { enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '' },
+  app: { enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '', userLimit: s.appUserLimit },
   createdAt: s.createdAt,
 });
 
@@ -46,7 +46,8 @@ router.get('/', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  const limit = limitsFor(req.user).stores;
+  const planLimits = limitsFor(req.user);
+  const limit = planLimits.stores;
   const used = await prisma.store.count({ where: { userId: req.user.id } });
   if (used >= limit) {
     throw new AppError(403, limit ? `Seu plano permite ${limit} ${limit === 1 ? 'loja' : 'lojas'}. Adquira mais lojas para criar outra.` : 'Seu plano não inclui lojas. Adquira o recurso para criar.', 'LIMIT_REACHED');
@@ -55,7 +56,9 @@ router.post('/', async (req, res) => {
   const slug = slugify(String(req.body?.slug || name));
   await assertSlugFree(slug);
   try {
-    const store = await prisma.store.create({ data: { userId: req.user.id, name, slug } });
+    const store = await prisma.store.create({
+      data: { userId: req.user.id, name, slug, appUserLimit: Math.max(1, Math.min(10, planLimits.appUsers)) },
+    });
     res.status(201).json({ store: dto(store) });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Esse endereço já está em uso. Escolha outro.');
@@ -156,7 +159,6 @@ router.post('/:id/domain/check', async (req, res) => {
 });
 
 // ---------- Aplicativo do lojista ----------
-const MAX_APP_USERS = 10;
 const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados', 'api', 'entregas', 'auditoria'];
 const availablePerms = (user) => {
   const limits = limitsFor(user);
@@ -188,26 +190,48 @@ const cleanPassword = (v) => {
 
 router.get('/:id/app', async (req, res) => {
   const store = await owned(req);
-  const users = await prisma.storeUser.findMany({ where: { storeId: store.id }, orderBy: { createdAt: 'asc' } });
+  const [users, limits] = await Promise.all([
+    prisma.storeUser.findMany({ where: { storeId: store.id }, orderBy: { createdAt: 'asc' } }),
+    Promise.resolve(limitsFor(req.user)),
+  ]);
   res.json({
     store: dto(store),
     users: users.map(userDTO),
     availablePerms: availablePerms(req.user),
-    appAvailable: limitsFor(req.user).stores > 0 && availablePerms(req.user).length > 0,
+    maxAppUsers: limits.appUsers,
+    appAvailable: limits.stores > 0 && limits.appUsers > 0 && availablePerms(req.user).length > 0,
   });
 });
 
 router.put('/:id/app', async (req, res) => {
   const store = await owned(req);
-  if (req.body?.enabled && (limitsFor(req.user).stores < 1 || availablePerms(req.user).length < 1)) {
+  const limits = limitsFor(req.user);
+  if (req.body?.enabled && (limits.stores < 1 || limits.appUsers < 1 || availablePerms(req.user).length < 1)) {
     throw new AppError(403, 'O aplicativo por loja não está disponível no plano atual.', 'LIMIT_REACHED');
   }
   const color = String(req.body?.color ?? '').trim();
   if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw new AppError(400, 'Cor inválida. Use o formato #RRGGBB.');
-  const saved = await prisma.store.update({
-    where: { id: store.id },
-    data: { appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null, appColor: color || null },
-  });
+  const userLimit = Number(req.body?.userLimit);
+  const unchangedOverPlanLimit = userLimit === store.appUserLimit && userLimit > limits.appUsers;
+  if (!Number.isInteger(userLimit) || userLimit < 1 || (userLimit > limits.appUsers && !unchangedOverPlanLimit)) {
+    throw new AppError(400, `A quantidade de acessos precisa ser um número entre 1 e ${limits.appUsers}.`);
+  }
+  let saved;
+  try {
+    saved = await prisma.$transaction(async (tx) => {
+      const existingUsers = await tx.storeUser.count({ where: { storeId: store.id } });
+      if (existingUsers > userLimit && userLimit !== store.appUserLimit) {
+        throw new AppError(400, `Esta loja já possui ${existingUsers} acessos. Exclua acessos antes de reduzir a quantidade para ${userLimit}.`);
+      }
+      return tx.store.update({
+        where: { id: store.id },
+        data: { appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null, appColor: color || null, appUserLimit: userLimit },
+      });
+    }, { isolationLevel: 'Serializable' });
+  } catch (e) {
+    if (e?.code === 'P2034') throw new AppError(409, 'Os acessos da loja foram alterados ao mesmo tempo. Atualize a tela e tente novamente.', 'CONCURRENT_UPDATE');
+    throw e;
+  }
   res.json({ store: dto(saved) });
 });
 
@@ -216,14 +240,21 @@ router.post('/:id/app/users', async (req, res) => {
   const name = String(req.body?.name ?? '').trim().slice(0, 80);
   const login = String(req.body?.login ?? '').trim().toLowerCase().slice(0, 80);
   if (!name || !login) throw new AppError(400, 'Informe o nome e o usuário de acesso.');
+  const limits = limitsFor(req.user);
+  if (limits.appUsers < 1 || limits.stores < 1) throw new AppError(403, 'O plano atual não inclui acessos ao aplicativo da loja.', 'LIMIT_REACHED');
+  const maxUsers = Math.min(store.appUserLimit, limits.appUsers);
   const perms = cleanPerms(req.body?.perms ?? availablePerms(req.user), req.user);
   const passwordHash = await bcrypt.hash(cleanPassword(req.body?.password), 10);
-  if ((await prisma.storeUser.count({ where: { storeId: store.id } })) >= MAX_APP_USERS) throw new AppError(403, `Limite de ${MAX_APP_USERS} acessos por loja.`);
   try {
-    const u = await prisma.storeUser.create({ data: { storeId: store.id, name, login, passwordHash, perms } });
+    const u = await prisma.$transaction(async (tx) => {
+      const userCount = await tx.storeUser.count({ where: { storeId: store.id } });
+      if (userCount >= maxUsers) throw new AppError(403, `Esta loja atingiu o limite de ${maxUsers} acessos.`, 'LIMIT_REACHED');
+      return tx.storeUser.create({ data: { storeId: store.id, name, login, passwordHash, perms } });
+    }, { isolationLevel: 'Serializable' });
     res.status(201).json({ user: userDTO(u) });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Já existe um acesso com esse usuário nesta loja.');
+    if (e?.code === 'P2034') throw new AppError(409, 'Os acessos da loja foram alterados ao mesmo tempo. Atualize a tela e tente novamente.', 'CONCURRENT_UPDATE');
     throw e;
   }
 });

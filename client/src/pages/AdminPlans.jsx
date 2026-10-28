@@ -14,11 +14,12 @@ const FIELDS = [
   ['portfolios', 'Páginas de portfólio'],
   ['catalogProducts', 'Quantidade de produtos/serviços que o usuário pode criar (0 = sem catálogo digital)'],
   ['stores', 'Quantidade de lojas que o plano permite criar (0 = sem a função Criar loja)'],
+  ['appUsers', 'Máximo de usuários por aplicativo de loja'],
 ];
 
 const toForm = (p) => ({
   id: p.id || '', name: p.name || '', color: p.color || '#6f7c8c', sortOrder: String(p.sortOrder ?? ''), price: centsToMasked(p.priceCents ?? 0),
-  instances: String(p.instances ?? 1), auditInstances: String(p.auditInstances ?? 1), contracts: String(p.contracts ?? 2), portfolios: String(p.portfolios ?? 1), catalogProducts: String(p.catalogProducts ?? 0), stores: String(p.stores ?? 0), dmCredit: p.dmCredit !== false, auditSend: Boolean(p.auditSend),
+  instances: String(p.instances ?? 1), auditInstances: String(p.auditInstances ?? 1), contracts: String(p.contracts ?? 2), portfolios: String(p.portfolios ?? 1), catalogProducts: String(p.catalogProducts ?? 0), stores: String(p.stores ?? 0), appUsers: String(p.appUsers ?? 10), dmCredit: p.dmCredit !== false, auditSend: Boolean(p.auditSend),
   tabs: (p.tabs || PLAN_TABS).join(','),
 });
 const SAME = (a, b) => Object.keys(a).every((k) => a[k] === b[k]);
@@ -34,7 +35,7 @@ function toBody(form) {
     body: {
       name: form.name.trim(), color: form.color, sortOrder: form.sortOrder === '' ? 0 : Number(form.sortOrder), priceCents: cents,
       instances: Number(form.instances), auditInstances: Number(form.auditInstances), contracts: Number(form.contracts), portfolios: Number(form.portfolios),
-      catalogProducts: Number(form.catalogProducts), stores: Number(form.stores), dmCredit: form.dmCredit, auditSend: form.auditSend, tabs: form.tabs ? form.tabs.split(',') : [],
+      catalogProducts: Number(form.catalogProducts), stores: Number(form.stores), appUsers: Number(form.appUsers), dmCredit: form.dmCredit, auditSend: form.auditSend, tabs: form.tabs ? form.tabs.split(',') : [],
     },
   };
 }
@@ -275,7 +276,7 @@ function AddonsEditor({ addons, onSaved }) {
 
 function NewPlan({ count, onClose, onCreated }) {
   const toast = useToast();
-  const [form, setForm] = useState(() => toForm({ sortOrder: count + 1, priceCents: 9990, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, stores: 1, auditSend: true, color: '#3b82f6' }));
+  const [form, setForm] = useState(() => toForm({ sortOrder: count + 1, priceCents: 9990, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, stores: 1, appUsers: 10, auditSend: true, color: '#3b82f6' }));
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
 

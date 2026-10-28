@@ -1,0 +1,5 @@
+ALTER TABLE "plan_settings"
+  ADD COLUMN "app_users" INTEGER NOT NULL DEFAULT 10;
+
+ALTER TABLE "stores"
+  ADD COLUMN "app_user_limit" INTEGER NOT NULL DEFAULT 10;

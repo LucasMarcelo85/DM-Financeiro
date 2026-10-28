@@ -8,9 +8,9 @@ import { extrasFor } from './addons.js';
 //  contracts: modelos de contrato · auditSend: pode responder conversas dentro da auditoria
 //  portfolios: páginas de portfólio · catalogProducts: produtos/serviços cadastráveis (0 = sem catálogo digital)
 const DEFAULT_PLANS = [
-  { id: 'bronze', name: 'Bronze', color: '#a8672f', sortOrder: 1, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, auditSend: false },
-  { id: 'prata', name: 'Prata', color: '#6f7c8c', sortOrder: 2, instances: 1, auditInstances: 3, contracts: 7, portfolios: 2, catalogProducts: 40, auditSend: false },
-  { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, auditSend: true },
+  { id: 'bronze', name: 'Bronze', color: '#a8672f', sortOrder: 1, instances: 1, auditInstances: 1, contracts: 2, portfolios: 1, catalogProducts: 0, appUsers: 10, auditSend: false },
+  { id: 'prata', name: 'Prata', color: '#6f7c8c', sortOrder: 2, instances: 1, auditInstances: 3, contracts: 7, portfolios: 2, catalogProducts: 40, appUsers: 10, auditSend: false },
+  { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, appUsers: 10, auditSend: true },
 ];
 // Abas do menu que o administrador pode liberar, esconder e ordenar em cada plano.
 export const PLAN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
@@ -44,6 +44,7 @@ const normalize = (p) => ({
   instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios,
   catalogProducts: p.catalogProducts ?? 0,
   stores: p.stores ?? 0,
+  appUsers: p.appUsers ?? 10,
   dmCredit: p.dmCredit ?? true,
   auditSend: Boolean(p.auditSend),
   tabs: cleanTabs(p.visibleTabs ?? p.tabs),
@@ -78,7 +79,7 @@ export async function loadPlans() {
 export async function ensurePlans() {
   if ((await prisma.planSetting.count()) === 0) {
     await prisma.planSetting.createMany({
-      data: DEFAULT_PLANS.map((p) => ({ plan: p.id, name: p.name, color: p.color, sortOrder: p.sortOrder, priceCents: seedPrice(p.id), instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, auditSend: p.auditSend, visibleTabs: [...PLAN_TABS] })),
+      data: DEFAULT_PLANS.map((p) => ({ plan: p.id, name: p.name, color: p.color, sortOrder: p.sortOrder, priceCents: seedPrice(p.id), instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, appUsers: p.appUsers, auditSend: p.auditSend, visibleTabs: [...PLAN_TABS] })),
       skipDuplicates: true,
     });
   }
@@ -99,7 +100,7 @@ export async function ensurePlans() {
   return loadPlans();
 }
 
-const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, stores: d.stores ?? 0, dmCredit: d.dmCredit ?? true, auditSend: d.auditSend, visibleTabs: cleanTabs(d.tabs) });
+const toRow = (d) => ({ name: d.name, color: d.color, sortOrder: d.sortOrder, priceCents: d.priceCents, instances: d.instances, auditInstances: d.auditInstances, contracts: d.contracts, portfolios: d.portfolios, catalogProducts: d.catalogProducts, stores: d.stores ?? 0, appUsers: d.appUsers ?? 10, dmCredit: d.dmCredit ?? true, auditSend: d.auditSend, visibleTabs: cleanTabs(d.tabs) });
 
 // Grava (cria ou altera) um plano e já atualiza a memória.
 export async function savePlan(id, data) {
@@ -132,7 +133,7 @@ export const priceCents = (id, period = 'mensal') => monthlyCents(id) * (PERIODS
 
 const limitsOf = (id) => {
   const p = cache.get(id) || sorted(cache)[0];
-  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, stores: p.stores, auditSend: p.auditSend, tabs: p.tabs };
+  return { instances: p.instances, auditInstances: p.auditInstances, contracts: p.contracts, portfolios: p.portfolios, catalogProducts: p.catalogProducts, stores: p.stores, appUsers: p.appUsers, auditSend: p.auditSend, tabs: p.tabs };
 };
 
 export function isTrialUser(user) {
