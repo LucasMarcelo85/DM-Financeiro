@@ -23,9 +23,9 @@ async function post(path, body) {
   return { ok: res.ok, status: res.status, data };
 }
 
-export async function createCheckout({ orderNsu, description, amountCents, redirectUrl, webhookUrl, customer }) {
+export async function createCheckout({ orderNsu, description, amountCents, redirectUrl, webhookUrl, customer, handle = config.infinitepay.handle }) {
   const body = {
-    handle: config.infinitepay.handle,
+    handle,
     order_nsu: orderNsu,
     items: [{ quantity: 1, price: amountCents, description }],
     redirect_url: redirectUrl,
@@ -42,12 +42,12 @@ export async function createCheckout({ orderNsu, description, amountCents, redir
 }
 
 // Confirma com a InfinitePay se o pedido foi pago. Retorna { paid, amount }.
-export async function checkPayment({ orderNsu, transactionNsu, slug }) {
+export async function checkPayment({ orderNsu, transactionNsu, slug, handle = config.infinitepay.handle }) {
   const { ok, data } = await post('/payment_check', {
-    handle: config.infinitepay.handle,
+    handle,
     order_nsu: orderNsu,
     transaction_nsu: transactionNsu,
     slug,
   });
-  return { paid: Boolean(ok && data?.success !== false && data?.paid), amount: Number(data?.amount) || null };
+  return { paid: Boolean(ok && data?.success !== false && data?.paid), amount: Number(data?.amount) || null, receiptUrl: data?.receipt_url || data?.receipt || '' };
 }

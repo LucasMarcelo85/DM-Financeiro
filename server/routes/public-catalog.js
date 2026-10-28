@@ -3,6 +3,7 @@ import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { lookupCep } from '../services/geo.js';
 import { createOrder, loadCatalogOwner, quoteShipping } from '../services/orders.js';
+import { createOnlineCheckout, verifyOrderPayment } from '../services/catalog-payments.js';
 
 // Catálogo digital: partes públicas (sem login) — imagem do produto, CEP, simulação de frete — e o webhook que recebe os pedidos.
 const router = Router();
@@ -36,14 +37,33 @@ router.post('/catalog/shipping/quote', async (req, res) => {
 export const ordersWebhook = Router();
 
 ordersWebhook.post('/:slug', async (req, res) => {
-  const { order, cfg } = await createOrder(req.params.slug, req.body);
+  const { order, cfg, paymentMethod } = await createOrder(req.params.slug, req.body);
   const lines = order.items.map((i) => `• ${i.qty}x ${i.name}${i.variation ? ` (${i.variation})` : ''} — ${brl(i.totalCents)}`);
   const text = [`Olá! Fiz o pedido ${order.code}:`, ...lines, `Subtotal: ${brl(order.subtotalCents)}`, order.deliveryType === 'excursao' ? 'Frete: a combinar (excursão)' : `Frete: ${brl(order.shippingCents)}`, `Total: ${brl(order.totalCents)}`].join('\n');
+  let checkoutUrl = '';
+  let paymentError = '';
+  if (paymentMethod === 'online') {
+    try { checkoutUrl = await createOnlineCheckout(order, order.paymentProvider, req.params.slug); }
+    catch (e) {
+      paymentError = e.message || 'Não foi possível gerar o pagamento online.';
+      await prisma.order.updateMany({ where: { id: order.id, paymentStatus: { not: 'paid' } }, data: { paymentStatus: 'failed' } });
+    }
+  }
   res.status(201).json({
     ok: true,
-    order: { code: order.code, subtotalCents: order.subtotalCents, shippingCents: order.shippingCents, totalCents: order.totalCents, deliveryType: order.deliveryType },
+    order: { id: order.id, code: order.code, subtotalCents: order.subtotalCents, shippingCents: order.shippingCents, totalCents: order.totalCents, deliveryType: order.deliveryType, paymentStatus: order.paymentStatus, paymentProvider: order.paymentProvider },
+    checkoutUrl, paymentError,
     whatsappUrl: cfg.whatsapp ? `https://wa.me/${cfg.whatsapp}?text=${encodeURIComponent(text)}` : '',
   });
+});
+
+router.get('/catalog/payment-status/:slug/:code', async (req, res) => {
+  const ctx = await loadCatalogOwner(req.params.slug);
+  const order = await prisma.order.findFirst({ where: { userId: ctx.owner.id, storeId: ctx.store?.id ?? null, code: String(req.params.code).slice(0, 20) } });
+  if (!order) throw new AppError(404, 'Pedido não encontrado.');
+  await verifyOrderPayment(order, req.query);
+  const fresh = await prisma.order.findUnique({ where: { id: order.id } });
+  res.json({ paid: fresh.paymentStatus === 'paid', status: fresh.paymentStatus, provider: fresh.paymentProvider, paymentId: fresh.paymentStatus === 'paid' ? fresh.paymentId : null, proofUrl: fresh.paymentStatus === 'paid' ? fresh.paymentProofUrl : null, paidAt: fresh.paidAt?.getTime() || null });
 });
 
 export default router;

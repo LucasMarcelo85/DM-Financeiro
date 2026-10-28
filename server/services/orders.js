@@ -8,6 +8,8 @@ import { decrypt } from '../utils/secret.js';
 import { config } from '../config.js';
 import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
 import { resolvePublicOwner } from '../utils/store.js';
+import { paymentConnections } from './catalog-payments.js';
+import { providerReady } from './catalog-payments.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -23,7 +25,9 @@ export async function loadCatalogOwner(userSlug) {
   const { owner, store } = found;
   const base = store ? store.config : owner.catalogSettings?.config;
   const cfg = { ...defaultCatalogConfig(), ...(base || {}) };
-  return { owner, store, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete) };
+  const connections = await paymentConnections(owner.id, store?.id ?? null);
+  const paymentMethods = Object.keys(connections).filter((provider) => providerReady(provider));
+  return { owner, store, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete), paymentMethods };
 }
 
 // Endereço de destino vindo do cliente (CEP ou endereço). Completa pelo CEP quando possível.
@@ -62,6 +66,10 @@ export async function quoteShipping({ cfg, token }, type, rawDest, subtotalCents
 export async function createOrder(userSlug, body = {}) {
   const ctx = await loadCatalogOwner(userSlug);
   const { owner, store, cfg } = ctx;
+  const paymentMethod = body.paymentMethod === 'online' ? 'online' : 'whatsapp';
+  const paymentProvider = paymentMethod === 'online' ? String(body.paymentProvider || '') : null;
+  if (paymentMethod === 'online' && !ctx.paymentMethods.includes(paymentProvider)) throw new AppError(400, 'O pagamento online escolhido não está disponível nesta loja.');
+  if (paymentMethod === 'online' && body.delivery?.type === 'excursao') throw new AppError(400, 'Como o frete da excursão é combinado depois, finalize este pedido pelo WhatsApp.');
 
   // 1) Cliente: nome e telefone são obrigatórios para todos.
   const c = body.customer || {};
@@ -185,7 +193,7 @@ export async function createOrder(userSlug, body = {}) {
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });
         return tx.order.create({
-          data: { userId: owner.id, storeId: store?.id ?? null, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes },
+          data: { userId: owner.id, storeId: store?.id ?? null, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
         });
       });
       break;
@@ -193,12 +201,15 @@ export async function createOrder(userSlug, body = {}) {
       if (e?.code !== 'P2002' || attempt === 2) throw e; // outro pedido criou o mesmo cliente agora: tenta de novo
     }
   }
-  return { order, cfg };
+  return { order, cfg, paymentMethod };
 }
 
 export const orderDTO = (o) => ({
   id: o.id, code: o.code, customerName: o.customerName, customerPhone: o.customerPhone, deliveryType: o.deliveryType, delivery: o.delivery, items: o.items,
-  subtotalCents: o.subtotalCents, shippingCents: o.shippingCents, totalCents: o.totalCents, notes: o.notes, status: o.status, createdAt: o.createdAt.getTime(), deletedAt: o.deletedAt?.getTime() || null,
+  subtotalCents: o.subtotalCents, shippingCents: o.shippingCents, totalCents: o.totalCents, notes: o.notes, status: o.status,
+  paymentStatus: o.paymentStatus || 'unpaid', paymentProvider: o.paymentProvider || null, paymentId: o.paymentId || null,
+  paymentProofUrl: o.paymentProofUrl || null, paidAt: o.paidAt?.getTime() || null,
+  createdAt: o.createdAt.getTime(), deletedAt: o.deletedAt?.getTime() || null,
 });
 
 export { publicProduct };

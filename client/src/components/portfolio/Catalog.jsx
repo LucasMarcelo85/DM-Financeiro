@@ -303,6 +303,12 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
+  const [paymentMethod, setPaymentMethod] = useState('whatsapp');
+  const [paymentProvider, setPaymentProvider] = useState(store.paymentMethods?.[0] || 'stripe');
+  const [paymentReturn, setPaymentReturn] = useState(() => {
+    const qs = new URLSearchParams(window.location.search);
+    return qs.get('payment') === 'return' && qs.get('order') ? { code: qs.get('order'), paid: false, query: Object.fromEntries(qs.entries()) } : null;
+  });
   const [step, setStep] = useState(0);
   const tracked = useRef(false);
   const clearSavedCustomer = () => {
@@ -325,6 +331,27 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   }, [slug, name, phone, type, exc, addr, customerRevision]);
   useEffect(() => { if (pixelOn && lines.length && !tracked.current) { tracked.current = true; track('InitiateCheckout', { value: subtotal / 100 }); } }, [pixelOn, lines.length, subtotal]);
   useEffect(() => { setQuote(null); setQuoteErr(''); setServiceId(''); }, [type, addr.zip, addr.street, addr.city, addr.number, subtotal]);
+  useEffect(() => { if (type === 'excursao') setPaymentMethod('whatsapp'); }, [type]);
+  useEffect(() => {
+    if (!paymentReturn?.code) return undefined;
+    let active = true;
+    const check = async () => {
+      try {
+        const qs = new URLSearchParams(paymentReturn.query);
+        const result = await api.get(`/public/catalog/payment-status/${encodeURIComponent(slug)}/${encodeURIComponent(paymentReturn.code)}?${qs}`);
+        if (active) {
+          if (result.paid) cart.clear();
+          setPaymentReturn((current) => ({ ...current, ...result, error: '' }));
+          if (result.paid && timer) clearInterval(timer);
+        }
+      } catch (e) {
+        if (active) setPaymentReturn((current) => ({ ...current, error: e.message }));
+      }
+    };
+    const timer = setInterval(check, 5000);
+    check();
+    return () => { active = false; clearInterval(timer); };
+  }, [slug, paymentReturn?.code]);
 
   const setA = (k) => (e) => setAddr((a) => ({ ...a, [k]: e.target.value }));
 
@@ -368,6 +395,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (type === 'motoboy' && !canQuote) return setError('Motoboy: informe o CEP ou o endereço de entrega.');
     if (type === 'correios' && !zipOk) return setError('Correios: informe o CEP de destino.');
     if (needsQuote && !option) return setError('Calcule o frete antes de finalizar.');
+    if (paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return setError('Escolha uma forma de pagamento online disponível para esta entrega.');
     setBusy(true);
     try {
       const delivery = type === 'retirada' ? { type }
@@ -375,11 +403,16 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           : type === 'motoboy' ? { type, ...addr }
             : { type, zip: addr.zip, number: addr.number, complement: addr.complement, serviceId };
       const r = await api.post(`/webhooks/orders/${encodeURIComponent(slug)}`, {
-        customer: { name, phone }, delivery, notes, items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, qty: l.qty })),
+        customer: { name, phone }, delivery, notes, paymentMethod, paymentProvider: paymentMethod === 'online' ? paymentProvider : undefined,
+        items: lines.map((l) => ({ productId: l.productId, imageId: l.imageId, qty: l.qty })),
       });
-      if (pixelOn) track('Purchase', { value: r.order.totalCents / 100, transaction: r.order.code });
+      if (paymentMethod === 'online' && r.checkoutUrl) {
+        window.location.assign(r.checkoutUrl);
+        return;
+      }
+      if (pixelOn && paymentMethod === 'whatsapp') track('Purchase', { value: r.order.totalCents / 100, transaction: r.order.code });
       cart.clear();
-      setDone(r);
+      setDone({ ...r, paymentError: paymentMethod === 'online' ? r.paymentError || 'O link de pagamento não foi gerado.' : '' });
       window.scrollTo({ top: 0 });
     } catch (err) { setError(err.message); } finally { setBusy(false); }
   }
@@ -388,10 +421,26 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     return (
       <section className="cat-cart cat-done">
         <div className="cat-doneicon"><IconSvg name="check-circle" size={56} color="var(--p)" /></div>
-        <h1>Pedido enviado!</h1>
+        <h1>{done.paymentError ? 'Pedido registrado, pagamento pendente' : 'Pedido enviado!'}</h1>
         <p>Seu pedido <strong>#{done.order.code}</strong> foi registrado. Total: <strong>{brl(done.order.totalCents)}</strong>{done.order.deliveryType === 'excursao' ? ' + frete a combinar' : ''}.</p>
+        {done.paymentError && <p className="cat-error">{done.paymentError} O pedido ainda não está pago; tente novamente ou fale com a loja.</p>}
         <p className="cat-muted">A loja vai entrar em contato pelo telefone informado.</p>
         {done.whatsappUrl && <a className="cat-btn" href={done.whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => pixelOn && track('Contact')}>Enviar o pedido pelo WhatsApp</a>}
+        <button type="button" className="cat-btn cat-btn-ghost" onClick={onBack}>Voltar ao catálogo</button>
+      </section>
+    );
+  }
+
+  if (paymentReturn) {
+    const providerLabel = { stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[paymentReturn.provider] || 'provedor';
+    return (
+      <section className="cat-cart cat-done">
+        <div className="cat-doneicon"><IconSvg name={paymentReturn.paid ? 'check-circle' : 'clock'} size={56} color="var(--p)" /></div>
+        <h1>{paymentReturn.paid ? 'Pagamento confirmado' : 'Confirmando pagamento'}</h1>
+        <p>Pedido <strong>#{paymentReturn.code}</strong>: {paymentReturn.paid ? `pagamento confirmado pelo ${providerLabel}.` : 'aguardando confirmação segura do provedor. Esta página consulta o status diretamente no servidor.'}</p>
+        {paymentReturn.paid && paymentReturn.paymentId && <p className="cat-muted">ID do pagamento: <strong>{paymentReturn.paymentId}</strong></p>}
+        {paymentReturn.paid && paymentReturn.proofUrl && <a className="cat-btn" href={paymentReturn.proofUrl} target="_blank" rel="noopener noreferrer">Abrir comprovante</a>}
+        {paymentReturn.error && <p className="cat-muted">{paymentReturn.error} Atualize esta página para consultar novamente.</p>}
         <button type="button" className="cat-btn cat-btn-ghost" onClick={onBack}>Voltar ao catálogo</button>
       </section>
     );
@@ -404,16 +453,19 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const subtotalMet = subtotal >= minimumSubtotal;
   const meetsMinimum = itemsMet && subtotalMet;
   const progress = Math.round(Math.min(1, minimumItems > 0 ? itemCount / minimumItems : 1, minimumSubtotal > 0 ? subtotal / minimumSubtotal : 1) * 100);
-  const STEPS = ['Carrinho', 'Seus dados', 'Entrega', 'Revisão'];
-  const STEP_HINTS = ['Confira os itens e as quantidades.', 'Diga quem está fazendo o pedido.', 'Escolha como quer receber.', 'Confirme tudo e finalize.'];
+  const STEPS = ['Carrinho', 'Seus dados', 'Entrega', 'Pagamento', 'Revisão'];
+  const STEP_HINTS = ['Confira os itens e as quantidades.', 'Diga quem está fazendo o pedido.', 'Escolha como quer receber.', 'Escolha WhatsApp ou pagamento online.', 'Confirme tudo e finalize.'];
   const stepError = (n) => {
     if (n === 0) return !lines.length ? 'O carrinho está vazio.' : !meetsMinimum ? 'Continue adicionando itens para atingir o mínimo do pedido.' : lines.some((l) => l.staleSelection) ? 'Uma opção mudou. Remova e adicione o item novamente.' : lines.some((l) => l.stockExceeded) ? 'A quantidade de algum item ultrapassa o estoque disponível. Ajuste o carrinho.' : '';
     if (n === 1) return name.trim().length < 2 ? 'Informe o seu nome.' : phone.replace(/\D/g, '').length < 10 ? 'Informe o seu telefone com DDD.' : '';
-    if (!type) return 'Escolha a forma de entrega.';
-    if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome do galpão, a cidade e o endereço do galpão.';
-    if (type === 'motoboy' && !canQuote) return 'Motoboy: informe o CEP ou o endereço de entrega.';
-    if (type === 'correios' && !zipOk) return 'Correios: informe o CEP de destino.';
-    if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
+    if (n === 2) {
+      if (!type) return 'Escolha a forma de entrega.';
+      if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome do galpão, a cidade e o endereço do galpão.';
+      if (type === 'motoboy' && !canQuote) return 'Motoboy: informe o CEP ou o endereço de entrega.';
+      if (type === 'correios' && !zipOk) return 'Correios: informe o CEP de destino.';
+      if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
+    }
+    if (n === 3 && paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return 'Escolha um provedor de pagamento online conectado para esta entrega.';
     return '';
   };
   const goTo = (n) => { setStep(n); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -542,11 +594,31 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           </>}
 
           {step === 3 && <>
+          <h2>Como deseja finalizar?</h2>
+          <div className="cat-types" role="radiogroup" aria-label="Forma de pagamento">
+            <label className={`cat-type${paymentMethod === 'whatsapp' ? ' is-on' : ''}`}>
+              <input type="radio" name="payment-method" checked={paymentMethod === 'whatsapp'} onChange={() => setPaymentMethod('whatsapp')} />
+              <strong>Enviar pedido pelo WhatsApp</strong><small>O pedido é registrado como não pago e enviado para a loja conversar com você.</small>
+            </label>
+            {(type === 'excursao' ? [] : store.paymentMethods || []).map((provider) => (
+              <label key={provider} className={`cat-type${paymentMethod === 'online' && paymentProvider === provider ? ' is-on' : ''}`}>
+                <input type="radio" name="payment-method" checked={paymentMethod === 'online' && paymentProvider === provider} onChange={() => { setPaymentMethod('online'); setPaymentProvider(provider); }} />
+                <strong>Pagar online · {{ stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[provider]}</strong>
+                <small>Você será redirecionado ao ambiente seguro do provedor.</small>
+              </label>
+            ))}
+          </div>
+          {!store.paymentMethods?.length && <p className="cat-muted">Esta loja ainda não oferece pagamento online.</p>}
+          {type === 'excursao' && store.paymentMethods?.length > 0 && <p className="cat-muted">Como o frete da excursão é combinado depois, pagamento online não está disponível para esta entrega.</p>}
+          </>}
+
+          {step === 4 && <>
           <h2>Revise o pedido</h2>
           <dl className="cat-review">
             <div><dt>Cliente</dt><dd>{name} · {phone}</dd></div>
             <div><dt>Entrega</dt><dd>{typeLabel}{type === 'retirada' && store.pickup?.address ? ` · ${store.pickup.address}` : ''}{type === 'excursao' ? ` · ${exc.warehouse}, ${exc.city}` : ''}{type === 'motoboy' ? ` · ${[addr.street, addr.number, addr.city].filter(Boolean).join(', ') || addr.zip}` : ''}{type === 'correios' ? ` · CEP ${addr.zip}${option ? ` · ${option.name}` : ''}` : ''}</dd></div>
             <div><dt>Itens</dt><dd>{lines.map((l) => `${l.qty}× ${l.p.name}${l.img?.label ? ` (${l.img.label})` : ''}`).join(' · ')}</dd></div>
+            <div><dt>Pagamento</dt><dd>{paymentMethod === 'whatsapp' ? 'Enviar pelo WhatsApp' : `Online · ${{ stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[paymentProvider]}`}</dd></div>
           </dl>
           <label className="cat-notes"><span>Observações (opcional)</span><textarea rows={2} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
           {cfg.checkoutNote && <p className="cat-muted cat-note">{cfg.checkoutNote}</p>}
@@ -562,7 +634,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             {step > 0 && <button type="button" className="cat-btn cat-btn-ghost" onClick={() => goTo(step - 1)}>Voltar</button>}
             {step < STEPS.length - 1
               ? <button type="submit" className={`cat-btn cat-submit${step === 0 && !meetsMinimum ? ' is-locked' : ''}`} disabled={step === 0 && (!meetsMinimum || lines.some((l) => l.staleSelection))}>{step === 0 && !meetsMinimum ? 'Continue adicionando para avançar' : 'Continuar'}</button>
-              : <button type="submit" className="cat-btn cat-submit" disabled={busy || !enabled.length || !meetsMinimum}>{busy ? 'Enviando...' : 'Finalizar pedido'}</button>}
+              : <button type="submit" className="cat-btn cat-submit" disabled={busy || !enabled.length || !meetsMinimum}>{busy ? 'Enviando...' : paymentMethod === 'online' ? 'Criar pedido e pagar' : 'Finalizar pedido'}</button>}
           </div>
         </form>
       )}

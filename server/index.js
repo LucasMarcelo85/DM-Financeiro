@@ -29,6 +29,7 @@ import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/
 import productRoutes from './routes/products.js';
 import catalogRoutes from './routes/catalog.js';
 import publicCatalogRoutes, { ordersWebhook } from './routes/public-catalog.js';
+import { catalogPaymentCallbacks, catalogPaymentWebhooks, catalogPaymentsRouter } from './routes/catalog-payments.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
@@ -118,7 +119,7 @@ app.use(
   })
 );
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
-const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
+const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta' || req.path === '/api/webhooks/catalog-payments/stripe') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
 const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
@@ -137,6 +138,7 @@ app.use('/api/auth/profile', limiter(20, 15 * 60 * 1000)); // trocar e-mail/senh
 app.use('/api/webhooks/orders', limiter(60, 15 * 60 * 1000));
 app.use('/api/webhooks/orders', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, skipFailedRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos pedidos em pouco tempo. Aguarde um pouco e tente de novo.' } }));
 app.use('/api/public/catalog/shipping', limiter(40, 10 * 60 * 1000)); // simulação de frete (chama serviços externos)
+app.use('/api/public/catalog/payment-status', limiter(60, 10 * 60 * 1000)); // confirmações consultam APIs dos provedores
 app.use('/api/public/cep', limiter(60, 10 * 60 * 1000));
 
 app.get('/api/health', async (_req, res) => {
@@ -149,6 +151,7 @@ app.get('/api/health', async (_req, res) => {
 });
 app.use('/api', authRoutes); // /plans e /auth/*
 app.use('/api/webhooks/orders', ordersWebhook); // pedidos do catálogo: sem login
+app.use('/api/webhooks/catalog-payments', catalogPaymentWebhooks);
 app.use('/api/webhooks', webhookRouter);
 app.use('/api/webhooks', auditWebhookRoutes);
 app.use('/api/billing', auth, billingRouter);
@@ -169,8 +172,10 @@ app.use('/api/shop-app', express.json({ limit: '40mb' }), shopAppRoutes);
 app.use('/api/v1', limiter(300, 60 * 1000), publicApi);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);
+app.use('/api/catalog/payments/oauth/callback', catalogPaymentCallbacks);
 app.use('/api/products', auth, requireAccess, express.json({ limit: '40mb' }), productRoutes);
 app.use('/api/catalog', auth, requireAccess, pinGuard('pedidos'), catalogRoutes);
+app.use('/api/catalog/payments', auth, requireAccess, pinGuard('pedidos'), catalogPaymentsRouter);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));
 

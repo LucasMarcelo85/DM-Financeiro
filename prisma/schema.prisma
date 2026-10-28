@@ -102,6 +102,8 @@ model User {
   orders          Order[]
   orderCustomerProfiles OrderCustomerProfile[]
   catalogSettings CatalogSettings?
+  catalogPaymentConnections CatalogPaymentConnection[]
+  catalogPaymentOAuthStates CatalogPaymentOAuthState[]
   productPreferences ProductPreferences?
   addons             UserAddon[]
   stores             Store[]
@@ -632,6 +634,41 @@ model CatalogSettings {
   @@map("catalog_settings")
 }
 
+model CatalogPaymentConnection {
+  id           Int      @id @default(autoincrement())
+  userId       Int      @map("user_id")
+  storeId      Int?     @map("store_id")
+  scopeKey     String   @map("scope_key")
+  provider     String
+  accountId    String   @map("account_id")
+  accessToken  String?  @map("access_token")
+  refreshToken String?  @map("refresh_token")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scopeKey, provider])
+  @@index([provider, accountId])
+  @@map("catalog_payment_connections")
+}
+
+model CatalogPaymentOAuthState {
+  id        Int      @id @default(autoincrement())
+  stateHash String   @unique @map("state_hash")
+  userId    Int      @map("user_id")
+  storeId   Int?     @map("store_id")
+  scopeKey  String   @map("scope_key")
+  provider  String
+  expiresAt DateTime @map("expires_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("catalog_payment_oauth_states")
+}
+
 // Pedido feito no catálogo. Exclusões ficam no log até a limpeza automática após 20 dias.
 model Order {
   id            Int      @id @default(autoincrement())
@@ -648,6 +685,11 @@ model Order {
   totalCents    Int      @map("total_cents")
   notes         String   @default("")
   status        String   @default("novo") // 'novo' | 'atendido'
+  paymentStatus String   @default("unpaid") @map("payment_status")
+  paymentProvider String? @map("payment_provider")
+  paymentId     String?  @map("payment_id")
+  paymentProofUrl String? @map("payment_proof_url")
+  paidAt        DateTime? @map("paid_at")
   createdAt     DateTime @default(now()) @map("created_at")
   deletedAt     DateTime? @map("deleted_at")
 

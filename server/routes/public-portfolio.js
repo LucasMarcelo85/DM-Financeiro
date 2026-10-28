@@ -40,7 +40,7 @@ router.get('/portfolio', async (req, res) => {
     const ctx = await loadCatalogOwner(owner.portfolioSlug);
     const products = await prisma.product.findMany({ where: { userId: owner.id, storeId: owner.storeId ?? null, active: true }, include: { images: imgs, priceOptions }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
     out.products = products.map(publicProduct);
-    out.store = publicCatalogConfig(ctx.cfg);
+    out.store = { ...publicCatalogConfig(ctx.cfg), paymentMethods: ctx.paymentMethods };
   } else if (doc.v === 2) {
     // Página livre com cartões de produtos escolhidos.
     const ids = [...new Set((doc.elements || []).filter((e) => e.t === 'products').flatMap((e) => e.ids || []))].slice(0, 60);
