@@ -1,19 +1,47 @@
 import { Fragment, useCallback, useEffect, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
-import { api } from '../../api.js';
+import { api, isShopMode } from '../../api.js';
 import { useToast } from '../Toast.jsx';
 import EIcon from '../contract/EIcon.jsx';
-import { chatTitle, clock, dayLabel, highlightParts, insertSorted, mediaUrl, phoneLabel, sameDay } from '../../lib/audit.js';
+import { chatTitle, clock, dayLabel, fetchAuditMedia, highlightParts, insertSorted, mediaUrl, phoneLabel, sameDay } from '../../lib/audit.js';
 
 const TICKS = { sent: '✓', delivered: '✓✓', read: '✓✓', failed: '!' };
 
 // Foto, figurinha, vídeo, áudio ou documento. Se o arquivo não puder ser baixado, mostra a miniatura (quando existe) e um aviso.
 function MediaBlock({ m, version, onOpen }) {
   const [failed, setFailed] = useState(false);
+  const [assets, setAssets] = useState({ primary: null, thumb: null });
   useEffect(() => setFailed(false), [version]);
   const q = version ? `?v=${version}` : '';
-  const src = mediaUrl(m.id, q);
-  const thumb = m.media.thumb ? mediaUrl(m.id, `?thumb=1${version ? `&v=${version}` : ''}`) : null;
+  const primaryUrl = mediaUrl(m.id, q);
+  const thumbUrl = m.media.thumb ? mediaUrl(m.id, `?thumb=1${version ? `&v=${version}` : ''}`) : null;
+  useEffect(() => {
+    let active = true;
+    const objectUrls = [];
+    const load = async (url, key) => {
+      if (!url) return;
+      try {
+        const result = isShopMode() ? await fetchAuditMedia(url) : url;
+        if (!active) {
+          if (isShopMode()) URL.revokeObjectURL(result);
+          return;
+        }
+        if (isShopMode()) objectUrls.push(result);
+        setAssets((current) => ({ ...current, [key]: result }));
+      } catch {
+        if (active && key === 'primary') setFailed(true);
+      }
+    };
+    setAssets({ primary: null, thumb: null });
+    load(primaryUrl, 'primary');
+    load(thumbUrl, 'thumb');
+    return () => {
+      active = false;
+      objectUrls.forEach((url) => URL.revokeObjectURL(url));
+    };
+  }, [primaryUrl, thumbUrl]);
+  const src = assets.primary;
+  const thumb = assets.thumb;
   const unavailable = <span className="au-media-off">Mídia indisponível (o WhatsApp pode ter apagado o arquivo)</span>;
 
   if (m.type === 'image' || m.type === 'sticker') {
@@ -33,7 +61,7 @@ function MediaBlock({ m, version, onOpen }) {
       </span>
     );
   }
-  return <a className="au-doc" href={mediaUrl(m.id, '?download=1')} download>{m.media.name || m.body || 'Baixar arquivo'}</a>;
+  return <a className="au-doc" href={src || undefined} download={m.media.name || 'arquivo'}>{m.media.name || m.body || 'Baixar arquivo'}</a>;
 }
 
 function Body({ m, q, version, onOpen }) {

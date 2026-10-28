@@ -15,13 +15,26 @@ const MAX_SEND = 4000;
 
 const clamp = (n, a, b) => Math.min(b, Math.max(a, n));
 const int = (v) => (/^\d+$/.test(String(v ?? '')) ? Number(v) : null);
-const scopeOf = (req) => req.query.scope === 'app' ? 'app' : 'main';
+const scopeOf = (req) => req.forcedAuditScope || (/^store:\d+$/.test(String(req.query.scope || '')) ? String(req.query.scope) : 'main');
 
-function assertScopeAccess(req, scope = scopeOf(req)) {
-  if (scope === 'app' && limitsFor(req.user).stores < 1) {
-    throw new AppError(403, 'A Auditoria do app não está incluída no seu plano.', 'SCOPE_NOT_IN_PLAN');
+router.use(async (req, _res, next) => {
+  const scope = scopeOf(req);
+  if (scope.startsWith('store:')) {
+    const storeId = Number(scope.slice('store:'.length));
+    if (!Number.isInteger(storeId) || limitsFor(req.user).stores < 1) {
+      throw new AppError(403, 'A Auditoria do app não está incluída no plano desta loja.', 'SCOPE_NOT_IN_PLAN');
+    }
+    const store = await prisma.store.findFirst({ where: { id: storeId, userId: req.user.id, appEnabled: true }, select: { id: true } });
+    if (!store || (req.forcedAuditScope && req.forcedAuditScope !== scope)) {
+      throw new AppError(404, 'Aplicativo da loja não encontrado.');
+    }
   }
-  return scope;
+  req.validatedAuditScope = scope;
+  next();
+});
+
+function assertScopeAccess(req) {
+  return req.validatedAuditScope || 'main';
 }
 
 // Filtro de período da auditoria: 7, 30 ou 60 dias (60 = tudo que fica guardado; o que passa disso é apagado sozinho).

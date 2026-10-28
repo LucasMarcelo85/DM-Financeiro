@@ -1,4 +1,5 @@
 import { formatStoredPhone } from './format.js';
+import { getShopToken, isShopMode } from '../api.js';
 
 // Texto sem acentos e em minúsculas, mantendo o MESMO tamanho (para achar a posição no texto original).
 export function foldSameLength(s) {
@@ -58,10 +59,18 @@ export function ago(ms) {
 
 export const mediaUrl = (id, query = '') => {
   const scope = sessionStorage.getItem('dm:audit-scope');
-  if (scope !== 'app') return `/api/audit/messages/${id}/media${query}`;
+  if (isShopMode()) return `/api/shop-app/audit/messages/${id}/media${query}`;
+  if (scope === 'main' || !scope) return `/api/audit/messages/${id}/media${query}`;
   const separator = query ? '&' : '?';
-  return `/api/audit/messages/${id}/media${query}${separator}scope=app`;
+  return `/api/audit/messages/${id}/media${query}${separator}scope=${encodeURIComponent(scope)}`;
 };
+
+export async function fetchAuditMedia(url) {
+  const token = getShopToken();
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  if (!response.ok) throw new Error('Não foi possível carregar esta mídia.');
+  return URL.createObjectURL(await response.blob());
+}
 
 export const TYPE_LABEL = { image: 'Foto', video: 'Vídeo', audio: 'Áudio', document: 'Documento', sticker: 'Figurinha', location: 'Localização', contact: 'Contato' };
 

@@ -6,22 +6,37 @@ import { config } from '../config.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { computeAccess } from '../services/access.js';
+import { instanceRouter } from './instances.js';
+import { tokenRoutes } from './api-tokens.js';
+import { catalogPaymentsRouter } from './catalog-payments.js';
 import productRoutes from './products.js';
 import catalogRoutes from './catalog.js';
+import auditRoutes from './audit.js';
 
-// Aplicativo do lojista: acesso restrito a uma loja extra (produtos, pedidos, clientes e arquivados).
-// Usa um login próprio (não o da conta do dono) e reaproveita as rotas de produtos e pedidos já escopadas por loja.
+// Aplicativo do lojista: permissões e dados ficam restritos à loja/site associado ao acesso.
 const router = Router();
 const TOKEN_DAYS = 30;
 const DUMMY_HASH = bcrypt.hashSync('dm-shop-app', 10);
 
 const appName = (store) => store.appName || store.name;
 const appColor = (store) => store.appColor || '#F2A33A';
+const allowedPerms = (user, permissions) => {
+  const limits = limitsFor(user);
+  const tabs = limits.tabs;
+  return permissions.filter((perm) => {
+    if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
+    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados') return tabs.includes('pedidos');
+    if (perm === 'api') return tabs.includes('api');
+    if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
+    if (perm === 'auditoria') return tabs.includes('auditoria') && limits.auditInstances > 0;
+    return false;
+  });
+};
 
 async function storeFor(req) {
   const slug = String(req.query.u || req.body?.u || req.customDomain?.slug || '').toLowerCase();
   const store = slug ? await prisma.store.findUnique({ where: { slug }, include: { user: true } }) : null;
-  if (!store || !store.appEnabled || !computeAccess(store.user).hasAccess) throw new AppError(404, 'Aplicativo não encontrado.');
+  if (!store || !store.appEnabled || limitsFor(store.user).stores < 1 || !computeAccess(store.user).hasAccess) throw new AppError(404, 'Aplicativo não encontrado.');
   return store;
 }
 
@@ -70,10 +85,11 @@ async function shopAuth(req, _res, next) {
     throw new AppError(401, 'Entre novamente no aplicativo.', 'UNAUTHENTICATED');
   }
   const su = await prisma.storeUser.findUnique({ where: { id }, include: { store: { include: { user: true } } } });
-  if (!su || !su.active || !su.store.appEnabled) throw new AppError(401, 'Acesso desativado. Fale com a loja.', 'UNAUTHENTICATED');
+  if (!su || !su.active || !su.store.appEnabled || limitsFor(su.store.user).stores < 1) throw new AppError(401, 'Acesso desativado. Fale com a loja.', 'UNAUTHENTICATED');
   if (!computeAccess(su.store.user).hasAccess) throw new AppError(402, 'A licença desta loja expirou.', 'PAYMENT_REQUIRED');
   req.user = su.store.user;
   req.forcedStore = su.store.id;
+  req.forcedAuditScope = `store:${su.store.id}`;
   req.shopUser = su;
   req.shopPerms = su.perms.split(',').filter(Boolean);
   next();
@@ -89,7 +105,14 @@ const needTab = (tab) => (req, _res, next) => {
   next();
 };
 
-const meDTO = (su, store) => ({ user: { name: su.name, perms: su.perms.split(',').filter(Boolean) }, app: { name: appName(store), color: appColor(store) } });
+const meDTO = (su, store) => ({
+  user: { name: su.name, perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean)) },
+  app: {
+    name: appName(store), color: appColor(store),
+    whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
+    auditSend: Boolean(limitsFor(store.user).auditSend),
+  },
+});
 
 router.get('/me', shopAuth, (req, res) => {
   res.json(meDTO(req.shopUser, req.shopUser.store));
@@ -101,12 +124,31 @@ router.use('/products', shopAuth, needPerm('produtos'), needTab('produtos'), (re
   next();
 }, productRoutes);
 
-// Pedidos, clientes e arquivados: só consulta (e marcar pedido como atendido), cada área conforme o acesso criado pelo dono.
+// Pedidos, clientes e configurações do catálogo usam sempre o escopo forçado da loja.
 router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
-  const allowed = /^\/(orders|customers)(\/|$)/.test(req.path) && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path)));
-  if (!allowed) throw new AppError(403, 'O aplicativo só permite consultar pedidos e clientes e marcar pedidos como atendidos.', 'FORBIDDEN');
-  const area = req.path.startsWith('/customers') ? 'clientes' : req.path === '/orders' && req.query.view === 'log' ? 'arquivados' : 'pedidos';
+  if (req.path.startsWith('/payments')) return next();
+  if (/^\/settings(?:\/test-shipping)?$/.test(req.path)) {
+    const allowed = req.method === 'GET' || req.method === 'PUT' || (req.method === 'POST' && req.path.endsWith('/test-shipping'));
+    if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
+    return needPerm('entregas')(req, _res, next);
+  }
+  const isCustomers = /^\/customers(?:\/|$)/.test(req.path);
+  const isOrders = /^\/orders(?:\/|$)/.test(req.path);
+  const isRestore = req.method === 'POST' && /^\/orders\/\d+\/restore$/.test(req.path);
+  const isArchive = req.method === 'POST' && req.path === '/orders/bulk-delete';
+  const allowed = (isCustomers && (req.method === 'GET' || req.method === 'PATCH'))
+    || (isOrders && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path))))
+    || isRestore || isArchive;
+  if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
+  const archivedArea = isRestore || (req.path === '/orders' && req.query.view === 'log');
+  const area = isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
   needPerm(area)(req, _res, next);
 }, catalogRoutes);
+
+router.use('/instances', shopAuth, needPerm('entregas'), needTab('pedidos'), instanceRouter('envio'));
+router.use('/catalog/payments', shopAuth, needPerm('entregas'), needTab('pedidos'), catalogPaymentsRouter);
+router.use('/tokens', shopAuth, needPerm('api'), needTab('api'), tokenRoutes);
+router.use('/audit/instances', shopAuth, needPerm('auditoria'), needTab('auditoria'), instanceRouter('auditoria'));
+router.use('/audit', shopAuth, needPerm('auditoria'), needTab('auditoria'), auditRoutes);
 
 export default router;

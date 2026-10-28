@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { api, isShopMode } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
 import { dateBR } from '../lib/format.js';
@@ -45,6 +45,7 @@ const EVENT_NAMES = {
 const DEFAULT_EVENTS = ['order.created', 'order.paid'];
 
 export default function Api() {
+  const shop = isShopMode();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [webhookData, setWebhookData] = useState(null);
@@ -109,7 +110,7 @@ export default function Api() {
     <>
       <header className="page-head">
         <h1>API e webhooks</h1>
-        <p className="muted">Conecte seus sistemas por token e receba eventos da loja em uma URL HTTPS.</p>
+        <p className="muted">{shop ? 'Gerencie tokens e webhooks com acesso restrito a este site.' : 'Conecte seus sistemas por token e receba eventos da loja em uma URL HTTPS.'}</p>
       </header>
 
       {created && (
@@ -135,10 +136,10 @@ export default function Api() {
         </div>
         <div className="api-form-row">
           <input className="input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Nome (ex.: Meu sistema)" maxLength={60} aria-label="Nome do token" />
-          <select className="input" value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Loja do token">
+          {!shop && <select className="input" value={storeId} onChange={(e) => setStoreId(e.target.value)} aria-label="Loja do token">
             <option value="">Loja principal</option>
             {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-          </select>
+          </select>}
           <button className="btn btn-primary" onClick={create} disabled={busy || !name.trim()}>Criar token</button>
         </div>
       </section>
@@ -178,10 +179,10 @@ export default function Api() {
           <div className="api-form-row">
             <input className="input" value={hook.name} onChange={(e) => setHook((s) => ({ ...s, name: e.target.value }))} placeholder="Nome (ex.: Integração do site)" maxLength={60} aria-label="Nome do webhook" required />
             <input className="input api-webhook-url" type="url" value={hook.url} onChange={(e) => setHook((s) => ({ ...s, url: e.target.value }))} placeholder="https://seusistema.com/webhooks/dm" aria-label="URL HTTPS do webhook" required />
-            <select className="input" value={hook.storeId} onChange={(e) => setHook((s) => ({ ...s, storeId: e.target.value }))} aria-label="Loja do webhook">
+            {!shop && <select className="input" value={hook.storeId} onChange={(e) => setHook((s) => ({ ...s, storeId: e.target.value }))} aria-label="Loja do webhook">
               <option value="">Loja principal</option>
               {stores.map((store) => <option key={store.id} value={store.id}>{store.name}</option>)}
-            </select>
+            </select>}
           </div>
           <fieldset className="api-event-list">
             <legend>Eventos para receber</legend>

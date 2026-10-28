@@ -4,8 +4,21 @@ import { api, getShopToken, setShopToken } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
 import Products from './Products.jsx';
 import Orders from './Orders.jsx';
+import Api from './Api.jsx';
+import Audit from './Audit.jsx';
+import CatalogSettings from '../components/CatalogSettings.jsx';
+import InstanceManager from '../components/InstanceManager.jsx';
 
-const TABS = [['produtos', 'Produtos'], ['pedidos', 'Pedidos e clientes']];
+const TABS = [
+  ['produtos', 'Produtos'],
+  ['pedidos', 'Pedidos e clientes'],
+  ['entregas', 'Entregas e WhatsApp'],
+  ['api', 'API e webhooks'],
+  ['auditoria', 'Auditoria'],
+];
+const firstTab = (perms) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) : key === 'pedidos'
+  ? ['pedidos', 'clientes', 'arquivados'].some((perm) => perms.includes(perm))
+  : perms.includes(key))?.[0] || '';
 
 // Aplicativo do lojista, instalável no celular: o nome e a cor vêm da configuração da loja e o endereço é o do próprio site da loja.
 export default function ShopApp() {
@@ -17,6 +30,9 @@ export default function ShopApp() {
   const [authed, setAuthed] = useState(Boolean(getShopToken()));
   const [perms, setPerms] = useState(null);
   const [tab, setTab] = useState('');
+  const [contactWhatsapp, setContactWhatsapp] = useState('');
+  const [auditCanSend, setAuditCanSend] = useState(false);
+  const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
 
@@ -24,8 +40,10 @@ export default function ShopApp() {
     if (!authed) { setPerms(null); return; }
     api.get('/shop-app/me').then((r) => {
       setPerms(r.user.perms);
-      setTab(r.user.perms.includes('produtos') ? 'produtos' : 'pedidos');
-    }).catch(() => {});
+      setTab(firstTab(r.user.perms));
+      setContactWhatsapp(r.app.whatsapp || '');
+      setAuditCanSend(Boolean(r.app.auditSend));
+    }).catch((e) => toast(e.message, 'error'));
   }, [authed]);
 
   useEffect(() => {
@@ -57,6 +75,10 @@ export default function ShopApp() {
     try {
       const r = await api.post('/shop-app/login', { u: slug, login: form.login, password: form.password });
       setShopToken(r.token);
+      setPerms(r.user.perms);
+      setTab(firstTab(r.user.perms));
+      setContactWhatsapp(r.app.whatsapp || '');
+      setAuditCanSend(Boolean(r.app.auditSend));
       setAuthed(true);
     } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
   }
@@ -80,7 +102,11 @@ export default function ShopApp() {
     );
   }
 
-  const tabs = TABS.filter(([key]) => (key === 'produtos' ? perms?.includes('produtos') : ['pedidos', 'clientes', 'arquivados'].some((p) => perms?.includes(p))));
+  const tabs = TABS.filter(([key]) => key === 'produtos'
+    ? perms?.includes('produtos')
+    : key === 'pedidos'
+      ? ['pedidos', 'clientes', 'arquivados'].some((p) => perms?.includes(p))
+      : perms?.includes(key));
 
   return (
     <>
@@ -91,12 +117,25 @@ export default function ShopApp() {
             <button key={key} type="button" className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </nav>
+        {contactWhatsapp && <a className="btn btn-ghost btn-sm" href={`https://wa.me/${contactWhatsapp}`} target="_blank" rel="noopener noreferrer">WhatsApp da loja</a>}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShopToken(null); setAuthed(false); }}>Sair</button>
       </header>
       <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
           : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
-            : tab === 'produtos' ? <Products /> : <Orders allow={perms} />}
+            : tab === 'produtos' ? <Products />
+              : tab === 'pedidos' ? <Orders allow={perms} />
+                : tab === 'api' ? <Api />
+                  : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
+                    : tab === 'entregas' ? <>
+                      <section className="card">
+                        <h2>WhatsApp conectado a este site</h2>
+                        <p className="muted">A conexão criada aqui pertence somente a esta loja e pode ser usada para avisos de pedidos.</p>
+                        <InstanceManager purpose="envio" />
+                        <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas, frete e notificações</button>
+                      </section>
+                      {catalogSettingsOpen && <CatalogSettings onClose={() => setCatalogSettingsOpen(false)} />}
+                    </> : null}
       </main>
     </>
   );

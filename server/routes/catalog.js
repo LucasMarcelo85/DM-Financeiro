@@ -8,9 +8,11 @@ import { orderDTO, quoteShipping } from '../services/orders.js';
 import { changeOrderStock } from '../services/order-stock.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
+import * as whatsapp from '../services/whatsapp.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
+const customerScopeKey = (storeId) => storeId === null ? 'main' : `store:${storeId}`;
 
 function orderWhere(userId, filters = {}, { archived = false, includeStatus = true, includeText = true, storeId = null } = {}) {
   const where = { userId, storeId, deletedAt: archived ? { not: null } : null };
@@ -48,10 +50,11 @@ router.put('/settings', async (req, res) => {
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
   if (cfg.orderNotifications.enabled) {
     const instance = await prisma.instance.findFirst({
-      where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio' },
-      select: { id: true },
+      where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio', storeId },
     });
-    if (!instance) throw new AppError(400, 'Escolha uma instância de WhatsApp conectada a esta conta.');
+    if (!instance || await whatsapp.getState(instance) !== 'open') {
+      throw new AppError(400, 'Conecte uma instância de WhatsApp deste site antes de ativar as notificações.');
+    }
   }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
   else await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
@@ -87,8 +90,9 @@ router.get('/customers', async (req, res) => {
   const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
   const cutoff = new Date(Date.now() - days * 86400000);
   const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
   const [profiles, aggregates] = await Promise.all([
-    prisma.orderCustomerProfile.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' }, take: 1000 }),
+    prisma.orderCustomerProfile.findMany({ where: { userId: req.user.id, scopeKey }, orderBy: { updatedAt: 'desc' }, take: 1000 }),
     prisma.order.groupBy({
       by: ['customerPhone'],
       where: { userId: req.user.id, storeId, deletedAt: null, paymentStatus: 'paid', createdAt: { gte: cutoff } },
@@ -118,8 +122,9 @@ router.get('/customers/:phone', async (req, res) => {
   const requestedDays = Number(req.query.days);
   const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
   const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
   const [profile, orders] = await Promise.all([
-    prisma.orderCustomerProfile.findUnique({ where: { userId_customerPhone: { userId: req.user.id, customerPhone: phone } } }),
+    prisma.orderCustomerProfile.findUnique({ where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } } }),
     prisma.order.findMany({
       where: { userId: req.user.id, storeId, customerPhone: phone, deletedAt: null, createdAt: { gte: new Date(Date.now() - days * 86400000) } },
       orderBy: { createdAt: 'desc' }, take: 50,
@@ -132,7 +137,8 @@ router.get('/customers/:phone', async (req, res) => {
 router.patch('/customers/:phone', async (req, res) => {
   const phone = normalizePhone(req.params.phone);
   if (!phone) throw new AppError(400, 'Telefone inválido.');
-  const profile = await prisma.orderCustomerProfile.findUnique({ where: { userId_customerPhone: { userId: req.user.id, customerPhone: phone } } });
+  const scopeKey = customerScopeKey(await storeScope(req));
+  const profile = await prisma.orderCustomerProfile.findUnique({ where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } } });
   if (!profile) throw new AppError(404, 'Cliente não encontrado.');
   const labels = req.body?.labels;
   const notes = req.body?.notes;

@@ -189,8 +189,8 @@ export async function createOrder(userSlug, body = {}) {
           if (result.count !== 1) throw new AppError(409, `O estoque de ${demand.product.name} acabou de mudar. Atualize o carrinho e tente novamente.`);
         }
         await tx.orderCustomerProfile.upsert({
-          where: { userId_customerPhone: { userId: owner.id, customerPhone: phone } },
-          create: { userId: owner.id, customerPhone: phone, customerName },
+          where: { userId_scopeKey_customerPhone: { userId: owner.id, scopeKey: store?.id ? `store:${store.id}` : 'main', customerPhone: phone } },
+          create: { userId: owner.id, scopeKey: store?.id ? `store:${store.id}` : 'main', customerPhone: phone, customerName },
           update: { customerName },
         });
         const existing = await tx.contact.findUnique({ where: { userId_phone: { userId: owner.id, phone } } });

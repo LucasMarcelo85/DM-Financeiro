@@ -25,6 +25,13 @@ async function ownedStore(userId, value) {
   return store.id;
 }
 
+async function storeScope(req, value) {
+  if (req.forcedStore !== undefined) return req.forcedStore;
+  return ownedStore(req.user.id, value);
+}
+
+const scopedRows = (req) => ({ userId: req.user.id, ...(req.forcedStore !== undefined ? { storeId: req.forcedStore } : {}) });
+
 function webhookInput(body = {}, partial = false) {
   const out = {};
   if (!partial || body.name !== undefined) {
@@ -61,8 +68,8 @@ const tokenDTO = (t, stores) => ({
 
 tokenRoutes.get('/', async (req, res) => {
   const [rows, stores] = await Promise.all([
-    prisma.apiToken.findMany({ where: { userId: req.user.id }, orderBy: { createdAt: 'desc' } }),
-    prisma.store.findMany({ where: { userId: req.user.id }, select: { id: true, name: true } }),
+    prisma.apiToken.findMany({ where: scopedRows(req), orderBy: { createdAt: 'desc' } }),
+    prisma.store.findMany({ where: { userId: req.user.id, ...(req.forcedStore !== undefined ? { id: req.forcedStore } : {}) }, select: { id: true, name: true } }),
   ]);
   const names = new Map(stores.map((s) => [s.id, s.name]));
   res.json({ tokens: rows.map((t) => tokenDTO(t, names)), stores });
@@ -71,11 +78,11 @@ tokenRoutes.get('/', async (req, res) => {
 tokenRoutes.get('/webhooks', async (req, res) => {
   const [rows, stores] = await Promise.all([
     prisma.apiWebhookEndpoint.findMany({
-      where: { userId: req.user.id },
+      where: scopedRows(req),
       orderBy: { createdAt: 'desc' },
       include: { deliveries: { orderBy: { createdAt: 'desc' }, take: 5, select: { event: true, status: true, attempts: true, lastStatus: true, lastError: true, createdAt: true } } },
     }),
-    prisma.store.findMany({ where: { userId: req.user.id }, select: { id: true, name: true } }),
+    prisma.store.findMany({ where: { userId: req.user.id, ...(req.forcedStore !== undefined ? { id: req.forcedStore } : {}) }, select: { id: true, name: true } }),
   ]);
   res.json({ webhooks: rows.map(webhookDTO), stores, events: API_WEBHOOK_EVENTS, limit: MAX_WEBHOOKS });
 });
@@ -83,7 +90,7 @@ tokenRoutes.get('/webhooks', async (req, res) => {
 tokenRoutes.post('/webhooks', async (req, res) => {
   const data = webhookInput(req.body);
   try { await resolveWebhookTarget(data.url); } catch (error) { throw new AppError(400, error.message); }
-  const storeId = await ownedStore(req.user.id, req.body?.storeId);
+  const storeId = await storeScope(req, req.body?.storeId);
   if (await prisma.apiWebhookEndpoint.count({ where: { userId: req.user.id } }) >= MAX_WEBHOOKS) {
     throw new AppError(403, `Limite de ${MAX_WEBHOOKS} webhooks. Remova um para cadastrar outro.`);
   }
@@ -96,20 +103,21 @@ tokenRoutes.post('/webhooks', async (req, res) => {
 
 tokenRoutes.patch('/webhooks/:id', async (req, res) => {
   const id = Number(req.params.id) || 0;
-  const current = await prisma.apiWebhookEndpoint.findFirst({ where: { id, userId: req.user.id } });
+  const current = await prisma.apiWebhookEndpoint.findFirst({ where: { id, ...scopedRows(req) } });
   if (!current) throw new AppError(404, 'Webhook não encontrado.');
   const data = webhookInput(req.body, true);
   if (data.url) {
     try { await resolveWebhookTarget(data.url); } catch (error) { throw new AppError(400, error.message); }
   }
-  if (req.body?.storeId !== undefined) data.storeId = await ownedStore(req.user.id, req.body.storeId);
+  if (req.forcedStore !== undefined) data.storeId = req.forcedStore;
+  else if (req.body?.storeId !== undefined) data.storeId = await storeScope(req, req.body.storeId);
   if (!Object.keys(data).length) throw new AppError(400, 'Nada para atualizar.');
   const row = await prisma.apiWebhookEndpoint.update({ where: { id }, data });
   res.json({ webhook: webhookDTO(row) });
 });
 
 tokenRoutes.delete('/webhooks/:id', async (req, res) => {
-  const result = await prisma.apiWebhookEndpoint.deleteMany({ where: { id: Number(req.params.id) || 0, userId: req.user.id } });
+  const result = await prisma.apiWebhookEndpoint.deleteMany({ where: { id: Number(req.params.id) || 0, ...scopedRows(req) } });
   if (!result.count) throw new AppError(404, 'Webhook não encontrado.');
   res.json({ ok: true });
 });
@@ -118,7 +126,7 @@ tokenRoutes.delete('/webhooks/:id', async (req, res) => {
 tokenRoutes.post('/', async (req, res) => {
   const name = String(req.body?.name ?? '').trim().slice(0, 60);
   if (!name) throw new AppError(400, 'Dê um nome ao token.');
-  const storeId = await ownedStore(req.user.id, req.body?.storeId);
+  const storeId = await storeScope(req, req.body?.storeId);
   if ((await prisma.apiToken.count({ where: { userId: req.user.id } })) >= MAX_TOKENS) throw new AppError(403, `Limite de ${MAX_TOKENS} tokens. Revogue algum para criar outro.`);
   const token = `dmk_${crypto.randomBytes(24).toString('hex')}`;
   const row = await prisma.apiToken.create({ data: { userId: req.user.id, storeId, name, prefix: token.slice(0, 10), tokenHash: hash(token) } });
@@ -126,7 +134,7 @@ tokenRoutes.post('/', async (req, res) => {
 });
 
 tokenRoutes.delete('/:id', async (req, res) => {
-  const r = await prisma.apiToken.deleteMany({ where: { id: Number(req.params.id) || 0, userId: req.user.id } });
+  const r = await prisma.apiToken.deleteMany({ where: { id: Number(req.params.id) || 0, ...scopedRows(req) } });
   if (!r.count) throw new AppError(404, 'Token não encontrado.');
   res.json({ ok: true });
 });

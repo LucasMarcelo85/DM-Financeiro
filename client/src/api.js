@@ -16,16 +16,19 @@ export const getActiveStore = () => localStorage.getItem(STORE_KEY) || null;
 export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
 const SCOPED = /^\/(products|catalog|portfolios)(\/|\?|$)/;
 const AUDIT_SCOPE_KEY = 'dm:audit-scope';
-export const getActiveAuditScope = () => sessionStorage.getItem(AUDIT_SCOPE_KEY) === 'app' ? 'app' : 'main';
-export const setActiveAuditScope = (scope) => { if (scope === 'app') sessionStorage.setItem(AUDIT_SCOPE_KEY, 'app'); else sessionStorage.removeItem(AUDIT_SCOPE_KEY); };
+export const getActiveAuditScope = () => {
+  const scope = sessionStorage.getItem(AUDIT_SCOPE_KEY) || 'main';
+  return scope === 'app' || !/^(main|store:\d+)$/.test(scope) ? 'main' : scope;
+};
+export const setActiveAuditScope = (scope) => { if (scope && scope !== 'main') sessionStorage.setItem(AUDIT_SCOPE_KEY, scope); else sessionStorage.removeItem(AUDIT_SCOPE_KEY); };
 const scoped = (url) => {
   const store = getActiveStore();
   if (store && SCOPED.test(url) && !/^\/portfolios\/domain/.test(url) && !/[?&]store=/.test(url)) {
     url = `${url}${url.includes('?') ? '&' : '?'}store=${store}`;
   }
   const scope = getActiveAuditScope();
-  if (scope === 'app' && /^\/audit\//.test(url) && !/[?&]scope=/.test(url)) {
-    url = `${url}${url.includes('?') ? '&' : '?'}scope=app`;
+  if (scope !== 'main' && /^\/audit\//.test(url) && !/[?&]scope=/.test(url)) {
+    url = `${url}${url.includes('?') ? '&' : '?'}scope=${encodeURIComponent(scope)}`;
   }
   return url;
 };
@@ -35,7 +38,7 @@ const SHOP_KEY = 'dm:shop-token';
 export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
 export const getShopToken = () => localStorage.getItem(SHOP_KEY);
 export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
-const SHOP_ROUTES = /^\/(products|catalog\/(orders|customers))(\/|\?|$)/;
+const SHOP_ROUTES = /^\/(products|catalog|instances|tokens|audit)(\/|\?|$)/;
 
 async function request(method, url, body) {
   let res;

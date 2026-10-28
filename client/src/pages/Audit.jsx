@@ -1,5 +1,5 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
-import { api, setActiveAuditScope } from '../api.js';
+import { api, isShopMode, setActiveAuditScope } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
 import { useAuth } from '../auth.jsx';
 import InstanceManager from '../components/InstanceManager.jsx';
@@ -16,10 +16,16 @@ const REFRESH_MS = 30000; // atualiza a lista inteira (nomes, não lidas, ordem)
 
 // Auditoria: acompanha ao vivo as conversas dos números conectados. Só leitura (responder é do plano Ouro).
 // Três caminhos levam a mensagem até a tela: tempo real (SSE), consulta rápida a cada 4 s e busca automática do servidor.
-export default function Audit() {
-  const { user } = useAuth();
+export default function Audit({ canReply = false }) {
+  const { user } = useAuth() || {};
   const toast = useToast();
-  const [scope, setScope] = useState(() => sessionStorage.getItem('dm:audit-scope') === 'app' ? 'app' : 'main');
+  const [scope, setScope] = useState(() => {
+    const saved = sessionStorage.getItem('dm:audit-scope') || 'main';
+    return /^store:\d+$/.test(saved) ? saved : 'main';
+  });
+  const [stores, setStores] = useState([]);
+  const [storesLoaded, setStoresLoaded] = useState(false);
+  const shopMode = isShopMode();
   const { data: inst, reload: reloadInst } = useInstances(15000, `/audit/instances?scope=${scope}`);
   const [labels, setLabels] = useState([]);
   const [filters, setFilters] = useState(EMPTY);
@@ -40,6 +46,14 @@ export default function Audit() {
   const [listWidth, setListWidth] = useState(() => Number(localStorage.getItem('dm:audit-list-width')) || 330);
   const [sideWidth, setSideWidth] = useState(() => Number(localStorage.getItem('dm:audit-side-width')) || 300);
 
+  useEffect(() => {
+    if (shopMode) return;
+    api.get('/stores')
+      .then((r) => setStores((r.stores || []).filter((store) => store.app.enabled)))
+      .catch((e) => toast(e.message, 'error'))
+      .finally(() => setStoresLoaded(true));
+  }, [shopMode, toast]);
+
   const filtersRef = useRef(filters);
   filtersRef.current = filters;
   const instRef = useRef([]);
@@ -54,8 +68,8 @@ export default function Audit() {
 
   const instances = inst?.instances || [];
   const hasInstances = instances.length > 0;
-  const canSend = Boolean(user.limits.auditSend);
-  const canUseApp = Number(user.limits.stores || 0) > 0;
+  const canSend = shopMode ? canReply : Boolean(user?.limits?.auditSend);
+  const canUseApp = !shopMode && stores.length > 0 && Number(user?.limits?.stores || 0) > 0;
 
   const matchesFilters = (dto) => {
     const f = filtersRef.current;
@@ -157,6 +171,10 @@ export default function Audit() {
 
   // Canal 1: tempo real (Server-Sent Events). O navegador reconecta sozinho.
   useEffect(() => {
+    if (shopMode) {
+      setOnline(false);
+      return undefined;
+    }
     const es = new EventSource(`/api/audit/stream?scope=${scope}`);
     let first = true;
     es.onopen = () => {
@@ -187,7 +205,7 @@ export default function Audit() {
       else if (ev.type === 'connection') reloadInst();
     };
     return () => es.close();
-  }, [deliver, upsertChat, refreshTop, reloadInst, loadChats, scope]);
+  }, [deliver, upsertChat, refreshTop, reloadInst, loadChats, scope, shopMode]);
 
   // Canal 2: pergunta ao servidor a cada poucos segundos o que chegou depois da última mensagem conhecida.
   useEffect(() => {
@@ -230,8 +248,10 @@ export default function Audit() {
   }, [scope]);
 
   useEffect(() => {
-    if (!canUseApp && scope === 'app') switchScope('main');
-  }, [canUseApp, scope]);
+    if (!shopMode && !storesLoaded) return;
+    if (!canUseApp && scope !== 'main') switchScope('main');
+    else if (canUseApp && scope !== 'main' && !stores.some((store) => `store:${store.id}` === scope)) switchScope('main');
+  }, [canUseApp, scope, stores, storesLoaded, shopMode]);
 
   // O título da aba mostra quantas conversas têm mensagens não lidas.
   useEffect(() => {
@@ -288,15 +308,21 @@ export default function Audit() {
         </div>
         <div className="btn-row">
           <span className={`au-live ${online ? 'is-on' : ''}`} role="status" title={online ? 'Recebendo mensagens em tempo real' : 'Sem o tempo real: a tela continua se atualizando a cada poucos segundos'}><i />{online ? 'Ao vivo' : 'Atualizando...'}</span>
-          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({inst?.count ?? instances.length}/{inst?.limit ?? user.limits.auditInstances})</button>}
-                   <BuyMore resource="auditInstances" label="Adquirir mais números" />
+          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({inst?.count ?? instances.length}/{inst?.limit ?? user?.limits?.auditInstances ?? 0})</button>}
+          {!shopMode && <BuyMore resource="auditInstances" label="Adquirir mais números" />}
                  </div>
       </header>
 
       {canUseApp && (
         <nav className="au-scope flex flex-wrap items-center gap-2 rounded-xl border border-slate-200 bg-white p-3 shadow-sm" aria-label="Origem das conversas">
           <button type="button" className={`btn ${scope === 'main' ? 'btn-primary' : 'btn-ghost'}`} aria-pressed={scope === 'main'} onClick={() => switchScope('main')}>Loja principal</button>
-          <button type="button" className={`btn ${scope === 'app' ? 'btn-primary' : 'btn-ghost'}`} aria-pressed={scope === 'app'} onClick={() => switchScope('app')}>App do lojista</button>
+          <label className="field">
+            <span>App / site</span>
+            <select className="input" value={scope.startsWith('store:') ? scope : ''} onChange={(e) => e.target.value && switchScope(e.target.value)}>
+              <option value="">Selecione uma loja com app ativo</option>
+              {stores.map((store) => <option key={store.id} value={`store:${store.id}`}>{store.app.name || store.name}</option>)}
+            </select>
+          </label>
           <span className="muted small">Conexões, conversas e etiquetas ficam separadas.</span>
         </nav>
       )}

@@ -115,6 +115,7 @@ model User {
 model Instance {
   id        Int              @id @default(autoincrement())
   userId    Int              @map("user_id")
+  storeId   Int?             @map("store_id")
   name      String           @unique
   purpose   InstancePurpose  @default(envio)
   provider  InstanceProvider @default(evolution)
@@ -135,12 +136,14 @@ model Instance {
   createdAt DateTime         @default(now()) @map("created_at")
 
   user          User           @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store         Store?         @relation(fields: [storeId], references: [id], onDelete: Cascade)
   schedules     Schedule[]
   auditChats    AuditChat[]
   auditContacts AuditContact[]
 
   @@index([userId, purpose])
   @@index([userId, purpose, auditScope])
+  @@index([storeId, purpose])
   @@index([metaPhoneNumberId])
   @@map("instances")
 }
@@ -701,6 +704,7 @@ model Store {
   appName                String?   @map("app_name")
   appColor               String?   @map("app_color")
   appUsers               StoreUser[]
+  instances              Instance[]
   createdAt              DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -717,7 +721,7 @@ model StoreUser {
   login        String
   passwordHash String   @map("password_hash")
   active       Boolean  @default(true)
-  perms        String   @default("produtos,pedidos,clientes,arquivados")
+  perms        String   @default("produtos,pedidos,clientes,arquivados,api,entregas,auditoria")
   createdAt    DateTime @default(now()) @map("created_at")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -784,6 +788,7 @@ model ApiWebhookDelivery {
 model OrderCustomerProfile {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
+  scopeKey      String   @default("main") @map("scope_key")
   customerPhone String   @map("customer_phone")
   customerName  String   @map("customer_name")
   labels        String[] @default([])
@@ -792,7 +797,7 @@ model OrderCustomerProfile {
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
-  @@unique([userId, customerPhone])
-  @@index([userId, updatedAt])
+  @@unique([userId, scopeKey, customerPhone])
+  @@index([userId, scopeKey, updatedAt])
   @@map("order_customer_profiles")
 }

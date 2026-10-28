@@ -40,7 +40,7 @@ function cleanPreferenceList(value, label, maxItems, maxLength) {
 
 async function owned(req) {
   const id = Number(req.params.id);
-  const p = Number.isInteger(id)   ? await prisma.product.findFirst({ where: { id, userId: req.user.id }, include: productInclude }) : null;
+  const p = Number.isInteger(id) ? await prisma.product.findFirst({ where: { id, userId: req.user.id, storeId: await storeScope(req) }, include: productInclude }) : null;
   if (!p) throw new AppError(404, 'Produto não encontrado.');
   return p;
 }
@@ -75,8 +75,8 @@ router.get('/', async (req, res) => {
   const [rows, count, cats, savedPreferences] = await Promise.all([
     prisma.product.findMany({ where, orderBy: [{ category: 'asc' }, { name: 'asc' }], include: productInclude, take: 500 }),
     prisma.product.count({ where: { userId: req.user.id } }),
-    prisma.product.findMany({ where: { userId: req.user.id }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
-    prisma.productPreferences.findUnique({ where: { userId: req.user.id } }),
+    prisma.product.findMany({ where: { userId: req.user.id, storeId }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
+    req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null,
   ]);
   const preferences = {
     ...defaultPreferences,

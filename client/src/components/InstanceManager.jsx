@@ -1,5 +1,5 @@
 ﻿import { useEffect, useRef, useState } from 'react';
-import { api } from '../api.js';
+import { api, isShopMode } from '../api.js';
 import BuyMore from './BuyMore.jsx';
 import { useAuth } from '../auth.jsx';
 import Icon from './Icon.jsx';
@@ -145,9 +145,10 @@ function LabelModal({ value, busy, onClose, onSubmit }) {
 
 export default function InstanceManager({ purpose = 'envio', auditScope = 'main' }) {
   const audit = purpose === 'auditoria';
+  const shop = isShopMode();
   const base = audit ? '/audit/instances' : '/instances';
   const listPath = audit ? `${base}?scope=${auditScope}` : base;
-  const { user } = useAuth();
+  const { user } = useAuth() || {};
   const toast = useToast();
   const { data, error, reload } = useInstances(5000, listPath);
   const [busy, setBusy] = useState('');
@@ -159,7 +160,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
   const [labelFor, setLabelFor] = useState(null);
 
   const instances = data?.instances || [];
-  const limit = data?.limit ?? user.limits[audit ? 'auditInstances' : 'instances'];
+  const limit = data?.limit ?? user?.limits?.[audit ? 'auditInstances' : 'instances'] ?? 0;
   const canAdd = (data?.count ?? instances.length) < limit;
   const noun = audit ? ['número para auditoria', 'números para auditoria'] : ['WhatsApp conectado', 'WhatsApps conectados'];
 
@@ -258,7 +259,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
             <li key={i.id} className={`instance ${i.connected ? 'is-on' : ''}`}>
               <Lamp on={i.connected} pending={i.state === 'unknown' && (i.provider === 'meta' || data?.evolutionConfigured)} size="lg" />
               <div className="instance-info">
-                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope === 'app' ? 'App' : 'Loja principal'}</span>}</strong>
+                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? `App da loja ${i.auditScope.slice(6)}` : 'Loja principal'}</span>}</strong>
                 <span>
                   {status(i)}
                   {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
@@ -310,9 +311,9 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
           {canAdd ? (
             <button className="btn btn-ghost" onClick={() => setChoose(true)} disabled={busy === 'add'}><Icon name="plus" size={18} /> {audit ? 'Adicionar outro número' : 'Adicionar outro WhatsApp'}</button>
           ) : (
-            <p className="muted small">Você usou {data?.count ?? instances.length} de {limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.</p>
+            <p className="muted small">{shop ? `Você usou ${data?.count ?? instances.length} de ${limit} conexões. Fale com a loja para ampliar o limite.` : `Você usou ${data?.count ?? instances.length} de ${limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.`}</p>
           )}
-          <BuyMore resource={audit ? 'auditInstances' : 'instances'} />
+          {!shop && <BuyMore resource={audit ? 'auditInstances' : 'instances'} />}
         </div>
       )}
       {data && <p className="muted small">Seu plano permite {plural(limit, noun[0], noun[1])}.</p>}

@@ -11,13 +11,14 @@ import * as meta from '../services/meta.js';
 import * as wa from '../services/whatsapp.js';
 import { syncInstance, syncState } from '../services/audit.js';
 import { publish as publishAudit } from '../services/audit-hub.js';
+import { storeScope } from '../utils/store.js';
 
-const SELECT = { id: true, name: true, label: true, provider: true, auditScope: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
+const SELECT = { id: true, name: true, label: true, provider: true, auditScope: true, storeId: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
 const MAX_AUDIT_LABELS = 40;
 
 // Nunca devolve o token nem o App Secret: só diz se estão cadastrados.
 const publicInstance = (i, extra = {}) => ({
-  id: i.id, name: i.name, label: i.label, provider: i.provider, auditScope: i.auditScope,
+  id: i.id, name: i.name, label: i.label, provider: i.provider, auditScope: i.auditScope, storeId: i.storeId,
   lastSyncAt: i.lastSyncAt ? i.lastSyncAt.getTime() : null, lastEventAt: i.lastEventAt ? i.lastEventAt.getTime() : null, sync: syncState(i.id),
   ...(i.provider === 'meta'
     ? { metaPhoneNumberId: i.metaPhoneNumberId, metaBusinessId: i.metaBusinessId, metaPhoneDisplay: i.metaPhoneDisplay, metaVerifyToken: i.metaVerifyToken, hasToken: Boolean(i.metaAccessToken), hasAppSecret: Boolean(i.metaAppSecret) }
@@ -65,18 +66,31 @@ export function instanceRouter(purpose) {
   const noun = audit ? 'número para auditoria' : 'WhatsApp conectado';
   const nouns = audit ? 'números para auditoria' : 'WhatsApps conectados';
 
-  function cleanAuditScope(value, user) {
-    if (value !== undefined && value !== 'main' && value !== 'app') throw new AppError(400, 'Origem da conexão inválida.');
-    const scope = value === 'app' ? 'app' : 'main';
-    if (audit && scope === 'app' && limitsFor(user).stores < 1) {
-      throw new AppError(403, 'A Auditoria do app não está incluída no seu plano.', 'SCOPE_NOT_IN_PLAN');
-    }
-    return scope;
+  function cleanAuditScope(value, user, req) {
+    if (req.forcedAuditScope) return req.forcedAuditScope;
+    if (value === undefined || value === 'main') return 'main';
+    const match = /^store:(\d+)$/.exec(String(value));
+    if (!audit || !match || limitsFor(user).stores < 1) throw new AppError(400, 'Origem da conexão inválida.');
+    const storeId = Number(match[1]);
+    if (!req.auditStores?.has(storeId)) throw new AppError(404, 'Aplicativo da loja não encontrado.');
+    return `store:${storeId}`;
+  }
+
+  async function auditStores(user, req) {
+    if (req.forcedAuditScope) return new Set([req.forcedStore]);
+    if (limitsFor(user).stores < 1) return new Set();
+    const stores = await prisma.store.findMany({ where: { userId: user.id, appEnabled: true }, select: { id: true } });
+    return new Set(stores.map((store) => store.id));
   }
 
   async function own(req) {
     const id = Number(req.params.id);
-    const inst = Number.isInteger(id) ? await prisma.instance.findFirst({ where: { id, userId: req.user.id, purpose } }) : null;
+    const storeFilter = !audit && req.forcedStore !== undefined
+      ? { storeId: req.forcedStore }
+      : !audit && req.query.store !== undefined ? { storeId: await storeScope(req) } : {};
+    const inst = Number.isInteger(id) ? await prisma.instance.findFirst({
+      where: { id, userId: req.user.id, purpose, ...storeFilter, ...(audit ? { auditScope: req.forcedAuditScope || undefined } : {}) },
+    }) : null;
     if (!inst) throw new AppError(404, audit ? 'Número de auditoria não encontrado.' : 'WhatsApp não encontrado.');
     return inst;
   }
@@ -144,8 +158,17 @@ export function instanceRouter(purpose) {
   }
 
   router.get('/', async (req, res) => {
-    const auditScope = audit ? cleanAuditScope(req.query.scope, req.user) : undefined;
-    const where = { userId: req.user.id, purpose, ...(audit ? { auditScope } : {}) };
+    const stores = audit ? await auditStores(req.user, req) : null;
+    req.auditStores = stores;
+    const auditScope = audit ? cleanAuditScope(req.query.scope, req.user, req) : undefined;
+    const storeFilter = !audit && req.forcedStore !== undefined
+      ? { storeId: req.forcedStore }
+      : !audit && req.query.store !== undefined ? { storeId: await storeScope(req) } : {};
+    const where = {
+      userId: req.user.id, purpose,
+      ...(audit ? { auditScope } : {}),
+      ...storeFilter,
+    };
     const [rows, count] = await Promise.all([
       prisma.instance.findMany({ where, orderBy: { id: 'asc' }, select: SELECT }),
       prisma.instance.count({ where: { userId: req.user.id, purpose } }),
@@ -166,7 +189,7 @@ export function instanceRouter(purpose) {
     );
     res.json({
       instances, purpose, limit: limitOf(req.user), count, auditScope,
-      availableScopes: { main: true, app: !audit || limitsFor(req.user).stores > 0 },
+      availableScopes: { main: true, app: !audit || stores.size > 0 },
       evolutionConfigured: configured, unreachable: failed,
       metaWebhookUrl: metaWebhookUrl(), appUrlIsPublic: appUrlIsPublic(),
     });
@@ -176,7 +199,12 @@ export function instanceRouter(purpose) {
     await assertCanAdd(req.user);
     const b = req.body || {};
     const label = cleanLabel(b.label);
-    const auditScope = audit ? cleanAuditScope(b.auditScope, req.user) : 'main';
+    if (audit) req.auditStores = await auditStores(req.user, req);
+    const auditScope = audit ? cleanAuditScope(b.auditScope, req.user, req) : 'main';
+    const storeId = req.forcedStore !== undefined
+      ? req.forcedStore
+      : audit && auditScope.startsWith('store:') ? Number(auditScope.slice('store:'.length))
+        : !audit && req.query.store !== undefined ? await storeScope(req) : null;
     const name = await nextName(req.user);
 
     if (b.provider === 'meta') {
@@ -189,7 +217,7 @@ export function instanceRouter(purpose) {
       if (audit) await meta.subscribeApp({ businessId: m.businessId, token: m.accessToken });
       const created = await prisma.instance.create({
         data: {
-          userId: req.user.id, name, purpose, provider: 'meta', label, auditScope,
+          userId: req.user.id, storeId, name, purpose, provider: 'meta', label, auditScope,
           metaPhoneNumberId: m.phoneNumberId, metaBusinessId: m.businessId, metaAccessToken: encrypt(m.accessToken),
           metaAppSecret: m.appSecret ? encrypt(m.appSecret) : null, metaVerifyToken: crypto.randomBytes(18).toString('hex'),
           metaPhoneDisplay: info.display || null,
@@ -208,7 +236,7 @@ export function instanceRouter(purpose) {
       if (e.upstreamStatus === 403 || e.upstreamStatus === 409) data = await evo.connectInstance(name);
       else throw e;
     }
-    const created = await prisma.instance.create({ data: { userId: req.user.id, name, purpose, provider: 'evolution', label, auditScope }, select: SELECT });
+    const created = await prisma.instance.create({ data: { userId: req.user.id, storeId, name, purpose, provider: 'evolution', label, auditScope }, select: SELECT });
     await ensureAuditWebhook(name);
     res.status(201).json({ instance: publicInstance(created), connected: false, ...evo.normalizeQr(data) });
   });
@@ -219,7 +247,11 @@ export function instanceRouter(purpose) {
     const b = req.body || {};
     const data = {};
     if (b.label !== undefined) data.label = cleanLabel(b.label);
-    if (audit && b.auditScope !== undefined) data.auditScope = cleanAuditScope(b.auditScope, req.user);
+    if (audit && b.auditScope !== undefined) {
+      req.auditStores = await auditStores(req.user, req);
+      data.auditScope = cleanAuditScope(b.auditScope, req.user, req);
+      data.storeId = data.auditScope.startsWith('store:') ? Number(data.auditScope.slice('store:'.length)) : null;
+    }
     if (inst.provider === 'meta' && b.meta && typeof b.meta === 'object') {
       const m = cleanMeta(b.meta, { partial: true });
       const phoneNumberId = m.phoneNumberId ?? inst.metaPhoneNumberId;

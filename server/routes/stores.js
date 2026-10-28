@@ -157,10 +157,25 @@ router.post('/:id/domain/check', async (req, res) => {
 
 // ---------- Aplicativo do lojista ----------
 const MAX_APP_USERS = 10;
-const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados'];
-const cleanPerms = (v) => {
+const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados', 'api', 'entregas', 'auditoria'];
+const availablePerms = (user) => {
+  const limits = limitsFor(user);
+  const tabs = limits.tabs;
+  return APP_PERMS.filter((perm) => {
+    if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
+    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados') return tabs.includes('pedidos');
+    if (perm === 'api') return tabs.includes('api');
+    if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
+    return tabs.includes('auditoria') && limits.auditInstances > 0;
+  });
+};
+const cleanPerms = (v, user) => {
   const list = Array.isArray(v) ? v : [];
-  const out = APP_PERMS.filter((p) => list.includes(p));
+  const available = availablePerms(user);
+  if (list.some((p) => APP_PERMS.includes(p) && !available.includes(p))) {
+    throw new AppError(403, 'Uma ou mais áreas selecionadas não estão disponíveis no plano desta loja.', 'TAB_NOT_IN_PLAN');
+  }
+  const out = available.filter((p) => list.includes(p));
   if (!out.length) throw new AppError(400, 'Escolha pelo menos uma área que o lojista poderá usar.');
   return out.join(',');
 };
@@ -174,11 +189,19 @@ const cleanPassword = (v) => {
 router.get('/:id/app', async (req, res) => {
   const store = await owned(req);
   const users = await prisma.storeUser.findMany({ where: { storeId: store.id }, orderBy: { createdAt: 'asc' } });
-  res.json({ store: dto(store), users: users.map(userDTO) });
+  res.json({
+    store: dto(store),
+    users: users.map(userDTO),
+    availablePerms: availablePerms(req.user),
+    appAvailable: limitsFor(req.user).stores > 0 && availablePerms(req.user).length > 0,
+  });
 });
 
 router.put('/:id/app', async (req, res) => {
   const store = await owned(req);
+  if (req.body?.enabled && (limitsFor(req.user).stores < 1 || availablePerms(req.user).length < 1)) {
+    throw new AppError(403, 'O aplicativo por loja não está disponível no plano atual.', 'LIMIT_REACHED');
+  }
   const color = String(req.body?.color ?? '').trim();
   if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw new AppError(400, 'Cor inválida. Use o formato #RRGGBB.');
   const saved = await prisma.store.update({
@@ -193,7 +216,7 @@ router.post('/:id/app/users', async (req, res) => {
   const name = String(req.body?.name ?? '').trim().slice(0, 80);
   const login = String(req.body?.login ?? '').trim().toLowerCase().slice(0, 80);
   if (!name || !login) throw new AppError(400, 'Informe o nome e o usuário de acesso.');
-  const perms = cleanPerms(req.body?.perms ?? APP_PERMS);
+  const perms = cleanPerms(req.body?.perms ?? availablePerms(req.user), req.user);
   const passwordHash = await bcrypt.hash(cleanPassword(req.body?.password), 10);
   if ((await prisma.storeUser.count({ where: { storeId: store.id } })) >= MAX_APP_USERS) throw new AppError(403, `Limite de ${MAX_APP_USERS} acessos por loja.`);
   try {
@@ -210,7 +233,7 @@ router.patch('/:id/app/users/:uid', async (req, res) => {
   const data = {};
   if (req.body?.name !== undefined) data.name = String(req.body.name).trim().slice(0, 80) || undefined;
   if (typeof req.body?.active === 'boolean') data.active = req.body.active;
-  if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms);
+  if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms, req.user);
   if (req.body?.password) data.passwordHash = await bcrypt.hash(cleanPassword(req.body.password), 10);
   const r = await prisma.storeUser.updateMany({ where: { id: Number(req.params.uid) || 0, storeId: store.id }, data });
   if (!r.count) throw new AppError(404, 'Acesso não encontrado.');

@@ -4,13 +4,21 @@ import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
 
-const PERM_LABELS = [['produtos', 'Produtos (cadastrar, editar e desativar)'], ['pedidos', 'Pedidos'], ['clientes', 'Clientes'], ['arquivados', 'Arquivados']];
+const PERM_LABELS = [
+  ['produtos', 'Produtos (cadastrar, editar e desativar)'],
+  ['pedidos', 'Pedidos'],
+  ['clientes', 'Clientes'],
+  ['arquivados', 'Arquivados'],
+  ['api', 'API e webhooks da loja'],
+  ['entregas', 'Entregas, frete e WhatsApp'],
+  ['auditoria', 'Auditoria e conversas WhatsApp'],
+];
 const ALL_PERMS = PERM_LABELS.map(([k]) => k);
 
-function PermChecks({ value, onChange, disabled }) {
+function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
   return (
     <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
-      {PERM_LABELS.map(([key, label]) => (
+      {labels.map(([key, label]) => (
         <label key={key} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
           <input type="checkbox" disabled={disabled} checked={value.includes(key)}
             onChange={(e) => onChange(e.target.checked ? [...value, key] : value.filter((k) => k !== key))} /> {label}
@@ -27,6 +35,7 @@ export default function StoreAppModal({ storeId, onClose }) {
   const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A' });
   const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS });
   const [busy, setBusy] = useState(false);
+  const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key));
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
     setData(r);
@@ -54,18 +63,19 @@ export default function StoreAppModal({ storeId, onClose }) {
     <Modal title="Aplicativo da loja" onClose={onClose}>
       {!data ? <p className="muted">Carregando...</p> : (
         <div style={{ display: 'grid', gap: 14 }}>
-          <p className="muted small">O lojista instala este aplicativo no celular e, com o acesso que você criar, cadastra, edita e desativa produtos, e vê pedidos, clientes e arquivados desta loja. O endereço é o do site da loja.</p>
+          <p className="muted small">O lojista instala este aplicativo no celular. Escolha as áreas que cada acesso poderá usar; os dados e as conexões ficam limitados a este site.</p>
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="checkbox" checked={cfg.enabled} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} /> Aplicativo ativo
+            <input type="checkbox" checked={cfg.enabled} disabled={!data.appAvailable} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} /> Aplicativo ativo
           </label>
+          {!data.appAvailable && <p className="muted small">O plano atual não inclui lojas com aplicativo.</p>}
           <input className="input" value={cfg.name} onChange={(e) => setCfg({ ...cfg, name: e.target.value })} placeholder={`Nome do app (padrão: ${store.name})`} maxLength={40} aria-label="Nome do app" />
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             Cor <input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
           </label>
           <button className="btn btn-primary" disabled={busy} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
-          {store.app.enabled ? (
+          {store.app.enabled && data.appAvailable ? (
             <div className="banner" style={{ flexWrap: 'wrap' }}>
               <div><strong>Link do aplicativo</strong><code style={{ wordBreak: 'break-all', display: 'block' }}>{link}</code></div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
@@ -74,7 +84,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                 <a className="btn btn-ghost btn-sm" href={link} target="_blank" rel="noopener noreferrer">Abrir</a>
               </div>
             </div>
-          ) : <p className="muted small">Ative o aplicativo e salve para liberar o link de compartilhamento.</p>}
+          ) : <p className="muted small">{data.appAvailable ? 'Ative o aplicativo e salve para liberar o link de compartilhamento.' : 'O aplicativo desta loja não está disponível no plano atual.'}</p>}
 
           <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas</h3>
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
@@ -90,7 +100,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
-                <PermChecks value={u.perms} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
+                <PermChecks labels={permissionLabels} value={u.perms} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
               </li>
             ))}
           </ul>
@@ -100,9 +110,13 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
             <input className="input" type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="Senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Senha" />
             <strong className="small">O que este acesso pode usar:</strong>
-            <PermChecks value={nu.perms} onChange={(perms) => setNu({ ...nu, perms })} />
-            <button className="btn btn-primary" disabled={busy || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.length}
-              onClick={() => run(async () => { await api.post(`/stores/${storeId}/app/users`, nu); setNu({ name: '', login: '', password: '', perms: ALL_PERMS }); }, 'Acesso criado.')}>Criar acesso</button>
+            <PermChecks labels={permissionLabels} value={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} onChange={(perms) => setNu({ ...nu, perms })} />
+            <button className="btn btn-primary" disabled={busy || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
+              onClick={() => run(async () => {
+                const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
+                await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
+                setNu({ name: '', login: '', password: '', perms: data.availablePerms });
+              }, 'Acesso criado.')}>Criar acesso</button>
           </div>
         </div>
       )}

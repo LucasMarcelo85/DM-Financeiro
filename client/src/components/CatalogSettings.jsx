@@ -1,5 +1,5 @@
 import { useEffect, useState } from 'react';
-import { api } from '../api.js';
+import { api, getActiveStore, isShopMode } from '../api.js';
 import Modal from './Modal.jsx';
 import InfinitePayMark from './InfinitePayMark.jsx';
 import { Check, Seg, TextField } from './portfolio/Fields.jsx';
@@ -57,7 +57,8 @@ export default function CatalogSettings({ onClose, onSaved }) {
       setPaymentProviders(r.providers || []);
       setInfiniteHandle(r.providers?.find((p) => p.provider === 'infinitepay')?.handle || '');
     }).catch((e) => setError(e.message));
-    api.get('/instances').then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
+    const activeStore = !isShopMode() ? getActiveStore() : null;
+    api.get(`/instances${activeStore ? `?store=${encodeURIComponent(activeStore)}` : ''}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
   }, []);
 
   if (!f) return <Modal title="Entregas e frete" onClose={onClose}><p className="muted">{error || 'Carregando...'}</p></Modal>;
