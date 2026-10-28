@@ -67,7 +67,7 @@ billingRouter.post('/checkout', async (req, res) => {
   const phone = normalizePhone(req.user.phone);
   const url = await pay.createCheckout({
     orderNsu,
-    description: `DM Financeiro - Plano ${planName(plan)} ${PERIODS[period].label.toLowerCase()} (${days} dias)`,
+    description: `DM Gerenciador - Plano ${planName(plan)} ${PERIODS[period].label.toLowerCase()} (${days} dias)`,
     amountCents,
     redirectUrl: `${config.appUrl}/pagamento/retorno`,
     // A InfinitePay só consegue avisar se o sistema estiver publicado com https.
@@ -92,7 +92,7 @@ billingRouter.post('/addons/checkout', async (req, res) => {
   const summary = lines.map((l) => `${l.units} ${ADDON_RESOURCES[l.resource].units}`).join(', ');
   const url = await pay.createCheckout({
     orderNsu,
-    description: `DM Financeiro - Limites extras: ${summary} (${ADDON_DAYS} dias)`,
+    description: `DM Gerenciador - Limites extras: ${summary} (${ADDON_DAYS} dias)`,
     amountCents: total,
     redirectUrl: `${config.appUrl}/pagamento/retorno`,
     webhookUrl: config.appUrl.startsWith('https://') ? `${config.appUrl}/api/webhooks/infinitepay` : undefined,

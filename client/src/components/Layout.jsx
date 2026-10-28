@@ -27,7 +27,7 @@ export function Brand({ light }) {
   return (
     <span className={`brand ${light ? 'brand-light' : ''}`}>
       <span className="brand-mark">DM</span>
-      <span className="brand-name">Financeiro</span>
+      <span className="brand-name">Gerenciador</span>
     </span>
   );
 }

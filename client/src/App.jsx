@@ -3,6 +3,7 @@ import { useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
+import Landing from './pages/Landing.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import WhatsApp from './pages/WhatsApp.jsx';
 import Contacts from './pages/Contacts.jsx';
@@ -53,6 +54,12 @@ function Protected({ bare = false }) {
   return bare ? <Outlet /> : <Layout />;
 }
 
+function HomeRoute() {
+  const { user, loading } = useAuth();
+  if (loading) return <Splash />;
+  return user ? <Protected /> : <Landing />;
+}
+
 function GuestOnly() {
   const { user, loading } = useAuth();
   if (loading) return <Splash />;
@@ -68,6 +75,9 @@ function AdminOnly() {
 export default function App() {
   return (
     <Routes>
+      <Route path="/" element={<HomeRoute />}>
+        <Route index element={<Dashboard />} />
+      </Route>
       <Route element={<GuestOnly />}>
         <Route path="/entrar" element={<Login />} />
         <Route path="/cadastro" element={<Register />} />
@@ -78,7 +88,6 @@ export default function App() {
         <Route path="portfolio/:id" element={<PortfolioEditor />} />
       </Route>
       <Route element={<Protected />}>
-        <Route index element={<Dashboard />} />
         <Route path="whatsapp" element={<WhatsApp />} />
         <Route path="clientes" element={<Contacts />} />
         <Route path="cobrancas" element={<Schedules key="c" kind="cobranca" />} />

@@ -39,7 +39,7 @@ export const config = {
     enabled: env.SCHEDULER_ENABLED !== 'false',
     intervalMs: Math.max(1, positive(env.SCHEDULER_INTERVAL_SECONDS, 30)) * 1000,
   },
-  trialDays: positive(env.TRIAL_DAYS, 3),
+  trialDays: positive(env.TRIAL_DAYS, 7),
   accessDays: positive(env.ACCESS_DAYS, 30),
   // Dias após a licença vencer para a conta ser apagada de vez. 0 = nunca apaga (padrão, por segurança).
   expiredAccountDays: Math.max(0, Math.floor(Number(env.EXPIRED_ACCOUNT_DAYS) || 0)),

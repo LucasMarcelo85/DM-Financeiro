@@ -1,0 +1,272 @@
+import { useEffect, useState } from 'react';
+import { Link } from 'react-router-dom';
+import { api } from '../api.js';
+import Icon from '../components/Icon.jsx';
+import { Brand } from '../components/Layout.jsx';
+import { brl, plural } from '../lib/format.js';
+
+const FEATURES = [
+  { icon: 'chat', title: 'WhatsApp conectado ao seu trabalho', text: 'Organize conversas e envie cobranças e lembretes com praticidade, usando suas próprias conexões.' },
+  { icon: 'user', title: 'Clientes em um só lugar', text: 'Mantenha os dados dos clientes organizados para acompanhar seu atendimento.' },
+  { icon: 'calendar', title: 'Cobranças e lembretes', text: 'Registre cobranças avulsas ou recorrentes e acompanhe vencimentos e envios.' },
+  { icon: 'file', title: 'Contratos e documentos', text: 'Crie contratos com modelos e dados dos seus clientes, sem perder o histórico.' },
+  { icon: 'globe', title: 'Portfólio e presença digital', text: 'Monte páginas profissionais para apresentar serviços, divulgar produtos e receber pedidos.' },
+  { icon: 'receipt', title: 'Produtos, pedidos e integrações', text: 'Gerencie o catálogo, acompanhe pedidos e use API e webhooks conforme os recursos do plano.' },
+];
+
+const PLAN_FEATURES = [
+  ['instances', 'Conexões WhatsApp para cobranças e lembretes'],
+  ['auditInstances', 'Conexões para auditoria de conversas'],
+  ['contracts', 'Modelos de contrato'],
+  ['portfolios', 'Páginas de portfólio'],
+  ['catalogProducts', 'Produtos e serviços no catálogo'],
+  ['stores', 'Lojas com aplicativo próprio'],
+  ['appUsers', 'Acessos por aplicativo de loja'],
+];
+
+const planValue = (plan, key) => {
+  const value = Number(plan[key] || 0);
+  if (key === 'appUsers' && Number(plan.stores) < 1) return 'Não incluído';
+  if (key === 'catalogProducts' && value === 0) return 'Não incluído';
+  if (key === 'stores' && value === 0) return 'Não incluído';
+  return value === 0 ? 'Não incluído' : value.toLocaleString('pt-BR');
+};
+
+function PlanFeatures({ plan }) {
+  return (
+    <ul className="mt-5 grid gap-3 text-sm text-slate-600">
+      {PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || Number(plan.stores) > 0).map(([key, label]) => (
+        <li key={key} className="flex items-start gap-2.5">
+          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span>
+          <span><strong className="font-semibold text-slate-800">{planValue(plan, key)}</strong> {label}</span>
+        </li>
+      ))}
+      {plan.auditSend && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>Respostas pela auditoria de conversas</span></li>}
+    </ul>
+  );
+}
+
+function DemoPanel() {
+  return (
+    <div className="relative mx-auto w-full max-w-[34rem]">
+      <div className="absolute -inset-5 rounded-[2.5rem] bg-amber-300/20 blur-2xl" />
+      <div className="relative overflow-hidden rounded-3xl border border-white/70 bg-white p-4 shadow-2xl shadow-slate-900/15 sm:p-6">
+        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
+          <div className="flex items-center gap-3">
+            <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-800"><Icon name="trend" /></span>
+            <div><p className="font-bold text-slate-900">Visão geral</p><p className="text-xs text-slate-500">Seu negócio, organizado</p></div>
+          </div>
+          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Tudo em ordem</span>
+        </div>
+        <div className="grid grid-cols-2 gap-3 py-4">
+          {[['Clientes', 'Organizados', 'user'], ['Cobranças', 'Acompanhe', 'money'], ['Pedidos', 'Em um só lugar', 'receipt'], ['Portfólio', 'Compartilhe', 'globe']].map(([label, sub, icon]) => (
+            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
+              <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-slate-700 shadow-sm"><Icon name={icon} size={17} /></span>
+              <p className="mt-3 text-sm font-bold text-slate-900">{label}</p>
+              <p className="text-xs text-slate-500">{sub}</p>
+            </div>
+          ))}
+        </div>
+        <div className="rounded-2xl bg-slate-900 p-4 text-white">
+          <div className="flex items-center justify-between gap-3">
+            <div><p className="text-xs text-slate-300">Uma rotina mais simples</p><p className="mt-1 font-semibold">Atendimento e gestão conectados</p></div>
+            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-400 text-slate-900"><Icon name="check" /></span>
+          </div>
+          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full w-3/4 rounded-full bg-amber-400" /></div>
+        </div>
+      </div>
+      <div className="absolute -bottom-5 -left-2 hidden items-center gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-xl sm:flex">
+        <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-100 text-emerald-700"><Icon name="chat" size={17} /></span>
+        <span><strong className="block text-sm text-slate-900">Mais clareza no dia a dia</strong><small className="text-slate-500">Acesse de qualquer dispositivo</small></span>
+      </div>
+    </div>
+  );
+}
+
+export default function Landing() {
+  const [meta, setMeta] = useState(null);
+  const [error, setError] = useState('');
+  const [loading, setLoading] = useState(true);
+
+  async function loadPlans() {
+    setLoading(true);
+    setError('');
+    try {
+      setMeta(await api.get('/plans'));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setLoading(false);
+    }
+  }
+
+  useEffect(() => { loadPlans(); }, []);
+
+  const trialDays = meta?.trialDays ?? 7;
+  const plans = meta?.plans || [];
+
+  return (
+    <main className="min-h-screen overflow-hidden bg-white text-slate-900">
+      <header className="relative z-10 border-b border-slate-200/70 bg-white/90 backdrop-blur">
+        <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
+          <Link to="/" aria-label="DM Gerenciador - início" className="rounded-lg"><Brand /></Link>
+          <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex" aria-label="Navegação da página">
+            <a className="transition hover:text-slate-950" href="#recursos">Recursos</a>
+            <a className="transition hover:text-slate-950" href="#para-quem">Para quem</a>
+            <a className="transition hover:text-slate-950" href="#planos">Planos</a>
+          </nav>
+          <div className="flex items-center gap-2 sm:gap-3">
+            <Link to="/entrar" className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Entrar</Link>
+            <a href="#planos" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-amber-300 sm:px-5">Começar grátis</a>
+          </div>
+        </div>
+      </header>
+
+      <section className="relative isolate bg-slate-950 text-white">
+        <div className="absolute inset-0 -z-10 bg-[radial-gradient(ellipse_at_75%_35%,rgba(242,163,58,0.2),transparent_38%),linear-gradient(120deg,#0f2238,#152f4c_65%,#0f2238)]" />
+        <div className="mx-auto grid max-w-7xl items-center gap-12 px-4 py-16 sm:px-6 sm:py-20 lg:grid-cols-[1.05fr_0.95fr] lg:gap-16 lg:px-8 lg:py-24">
+          <div className="max-w-2xl">
+            <span className="inline-flex items-center gap-2 rounded-full border border-white/15 bg-white/5 px-3.5 py-2 text-xs font-semibold text-amber-200 sm:text-sm">
+              <span className="h-2 w-2 rounded-full bg-emerald-400" /> Gestão de negócios, sem complicação
+            </span>
+            <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
+              Mais tempo para cuidar do seu negócio.
+              <span className="mt-2 block text-amber-300">Menos tarefas espalhadas.</span>
+            </h1>
+            <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
+              O DM Gerenciador conecta clientes, WhatsApp, cobranças, contratos, portfólio, produtos e pedidos em um só lugar — para você organizar sua operação e atender com confiança.
+            </p>
+            <div className="mt-8 flex flex-col gap-3 sm:flex-row">
+              <a href="#planos" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-6 text-base font-bold text-slate-950 shadow-lg shadow-amber-950/25 transition hover:-translate-y-0.5 hover:bg-amber-300">
+                Começar teste grátis de {trialDays} dias <Icon name="right" size={18} />
+              </a>
+              <a href="#recursos" className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-white/20 px-6 text-base font-semibold text-white transition hover:bg-white/10">Conhecer recursos</a>
+            </div>
+            <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-300">
+              <span className="flex items-center gap-2"><Icon name="check" size={16} /> {trialDays} dias para experimentar</span>
+              <span className="flex items-center gap-2"><Icon name="check" size={16} /> Escolha seu plano no cadastro</span>
+              <span className="flex items-center gap-2"><Icon name="check" size={16} /> Acesse pelo celular ou computador</span>
+            </div>
+          </div>
+          <DemoPanel />
+        </div>
+      </section>
+
+      <section id="para-quem" className="scroll-mt-20 bg-slate-50 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-700">Feito para quem empreende</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Uma gestão que acompanha o seu jeito de trabalhar</h2>
+            <p className="mt-4 text-slate-600">Seja você responsável por uma loja, clínica, agência ou serviço, reúna as tarefas do negócio em uma rotina mais clara.</p>
+          </div>
+          <div className="mt-10 grid gap-5 md:grid-cols-2">
+            <article className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:p-8">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-800"><Icon name="box" size={23} /></span>
+              <h3 className="mt-5 text-xl font-bold">Lojas, clínicas e atendimento local</h3>
+              <p className="mt-2 leading-7 text-slate-600">Organize seus clientes e atendimentos, divulgue produtos ou serviços, receba pedidos e acompanhe cobranças e conversas com mais facilidade.</p>
+              <ul className="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                {['Catálogo e pedidos', 'WhatsApp da loja', 'Cadastro de clientes', 'Cobranças e lembretes'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
+              </ul>
+            </article>
+            <article className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:p-8">
+              <span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-100 text-blue-800"><Icon name="globe" size={23} /></span>
+              <h3 className="mt-5 text-xl font-bold">Agências e prestadores de serviços</h3>
+              <p className="mt-2 leading-7 text-slate-600">Apresente seu trabalho, cuide dos relacionamentos com clientes e centralize contratos, cobranças recorrentes e comunicação.</p>
+              <ul className="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
+                {['Páginas de portfólio', 'Modelos de contrato', 'Clientes organizados', 'Cobranças recorrentes'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
+              </ul>
+            </article>
+          </div>
+        </div>
+      </section>
+
+      <section id="recursos" className="scroll-mt-20 py-16 sm:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="max-w-2xl">
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-700">Tudo conectado</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Ferramentas para cuidar da operação e crescer com organização</h2>
+            <p className="mt-4 leading-7 text-slate-600">Use os recursos incluídos no plano que fizer sentido para o momento do seu negócio.</p>
+          </div>
+          <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
+            {FEATURES.map(({ icon, title, text }) => (
+              <article key={title} className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-amber-300 hover:shadow-md sm:p-6">
+                <span className="grid h-11 w-11 place-items-center rounded-xl bg-slate-100 text-slate-800"><Icon name={icon} size={21} /></span>
+                <h3 className="mt-4 text-lg font-bold">{title}</h3>
+                <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
+              </article>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      <section id="planos" className="scroll-mt-20 bg-slate-950 py-16 text-white sm:py-20">
+        <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
+          <div className="mx-auto max-w-2xl text-center">
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-300">Planos para cada etapa</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight sm:text-4xl">Escolha seu plano e comece a testar</h2>
+            <p className="mt-4 text-slate-300">Compare os limites de cada opção. Você seleciona o plano no cadastro e começa com {trialDays} dias de teste grátis.</p>
+          </div>
+
+          {loading && <p className="mt-10 text-center text-slate-300" role="status">Carregando planos...</p>}
+          {error && (
+            <div className="mx-auto mt-10 max-w-xl rounded-2xl border border-red-300/30 bg-red-950/40 p-5 text-center" role="alert">
+              <p>{error}</p>
+              <button type="button" className="mt-4 rounded-xl bg-white px-4 py-2 font-semibold text-slate-900" onClick={loadPlans}>Tentar novamente</button>
+            </div>
+          )}
+          {!loading && !error && !plans.length && <p className="mt-10 text-center text-slate-300">Os planos estarão disponíveis em breve.</p>}
+
+          {!loading && !error && plans.length > 0 && (
+            <>
+              <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
+                {plans.map((plan, index) => (
+                  <article key={plan.id} className={`flex flex-col rounded-3xl border p-6 sm:p-7 ${index === plans.length - 1 ? 'border-amber-300 bg-white text-slate-950 shadow-2xl shadow-amber-950/20' : 'border-white/15 bg-white/[0.06] text-white'}`}>
+                    <div className="flex items-start justify-between gap-3">
+                      <div><h3 className="text-xl font-bold">{plan.name}</h3><p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-600' : 'text-slate-300'}`}>Para acompanhar seu negócio</p></div>
+                      <span className="h-3 w-3 rounded-full" style={{ backgroundColor: plan.color || '#f2a33a' }} />
+                    </div>
+                    <p className="mt-6"><strong className="text-4xl font-bold tracking-tight">{brl(plan.priceCents)}</strong><span className={index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}>/mês</span></p>
+                    <p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}`}>Teste por {trialDays} dias antes de decidir.</p>
+                    <PlanFeatures plan={plan} />
+                    <Link to={`/cadastro?plan=${encodeURIComponent(plan.id)}`} className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 transition hover:bg-amber-300">
+                      Escolher {plan.name} <Icon name="right" size={17} />
+                    </Link>
+                  </article>
+                ))}
+              </div>
+              <div className="mt-8 overflow-hidden rounded-2xl border border-white/15">
+                <div className="overflow-x-auto">
+                  <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
+                    <thead><tr className="bg-white/10 text-slate-200"><th className="px-5 py-4 font-semibold">Recursos incluídos</th>{plans.map((p) => <th key={p.id} className="px-5 py-4 font-semibold">{p.name}</th>)}</tr></thead>
+                    <tbody>{PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || plans.some((plan) => Number(plan.stores) > 0)).map(([key, label]) => (
+                      <tr key={key} className="border-t border-white/10">
+                        <th scope="row" className="px-5 py-3.5 font-medium text-slate-200">{label}</th>
+                        {plans.map((plan) => <td key={plan.id} className="px-5 py-3.5 text-slate-300">{planValue(plan, key)}</td>)}
+                      </tr>
+                    ))}</tbody>
+                  </table>
+                </div>
+                <p className="bg-white/5 px-5 py-3 text-xs text-slate-400">Os limites e recursos são definidos para cada plano. {plural(trialDays, 'dia de teste disponível', 'dias de teste disponíveis')} antes da contratação.</p>
+              </div>
+            </>
+          )}
+        </div>
+      </section>
+
+      <section className="bg-amber-400 px-4 py-14 sm:px-6 sm:py-16">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 text-center sm:px-2 md:flex-row md:text-left">
+          <div><h2 className="text-3xl font-bold tracking-tight text-slate-950">Pronto para organizar seu negócio?</h2><p className="mt-2 text-slate-800">Crie sua conta e explore o DM Gerenciador por {trialDays} dias.</p></div>
+          <Link to={`/cadastro${plans[0] ? `?plan=${encodeURIComponent(plans[0].id)}` : ''}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 font-bold text-white transition hover:bg-slate-800">Começar teste grátis <Icon name="right" size={18} /></Link>
+        </div>
+      </section>
+
+      <footer className="bg-slate-950 px-4 py-7 text-sm text-slate-400 sm:px-6">
+        <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
+          <Brand light />
+          <p>Gestão mais simples para negócios que querem crescer.</p>
+          <Link to="/entrar" className="font-semibold text-white hover:text-amber-300">Já tenho uma conta</Link>
+        </div>
+      </footer>
+    </main>
+  );
+}

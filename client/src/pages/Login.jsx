@@ -10,11 +10,11 @@ export function AuthShell({ title, subtitle, children }) {
       <aside className="auth-aside">
         <Brand light />
         <div className="auth-pitch">
-          <h2>Cobre seus clientes direto no WhatsApp</h2>
+          <h2>Organize seu negócio em um só lugar</h2>
           <ul>
-            <li>Mensagem com link ou Pix em dois blocos, fácil de copiar e colar</li>
-            <li>Lembretes de vencimento sem sair da tela</li>
-            <li>Teste grátis, sem cartão de crédito</li>
+            <li>Clientes, cobranças e lembretes em uma rotina simples</li>
+            <li>Portfólio, produtos, pedidos e contratos conectados</li>
+            <li>Comece com um período de teste grátis</li>
           </ul>
         </div>
         <p className="auth-live">

@@ -1,6 +1,6 @@
-# DM Financeiro
+# DM Gerenciador
 
-SaaS para enviar **cobranças** e **lembretes** pelo WhatsApp (via Evolution API), com teste grátis configurável e cobrança do plano por link da InfinitePay.
+Plataforma de gestão para pequenos negócios, lojas, clínicas, agências e prestadores de serviços. Reúne clientes, cobranças e lembretes pelo WhatsApp, contratos, portfólios, catálogo de produtos e pedidos, com planos e teste grátis configuráveis.
 
 **Stack:** Node.js + Express + **PostgreSQL com Prisma** (backend) · React + Vite (frontend).
 

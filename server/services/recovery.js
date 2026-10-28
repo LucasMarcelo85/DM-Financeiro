@@ -46,7 +46,7 @@ export async function sendCode(user, purpose, inst) {
   const row = await prisma.verificationCode.create({
     data: { userId: user.id, purpose, codeHash: hashCode(user.id, purpose, code), expiresAt: new Date(Date.now() + CODE_TTL_MS) },
   });
-  const text = `*DM Financeiro*\nSeu código para ${PURPOSE_TEXT[purpose]} é: *${code}*\n\nEle vale por ${CODE_TTL_MS / 60_000} minutos. Se não foi você, ignore esta mensagem e não passe o código para ninguém.`;
+  const text = `*DM Gerenciador*\nSeu código para ${PURPOSE_TEXT[purpose]} é: *${code}*\n\nEle vale por ${CODE_TTL_MS / 60_000} minutos. Se não foi você, ignore esta mensagem e não passe o código para ninguém.`;
   try {
     await wa.sendText(inst, number, text);
   } catch (e) {
