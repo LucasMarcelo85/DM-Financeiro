@@ -59,14 +59,6 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
-  catalogPayments: {
-    stripeClientId: (env.STRIPE_CONNECT_CLIENT_ID || '').trim(),
-    stripeSecretKey: (env.STRIPE_SECRET_KEY || '').trim(),
-    stripeWebhookSecret: (env.STRIPE_WEBHOOK_SECRET || '').trim(),
-    mercadoPagoClientId: (env.MERCADOPAGO_CLIENT_ID || '').trim(),
-    mercadoPagoClientSecret: (env.MERCADOPAGO_CLIENT_SECRET || '').trim(),
-    mercadoPagoWebhookSecret: (env.MERCADOPAGO_WEBHOOK_SECRET || '').trim(),
-  },
   easypanel: {
     url: trimSlash(env.EASYPANEL_API_URL),
     apiKey: (env.EASYPANEL_API_KEY || '').trim(),

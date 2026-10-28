@@ -8,8 +8,7 @@ import { decrypt } from '../utils/secret.js';
 import { config } from '../config.js';
 import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
 import { resolvePublicOwner } from '../utils/store.js';
-import { paymentConnections } from './catalog-payments.js';
-import { providerReady } from './catalog-payments.js';
+import { paymentConnections, infinitePayReady } from './catalog-payments.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -26,7 +25,7 @@ export async function loadCatalogOwner(userSlug) {
   const base = store ? store.config : owner.catalogSettings?.config;
   const cfg = { ...defaultCatalogConfig(), ...(base || {}) };
   const connections = await paymentConnections(owner.id, store?.id ?? null);
-  const paymentMethods = Object.keys(connections).filter((provider) => providerReady(provider));
+  const paymentMethods = connections.infinitepay && infinitePayReady() ? ['infinitepay'] : [];
   return { owner, store, cfg, token: config.geo.superfreteToken || decrypt(owner.catalogSettings?.superfrete), paymentMethods };
 }
 

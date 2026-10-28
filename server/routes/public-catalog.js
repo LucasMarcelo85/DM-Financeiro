@@ -43,7 +43,7 @@ ordersWebhook.post('/:slug', async (req, res) => {
   let checkoutUrl = '';
   let paymentError = '';
   if (paymentMethod === 'online') {
-    try { checkoutUrl = await createOnlineCheckout(order, order.paymentProvider, req.params.slug); }
+    try { checkoutUrl = await createOnlineCheckout(order, req.params.slug); }
     catch (e) {
       paymentError = e.message || 'Não foi possível gerar o pagamento online.';
       await prisma.order.updateMany({ where: { id: order.id, paymentStatus: { not: 'paid' } }, data: { paymentStatus: 'failed' } });

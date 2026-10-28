@@ -1,6 +1,7 @@
 ﻿import { createContext, useCallback, useContext, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import { api } from '../../api.js';
+import InfinitePayMark from '../InfinitePayMark.jsx';
 import { ProductCard, minPrice } from './Canvas.jsx';
 import { IconSvg } from './Canvas.jsx';
 import { catgridMetrics } from '../../lib/portfolio/doc.js';
@@ -304,7 +305,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);
   const [paymentMethod, setPaymentMethod] = useState('whatsapp');
-  const [paymentProvider, setPaymentProvider] = useState(store.paymentMethods?.[0] || 'stripe');
+  const [paymentProvider, setPaymentProvider] = useState(store.paymentMethods?.[0] || 'infinitepay');
   const [paymentReturn, setPaymentReturn] = useState(() => {
     const qs = new URLSearchParams(window.location.search);
     return qs.get('payment') === 'return' && qs.get('order') ? { code: qs.get('order'), paid: false, query: Object.fromEntries(qs.entries()) } : null;
@@ -432,7 +433,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   }
 
   if (paymentReturn) {
-    const providerLabel = { stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[paymentReturn.provider] || 'provedor';
+    const providerLabel = 'InfinitePay';
     return (
       <section className="cat-cart cat-done">
         <div className="cat-doneicon"><IconSvg name={paymentReturn.paid ? 'check-circle' : 'clock'} size={56} color="var(--p)" /></div>
@@ -603,7 +604,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             {(type === 'excursao' ? [] : store.paymentMethods || []).map((provider) => (
               <label key={provider} className={`cat-type${paymentMethod === 'online' && paymentProvider === provider ? ' is-on' : ''}`}>
                 <input type="radio" name="payment-method" checked={paymentMethod === 'online' && paymentProvider === provider} onChange={() => { setPaymentMethod('online'); setPaymentProvider(provider); }} />
-                <strong>Pagar online · {{ stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[provider]}</strong>
+                <span className="cat-payment-label"><strong>Pagar online ·</strong> <InfinitePayMark /></span>
                 <small>Você será redirecionado ao ambiente seguro do provedor.</small>
               </label>
             ))}
@@ -618,7 +619,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             <div><dt>Cliente</dt><dd>{name} · {phone}</dd></div>
             <div><dt>Entrega</dt><dd>{typeLabel}{type === 'retirada' && store.pickup?.address ? ` · ${store.pickup.address}` : ''}{type === 'excursao' ? ` · ${exc.warehouse}, ${exc.city}` : ''}{type === 'motoboy' ? ` · ${[addr.street, addr.number, addr.city].filter(Boolean).join(', ') || addr.zip}` : ''}{type === 'correios' ? ` · CEP ${addr.zip}${option ? ` · ${option.name}` : ''}` : ''}</dd></div>
             <div><dt>Itens</dt><dd>{lines.map((l) => `${l.qty}× ${l.p.name}${l.img?.label ? ` (${l.img.label})` : ''}`).join(' · ')}</dd></div>
-            <div><dt>Pagamento</dt><dd>{paymentMethod === 'whatsapp' ? 'Enviar pelo WhatsApp' : `Online · ${{ stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' }[paymentProvider]}`}</dd></div>
+            <div><dt>Pagamento</dt><dd>{paymentMethod === 'whatsapp' ? 'Enviar pelo WhatsApp' : 'Online · InfinitePay'}</dd></div>
           </dl>
           <label className="cat-notes"><span>Observações (opcional)</span><textarea rows={2} value={notes} maxLength={500} onChange={(e) => setNotes(e.target.value)} /></label>
           {cfg.checkoutNote && <p className="cat-muted cat-note">{cfg.checkoutNote}</p>}

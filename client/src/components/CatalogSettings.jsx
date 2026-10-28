@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
-import { api, getActiveStore } from '../api.js';
+import { api } from '../api.js';
 import Modal from './Modal.jsx';
+import InfinitePayMark from './InfinitePayMark.jsx';
 import { Check, Seg, TextField } from './portfolio/Fields.jsx';
 import { useToast } from './Toast.jsx';
 import { brl, centsToMasked, formatStoredPhone, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
@@ -87,15 +88,6 @@ export default function CatalogSettings({ onClose, onSaved }) {
     } catch (e) { setTest({ error: e.message }); } finally { setTesting(false); }
   }
 
-  async function connect(provider) {
-    setPaymentBusy(provider);
-    try {
-      const store = getActiveStore();
-      const result = await api.get(`/catalog/payments/connect/${provider}${store ? `?store=${encodeURIComponent(store)}` : ''}`);
-      window.location.assign(result.url);
-    } catch (e) { toast(e.message, 'error'); setPaymentBusy(''); }
-  }
-
   async function saveInfiniteHandle() {
     setPaymentBusy('infinitepay');
     try {
@@ -105,15 +97,17 @@ export default function CatalogSettings({ onClose, onSaved }) {
     } catch (e) { toast(e.message, 'error'); } finally { setPaymentBusy(''); }
   }
 
-  async function disconnect(provider) {
-    setPaymentBusy(provider);
+  async function disconnectInfinitePay() {
+    setPaymentBusy('infinitepay');
     try {
-      await api.del(`/catalog/payments/${provider}`);
-      setPaymentProviders((rows) => rows.map((row) => row.provider === provider ? { ...row, connected: false, ...(provider === 'infinitepay' ? { handle: '' } : {}) } : row));
-      if (provider === 'infinitepay') setInfiniteHandle('');
+      await api.del('/catalog/payments/infinitepay');
+      setPaymentProviders((rows) => rows.map((row) => ({ ...row, connected: false, handle: '' })));
+      setInfiniteHandle('');
       toast('Forma de pagamento desconectada.');
     } catch (e) { toast(e.message, 'error'); } finally { setPaymentBusy(''); }
   }
+
+  const infinitePayConnection = paymentProviders.find((p) => p.provider === 'infinitepay');
 
   return (
     <Modal title="Entregas e frete do catálogo" onClose={onClose} wide
@@ -122,28 +116,15 @@ export default function CatalogSettings({ onClose, onSaved }) {
         <TextField label="Nome da loja" value={f.storeName} onChange={setTop('storeName')} maxLength={80} id="cs-store" />
         <TextField label="WhatsApp da loja" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Após finalizar o pedido, o cliente poderá enviar o resumo para este número. Inclua o DDD." />
         <fieldset className="cs-box">
-          <strong>Pagamento online no checkout</strong>
-          <p className="muted small">O cliente poderá escolher entre enviar o pedido pelo WhatsApp ou pagar online. A confirmação do pagamento é verificada no servidor.</p>
-          {paymentProviders.filter((p) => p.provider !== 'infinitepay').map((p) => (
-            <div className="cs-payment-row" key={p.provider}>
-              <span><strong>{p.provider === 'stripe' ? 'Stripe' : 'Mercado Pago'}</strong><small>{p.connected ? p.ready ? 'Conectado e pronto para checkout' : 'Conectado; configure o webhook/HTTPS no servidor' : p.ready ? 'Não conectado' : 'Credenciais do servidor pendentes'}</small></span>
-              {p.connected
-                ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => disconnect(p.provider)} disabled={Boolean(paymentBusy)}>{paymentBusy === p.provider ? 'Desconectando...' : 'Desconectar'}</button>
-                : <button type="button" className="btn btn-ghost btn-sm" onClick={() => connect(p.provider)} disabled={!p.ready || Boolean(paymentBusy)}>Conectar</button>}
-            </div>
-          ))}
-          {!paymentProviders.find((p) => p.provider === 'stripe')?.ready || !paymentProviders.find((p) => p.provider === 'mercadopago')?.ready
-            ? <p className="muted small">Para habilitar OAuth, configure as credenciais e o segredo do webhook no ambiente do servidor. Nunca insira chaves secretas aqui.</p>
-            : null}
           <div className="cs-payment-row">
-            <span><strong>InfinitePay</strong><small>{paymentProviders.find((p) => p.provider === 'infinitepay')?.connected ? `Conectado: ${paymentProviders.find((p) => p.provider === 'infinitepay')?.handle}` : 'Informe a InfiniteTag/handle da loja.'}</small></span>
-            {paymentProviders.find((p) => p.provider === 'infinitepay')?.connected && <button type="button" className="btn btn-ghost btn-sm" onClick={() => disconnect('infinitepay')} disabled={Boolean(paymentBusy)}>Desconectar</button>}
+            <span><InfinitePayMark /><small>{infinitePayConnection?.connected ? `Recebimentos ativos para a InfiniteTag ${infinitePayConnection.handle}.` : 'Receba pagamentos online diretamente na conta InfinitePay da sua loja.'}</small></span>
+            {infinitePayConnection?.connected && <button type="button" className="btn btn-ghost btn-sm" onClick={disconnectInfinitePay} disabled={Boolean(paymentBusy)}>{paymentBusy ? 'Desconectando...' : 'Desconectar'}</button>}
           </div>
           <div className="cs-payment-row">
-            <TextField label="InfiniteTag / handle" value={infiniteHandle} onChange={setInfiniteHandle} placeholder="minhaloja" id="cs-infinitepay" hint="Use o handle da loja InfinitePay, sem o $." />
+            <TextField label="InfiniteTag / handle da sua loja" value={infiniteHandle} onChange={setInfiniteHandle} placeholder="minhaloja" id="cs-infinitepay" hint="Este identificador direciona os pagamentos para sua conta InfinitePay; não informe senha ou token." />
             <button type="button" className="btn btn-ghost btn-sm" onClick={saveInfiniteHandle} disabled={Boolean(paymentBusy) || !infiniteHandle.trim()}>{paymentBusy === 'infinitepay' ? 'Salvando...' : 'Salvar handle'}</button>
           </div>
-          <p className="muted small">Callbacks OAuth: <code>/api/catalog/payments/oauth/callback/stripe</code> e <code>/api/catalog/payments/oauth/callback/mercadopago</code>. Webhooks: <code>/api/webhooks/catalog-payments/{'{stripe,mercadopago,infinitepay}'}</code>.</p>
+          <p className="muted small">Use a InfiniteTag da sua própria loja. Não informe senha nem dados bancários. Os pagamentos são confirmados pela InfinitePay.</p>
         </fieldset>
         <fieldset className="cs-box">
           <strong>Regras mínimas para finalizar um pedido</strong>

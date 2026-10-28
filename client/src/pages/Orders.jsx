@@ -9,7 +9,7 @@ import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 
 const DAY = 86400000;
 const TYPE = { retirada: 'Retirada', excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
-const PAYMENT_PROVIDER = { stripe: 'Stripe', mercadopago: 'Mercado Pago', infinitepay: 'InfinitePay' };
+const PAYMENT_PROVIDER = { infinitepay: 'InfinitePay' };
 const timeSince = (timestamp) => {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes === 0) return 'agora';

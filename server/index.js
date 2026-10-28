@@ -29,7 +29,7 @@ import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/
 import productRoutes from './routes/products.js';
 import catalogRoutes from './routes/catalog.js';
 import publicCatalogRoutes, { ordersWebhook } from './routes/public-catalog.js';
-import { catalogPaymentCallbacks, catalogPaymentWebhooks, catalogPaymentsRouter } from './routes/catalog-payments.js';
+import { catalogPaymentWebhooks, catalogPaymentsRouter } from './routes/catalog-payments.js';
 import adminRoutes from './routes/admin.js';
 import { billingRouter, webhookRouter } from './routes/billing.js';
 import { startScheduler, stopScheduler } from './services/scheduler.js';
@@ -119,7 +119,7 @@ app.use(
   })
 );
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
-const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta' || req.path === '/api/webhooks/catalog-payments/stripe') req.rawBody = buf; } });
+const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
 const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
@@ -172,7 +172,6 @@ app.use('/api/shop-app', express.json({ limit: '40mb' }), shopAppRoutes);
 app.use('/api/v1', limiter(300, 60 * 1000), publicApi);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);
-app.use('/api/catalog/payments/oauth/callback', catalogPaymentCallbacks);
 app.use('/api/products', auth, requireAccess, express.json({ limit: '40mb' }), productRoutes);
 app.use('/api/catalog', auth, requireAccess, pinGuard('pedidos'), catalogRoutes);
 app.use('/api/catalog/payments', auth, requireAccess, pinGuard('pedidos'), catalogPaymentsRouter);
