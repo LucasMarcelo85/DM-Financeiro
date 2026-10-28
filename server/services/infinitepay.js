@@ -49,5 +49,9 @@ export async function checkPayment({ orderNsu, transactionNsu, slug, handle = co
     transaction_nsu: transactionNsu,
     slug,
   });
-  return { paid: Boolean(ok && data?.success !== false && data?.paid), amount: Number(data?.amount) || null, receiptUrl: data?.receipt_url || data?.receipt || '' };
+  return {
+    paid: Boolean(ok && data?.success !== false && data?.paid),
+    amount: Number(data?.amount) || null,
+    receiptUrl: data?.receipt_url || data?.receiptUrl || data?.receipt?.url || data?.receipt || '',
+  };
 }

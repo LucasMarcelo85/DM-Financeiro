@@ -440,7 +440,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
         <h1>{paymentReturn.paid ? 'Pagamento confirmado' : 'Confirmando pagamento'}</h1>
         <p>Pedido <strong>#{paymentReturn.code}</strong>: {paymentReturn.paid ? `pagamento confirmado pelo ${providerLabel}.` : 'aguardando confirmação segura do provedor. Esta página consulta o status diretamente no servidor.'}</p>
         {paymentReturn.paid && paymentReturn.paymentId && <p className="cat-muted">ID do pagamento: <strong>{paymentReturn.paymentId}</strong></p>}
-        {paymentReturn.paid && paymentReturn.proofUrl && <a className="cat-btn" href={paymentReturn.proofUrl} target="_blank" rel="noopener noreferrer">Abrir comprovante</a>}
+        {paymentReturn.paid && paymentReturn.proofUrl && <a className="cat-btn" href={paymentReturn.proofUrl} download={`comprovante-${paymentReturn.code}`}>Baixar comprovante</a>}
         {paymentReturn.error && <p className="cat-muted">{paymentReturn.error} Atualize esta página para consultar novamente.</p>}
         <button type="button" className="cat-btn cat-btn-ghost" onClick={onBack}>Voltar ao catálogo</button>
       </section>

@@ -65,13 +65,20 @@ export async function createOnlineCheckout(order, slug) {
 }
 
 async function markPaid(order, { paymentId, proofUrl }) {
+  const validProofUrl = safeUrl(proofUrl);
   await prisma.order.updateMany({
-    where: { id: order.id, paymentStatus: { not: 'paid' } },
+    where: {
+      id: order.id,
+      OR: [
+        { paymentStatus: { not: 'paid' } },
+        ...(validProofUrl ? [{ paymentProofUrl: null }] : []),
+      ],
+    },
     data: {
       paymentStatus: 'paid',
       paymentProvider: 'infinitepay',
       paymentId: String(paymentId || order.paymentId || ''),
-      paymentProofUrl: safeUrl(proofUrl) || null,
+      ...(validProofUrl ? { paymentProofUrl: validProofUrl } : {}),
       paidAt: new Date(),
     },
   });
@@ -90,14 +97,17 @@ async function verifyInfinitePay(order, data = {}) {
     slug: invoiceSlug,
   });
   if (!result.paid || result.amount !== order.totalCents) return false;
-  await markPaid(order, { paymentId: transactionNsu, proofUrl: result.receiptUrl });
+  await markPaid(order, {
+    paymentId: transactionNsu,
+    proofUrl: result.receiptUrl || data.receipt_url || data.receiptUrl || data.receipt?.url || data.receipt,
+  });
   return true;
 }
 
 export async function verifyOrderPayment(order, query = {}) {
-  if (order.paymentStatus === 'paid') return true;
+  if (order.paymentStatus === 'paid' && order.paymentProofUrl) return true;
   if (order.paymentProvider === 'infinitepay') return verifyInfinitePay(order, query);
-  return false;
+  return order.paymentStatus === 'paid';
 }
 
 export async function handleInfinitePayWebhook(body) {

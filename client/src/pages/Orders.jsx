@@ -177,7 +177,7 @@ export default function Orders({ allow }) {
                 <p className="od-deliv">{deliveryText(o)}</p>
                 <ul className="od-items">{o.items.map((i, n) => <li key={n}><span>{i.qty}× {i.name}{i.variation ? ` (${i.variation})` : ''}</span><span>{brl(i.totalCents)}</span></li>)}</ul>
                 {o.notes && <p className="od-notes"><Icon name="note" size={14} /> {o.notes}</p>}
-                {o.paymentStatus === 'paid' && <p className="muted small">Pagamento confirmado{ o.paymentId ? ` · ID ${o.paymentId}` : ''}{o.paidAt ? ` · ${dateTimeBR(o.paidAt)}` : ''}{o.paymentProofUrl ? <> · <a href={o.paymentProofUrl} target="_blank" rel="noopener noreferrer">Ver comprovante</a></> : ''}</p>}
+                {o.paymentStatus === 'paid' && <p className="muted small">Pagamento confirmado{o.paymentId ? ` · ID ${o.paymentId}` : ''}{o.paidAt ? ` · ${dateTimeBR(o.paidAt)}` : ''}{o.paymentProofUrl ? <> · <a href={o.paymentProofUrl} download={`comprovante-${o.code}`}>Baixar comprovante</a></> : ' · Comprovante ainda não disponibilizado pela InfinitePay.'}</p>}
                 <div className="od-total"><span>Subtotal {brl(o.subtotalCents)}</span><span>{o.deliveryType === 'excursao' ? 'Frete a combinar' : `Frete ${brl(o.shippingCents)}${o.deliveryType === 'correios' ? ' (SuperFrete)' : ''}`}</span><strong>Total {brl(o.totalCents)}{o.deliveryType === 'excursao' ? ' + frete' : ''}</strong></div>
                 {!isLog && <div className="od-actions">
                   <a className="btn btn-primary btn-sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16} /> Chamar no WhatsApp</a>
