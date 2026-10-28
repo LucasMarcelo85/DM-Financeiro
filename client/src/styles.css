@@ -1442,6 +1442,14 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .nw-footer { position: sticky; bottom: .5rem; z-index: 5; display: flex; align-items: center; justify-content: space-between; gap: .75rem; width: 100%; padding: .75rem; border: 1px solid var(--line); border-radius: .9rem; background: rgba(255,255,255,.96); box-shadow: 0 -4px 24px rgba(15,34,56,.09); backdrop-filter: blur(10px); }
 .nw-footer > span { color: var(--muted); font-size: .82rem; }
 .cat-btn.is-disabled { opacity: .55; cursor: not-allowed; }
+.nw-contact-settings { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .85rem; padding: 1rem; border: 1px solid var(--line); border-radius: .85rem; background: #f7f9fc; }
+.nw-contact-settings > div { display: grid; gap: .3rem; min-width: 0; }
+.nw-contact-settings > div > strong { color: var(--ink); }
+.nw-contact-settings > div > p, .nw-contact-settings > div > small { color: var(--muted); font-size: .82rem; }
+.nw-contact-settings .nw-configured { color: var(--green-d); font-weight: 700; }
+.nw-contact-settings .nw-needs-config { color: var(--bronze); font-weight: 700; }
+.nw-contact-icon { display: grid; place-items: center; width: 2.7rem; height: 2.7rem; border-radius: .8rem; background: var(--green-soft); color: var(--green-d); }
+.nw-site-whatsapp { max-width: 38rem; padding: 1rem; border: 1px solid var(--line); border-radius: .85rem; background: #f7f9fc; }
 @media (max-width: 58rem) {
   .nw-identity-layout, .nw-commerce-layout { grid-template-columns: minmax(0, 1fr); }
   .nw-live-preview, .nw-product-preview-panel { position: static; }
@@ -1466,13 +1474,14 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .nw-color-grid { grid-template-columns: minmax(0, 1fr); }
   .nw-preset-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .nw-card-colors { grid-template-columns: minmax(0, 1fr); }
+  .nw-contact-settings { grid-template-columns: auto minmax(0, 1fr); align-items: start; }
+  .nw-contact-settings > .btn { grid-column: 1 / -1; width: 100%; }
   .nw-product-preview.is-horizontal .nw-product-art { flex-basis: 36%; min-height: 12rem; }
   .nw-ready-card { grid-template-columns: minmax(0, 1fr); }
   .nw-ready-card .nw-preview { max-width: 22rem; width: 100%; margin-inline: auto; }
   .nw-footer { bottom: .35rem; padding: .55rem; }
   .nw-footer .btn { min-height: 2.6rem; padding-inline: .7rem; font-size: .86rem; }
 }
-
 /* ---------- Pedidos ---------- */
 .od-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; }
 .od-card { display: grid; gap: 0.6rem; padding: 1rem 1.1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }

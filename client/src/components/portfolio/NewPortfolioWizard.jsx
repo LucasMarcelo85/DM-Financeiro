@@ -1,6 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { Link } from 'react-router-dom';
 import Icon from '../Icon.jsx';
+import { api } from '../../api.js';
+import CatalogSettings from '../CatalogSettings.jsx';
+import { useToast } from '../Toast.jsx';
+import { formatStoredPhone, maskPhone } from '../../lib/format.js';
 import { THEME_PRESETS } from '../../lib/portfolio/model.js';
 
 const TYPES = [
@@ -55,6 +59,7 @@ function ColorInput({ label, value, onChange }) {
 }
 
 export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate }) {
+  const toast = useToast();
   const [step, setStep] = useState(0);
   const [typeId, setTypeId] = useState('services');
   const [name, setName] = useState('');
@@ -70,8 +75,23 @@ export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate 
   const [cartLayout, setCartLayout] = useState('standard');
   const [cardColors, setCardColors] = useState({ bg: '#ffffff', text: '#14202e', accent: '#137a52' });
   const [cardInfo, setCardInfo] = useState({ showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showButton: true });
+  const [siteWhatsapp, setSiteWhatsapp] = useState('');
+  const [catalogWhatsapp, setCatalogWhatsapp] = useState('');
+  const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
+  const [catalogSettingsLoading, setCatalogSettingsLoading] = useState(false);
+  const [catalogSettingsError, setCatalogSettingsError] = useState('');
 
   const type = TYPES.find((item) => item.id === typeId) || TYPES[1];
+  useEffect(() => {
+    if (!catalogOk) return undefined;
+    let active = true;
+    setCatalogSettingsLoading(true);
+    api.get('/catalog/settings')
+      .then(({ config }) => { if (active) setCatalogWhatsapp(formatStoredPhone(config.whatsapp || '')); })
+      .catch((error) => { if (active) { setCatalogSettingsError(error.message); toast(error.message, 'error'); } })
+      .finally(() => { if (active) setCatalogSettingsLoading(false); });
+    return () => { active = false; };
+  }, [catalogOk, toast]);
   const updateTheme = (key, value) => {
     setTheme((current) => ({ ...current, [key]: value }));
     setThemePreset('');
@@ -88,6 +108,8 @@ export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate 
       template: type.template,
       name: name.trim() || type.title,
       theme,
+      whatsapp: siteWhatsapp.replace(/\D/g, ''),
+      catalogWhatsapp: catalogWhatsapp.replace(/\D/g, ''),
       catalog: type.catalog ? {
         orderMode,
         display,
@@ -167,7 +189,7 @@ export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate 
                 <div className="nw-commerce-options">
                   <fieldset className="nw-option-section"><legend>Como seus clientes vão fazer o pedido?</legend><div className="nw-choice-grid grid grid-cols-1 gap-3 md:grid-cols-2">
                     <OptionCard checked={orderMode === 'cart'} title="Carrinho e finalização" description="O cliente escolhe produtos, informa a entrega e envia o pedido." onClick={() => setOrderMode('cart')}><span className="nw-option-detail"><Icon name="cart" size={16} /> Ideal para pedidos organizados.</span></OptionCard>
-                    <OptionCard checked={orderMode === 'direct'} title="Pedido direto pelo WhatsApp" description="O cliente escolhe a opção do produto e envia a mensagem para sua loja." onClick={() => setOrderMode('direct')}><span className="nw-option-detail"><Icon name="chat" size={16} /> Configure o WhatsApp da loja no editor.</span></OptionCard>
+                    <OptionCard checked={orderMode === 'direct'} title="Pedido direto pelo WhatsApp" description="O cliente escolhe a opção do produto e envia a mensagem para sua loja." onClick={() => setOrderMode('direct')}><span className="nw-option-detail"><Icon name="chat" size={16} /> Configure o número logo abaixo.</span></OptionCard>
                   </div></fieldset>
                   <fieldset className="nw-option-section"><legend>Como organizar os produtos?</legend><div className="nw-choice-grid">
                     <OptionCard checked={display === 'category'} title="Separados por categoria" description="Cada categoria ganha seu próprio título." onClick={() => setDisplay('category')} />
@@ -210,6 +232,29 @@ export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate 
             ) : (
               <div className="nw-ready-card"><MiniPreview type={type} theme={theme} /><div><strong>{name.trim() || type.title}</strong><p>O editor já inclui os blocos principais deste modelo. Você poderá adicionar menus, imagens, vídeos, carrosséis e seções extras.</p></div></div>
             )}
+            {type.catalog ? (
+              <section className="nw-contact-settings">
+                <span className="nw-contact-icon"><Icon name="chat" size={20} /></span>
+                <div><strong>WhatsApp e entregas da loja</strong>
+                  <p>{orderMode === 'cart' ? 'Configure o número que receberá o resumo do pedido e as formas de entrega.' : 'Configure o número que abrirá quando o cliente pedir um produto.'}</p>
+                  {catalogSettingsError && <small className="form-error">{catalogSettingsError}</small>}
+                  {catalogSettingsLoading ? <small className="muted">Verificando as configurações atuais...</small> : (
+                    <small className={catalogWhatsapp.replace(/\D/g, '').length >= 10 ? 'nw-configured' : 'nw-needs-config'}>
+                      {catalogWhatsapp.replace(/\D/g, '').length >= 10 ? `WhatsApp configurado: ${catalogWhatsapp}` : orderMode === 'cart' ? 'Defina o número de WhatsApp junto às formas de entrega e frete.' : 'Defina o número que receberá os pedidos no WhatsApp.'}
+                    </small>
+                  )}
+                </div>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={() => setCatalogSettingsOpen(true)} disabled={catalogSettingsLoading}>
+                  {catalogWhatsapp.replace(/\D/g, '').length >= 10 ? 'Editar número e entregas' : 'Configurar número e entregas'}
+                </button>
+              </section>
+            ) : (
+              <label className="field nw-site-whatsapp"><span>WhatsApp para contato</span>
+                <input className="input" type="tel" inputMode="tel" autoComplete="tel" value={siteWhatsapp} onChange={(event) => setSiteWhatsapp(maskPhone(event.target.value))} placeholder="(85) 99999-9999" />
+                <small>Este número será usado nos botões de WhatsApp do seu site. Inclua o DDD.</small>
+                {siteWhatsapp.replace(/\D/g, '').length > 0 && siteWhatsapp.replace(/\D/g, '').length < 10 && <small className="form-error">Informe um telefone com DDD e 10 ou 11 dígitos.</small>}
+              </label>
+            )}
           </section>
         )}
       </main>
@@ -219,8 +264,15 @@ export default function NewPortfolioWizard({ catalogOk, busy, onClose, onCreate 
         <span>{step + 1} de {STEPS.length}</span>
         {step < STEPS.length - 1
           ? <button type="button" className="btn btn-primary" onClick={() => setStep((current) => current + 1)}>Continuar <Icon name="right" size={16} /></button>
-          : <button type="button" className="btn btn-primary" onClick={submit} disabled={busy}>{busy ? 'Criando página...' : 'Criar e abrir o editor'} <Icon name="right" size={16} /></button>}
+          : <button type="button" className="btn btn-primary" onClick={submit}
+            disabled={busy || (type.catalog ? catalogSettingsLoading || catalogWhatsapp.replace(/\D/g, '').length < 10 : siteWhatsapp.replace(/\D/g, '').length < 10)}>
+            {busy ? 'Criando página...' : 'Criar e abrir o editor'} <Icon name="right" size={16} />
+          </button>}
       </footer>
+      {catalogSettingsOpen && <CatalogSettings onClose={() => setCatalogSettingsOpen(false)} onSaved={(result) => {
+        setCatalogWhatsapp(formatStoredPhone(result.config.whatsapp || ''));
+        setCatalogSettingsError('');
+      }} />}
     </section>
   );
 }

@@ -102,6 +102,23 @@ export default function Portfolios() {
       const doc = buildTemplate(options.template, user.name);
       doc.theme = { ...doc.theme, ...options.theme };
       doc.seo = { ...doc.seo, title: options.name };
+      const whatsapp = options.catalog ? options.catalogWhatsapp : options.whatsapp;
+      if (whatsapp) {
+        doc.elements = doc.elements.map((element) => {
+          if (element.t !== 'button') return element;
+          const directCatalogButton = options.catalog?.orderMode === 'direct' && ['cart', 'bag'].includes(element.icon);
+          if (element.link?.kind !== 'whatsapp' && !directCatalogButton) return element;
+          return {
+            ...element,
+            link: directCatalogButton
+              ? { ...element.link, kind: 'whatsapp', phone: whatsapp }
+              : { ...element.link, phone: whatsapp },
+            ...(directCatalogButton
+              ? { label: 'Pedir pelo WhatsApp', icon: 'zap' }
+              : {}),
+          };
+        });
+      }
       if (doc.kind === 'catalog' && options.catalog) {
         doc.catalog = {
           ...doc.catalog,

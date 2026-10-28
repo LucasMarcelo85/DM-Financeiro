@@ -3,14 +3,14 @@ import { api } from '../api.js';
 import Modal from './Modal.jsx';
 import { Check, Seg, TextField } from './portfolio/Fields.jsx';
 import { useToast } from './Toast.jsx';
-import { brl, centsToMasked, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
+import { brl, centsToMasked, formatStoredPhone, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
 
 // Entregas e frete do catálogo digital.
 const cepMask = (v) => { const d = v.replace(/\D/g, '').slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
 const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
 const toForm = (c) => ({
-  storeName: c.storeName, whatsapp: c.whatsapp ? maskPhone(c.whatsapp) : '',
+  storeName: c.storeName, whatsapp: c.whatsapp ? formatStoredPhone(c.whatsapp) : '',
   checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
   pickup: { ...c.pickup },
   excursion: { ...c.excursion },
@@ -85,7 +85,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
       footer={<><button className="btn btn-ghost" onClick={onClose}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar'}</button></>}>
       <div className="form cs-form">
         <TextField label="Nome da loja" value={f.storeName} onChange={setTop('storeName')} maxLength={80} id="cs-store" />
-        <TextField label="WhatsApp da loja (opcional)" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Depois do pedido, o cliente pode enviar o resumo para este número." />
+        <TextField label="WhatsApp da loja" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Após finalizar o pedido, o cliente poderá enviar o resumo para este número. Inclua o DDD." />
         <fieldset className="cs-box">
           <strong>Regras mínimas para finalizar um pedido</strong>
           <div className="grid-2">

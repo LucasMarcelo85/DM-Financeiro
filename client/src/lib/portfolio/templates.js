@@ -1,7 +1,7 @@
 // Pontos de partida do portfólio. São exemplos: o usuário troca textos, cores, imagens e links no editor e arrasta tudo para onde quiser.
 // Cada modelo é desenhado no computador; tablet e celular nascem já ajustados (proporcional ou em coluna) e podem ser refinados à parte.
 import { THEME_PRESETS } from './model.js';
-import { FILL0, adaptDevice, blankDoc, newElement, stackDevice } from './doc.js';
+import { DESIGN_W, FILL0, adaptDevice, blankDoc, newElement } from './doc.js';
 
 const preset = (key) => { const { primary, bg, text } = THEME_PRESETS.find((p) => p.key === key); return { primary, bg, text }; };
 const wa = (message = 'Olá! Vi sua página e gostaria de saber mais.') => ({ kind: 'whatsapp', url: '', phone: '', message, email: '' });
@@ -21,10 +21,82 @@ export const CATALOG_TEMPLATES = [
 ];
 export const TEMPLATES = [...SITE_TEMPLATES, ...CATALOG_TEMPLATES];
 
-// Deixa tablet (proporcional) e celular (em coluna) prontos a partir do desenho do computador.
-function finish(doc) {
+function setMobileBox(doc, index, box) {
+  const element = doc.elements[index];
+  if (!element) return;
+  element.box.mobile = { ...element.box.mobile, ...box, r: 0, hide: false };
+}
+
+function hideOnMobile(doc, ...indices) {
+  for (const index of indices) {
+    const element = doc.elements[index];
+    if (element) element.box.mobile = { ...element.box.mobile, hide: true };
+  }
+}
+
+function mobileLayout(doc, key) {
+  const W = DESIGN_W.mobile;
+  if (key === 'links') {
+    setMobileBox(doc, 0, { x: 137, y: 28, w: 100, h: 100 });
+    setMobileBox(doc, 1, { x: 147, y: 38, w: 80, h: 80 });
+    setMobileBox(doc, 2, { x: 24, y: 154, w: W - 48, h: 58, fs: 27 });
+    setMobileBox(doc, 3, { x: 30, y: 218, w: W - 60, h: 92, fs: 16 });
+    [4, 5, 6].forEach((index, i) => setMobileBox(doc, index, { x: 30, y: 326 + i * 64, w: W - 60, h: 52, fs: 16 }));
+    doc.heights.mobile = 550;
+  } else if (key === 'services') {
+    setMobileBox(doc, 0, { x: 0, y: 0, w: W, h: 320 });
+    hideOnMobile(doc, 1, 2);
+    setMobileBox(doc, 3, { x: 24, y: 68, w: W - 48, h: 76, fs: 34 });
+    setMobileBox(doc, 4, { x: 28, y: 150, w: W - 56, h: 58, fs: 17 });
+    setMobileBox(doc, 5, { x: 42, y: 228, w: W - 84, h: 52, fs: 16 });
+    setMobileBox(doc, 6, { x: 24, y: 354, w: W - 48, h: 44, fs: 28 });
+    setMobileBox(doc, 7, { x: 28, y: 405, w: W - 56, h: 88, fs: 16 });
+    for (let card = 0; card < 3; card += 1) {
+      const start = 8 + card * 4;
+      const y = 520 + card * 238;
+      setMobileBox(doc, start, { x: 20, y, w: W - 40, h: 218 });
+      setMobileBox(doc, start + 1, { x: 40, y: y + 20, w: 54, h: 54 });
+      setMobileBox(doc, start + 2, { x: 40, y: y + 88, w: W - 80, h: 34, fs: 20 });
+      setMobileBox(doc, start + 3, { x: 40, y: y + 130, w: W - 80, h: 72, fs: 14 });
+    }
+    setMobileBox(doc, 20, { x: 24, y: 1270, w: W - 48, h: 48, fs: 27 });
+    setMobileBox(doc, 21, { x: 42, y: 1334, w: W - 84, h: 52, fs: 16 });
+    doc.heights.mobile = 1420;
+  } else if (key === 'catalog' || key === 'catalog-bold') {
+    setMobileBox(doc, 0, { x: 0, y: 0, w: W, h: 285 });
+    if (key === 'catalog') {
+      setMobileBox(doc, 1, { x: 28, y: 32, w: 76, h: 76 });
+      setMobileBox(doc, 2, { x: 24, y: 116, w: W - 48, h: 54, fs: 32 });
+      setMobileBox(doc, 3, { x: 26, y: 174, w: W - 52, h: 55, fs: 16 });
+      setMobileBox(doc, 4, { x: 36, y: 236, w: W - 72, h: 44, fs: 15 });
+    } else {
+      hideOnMobile(doc, 1, 2);
+      setMobileBox(doc, 3, { x: 24, y: 60, w: W - 48, h: 62, fs: 34 });
+      setMobileBox(doc, 4, { x: 26, y: 130, w: W - 52, h: 56, fs: 16 });
+      setMobileBox(doc, 5, { x: 36, y: 204, w: W - 72, h: 48, fs: 15 });
+    }
+    doc.heights.mobile = 300;
+  } else if (key === 'catalog-minimal') {
+    setMobileBox(doc, 0, { x: 18, y: 24, w: W - 36, h: 205 });
+    setMobileBox(doc, 1, { x: 36, y: 48, w: W - 72, h: 54, fs: 30 });
+    setMobileBox(doc, 2, { x: 36, y: 106, w: W - 72, h: 55, fs: 15 });
+    setMobileBox(doc, 3, { x: 50, y: 169, w: W - 100, h: 44, fs: 15 });
+    doc.heights.mobile = 255;
+  } else if (key === 'catalog-editorial') {
+    setMobileBox(doc, 0, { x: 0, y: 0, w: W, h: 286 });
+    hideOnMobile(doc, 1);
+    setMobileBox(doc, 2, { x: 24, y: 38, w: W - 48, h: 26, fs: 12 });
+    setMobileBox(doc, 3, { x: 24, y: 76, w: W - 48, h: 80, fs: 34 });
+    setMobileBox(doc, 4, { x: 26, y: 164, w: W - 52, h: 52, fs: 16 });
+    setMobileBox(doc, 5, { x: 36, y: 226, w: W - 72, h: 48, fs: 15 });
+    doc.heights.mobile = 300;
+  }
+}
+
+// Tablet acompanha o desenho amplo; celular recebe um arranjo próprio para manter os elementos legíveis.
+function finish(doc, key) {
   let d = adaptDevice(doc, 'desktop', 'tablet');
-  d = stackDevice(d, 'mobile');
+  mobileLayout(d, key);
   return { ...d, manual: { tablet: true, mobile: true } };
 }
 
@@ -141,5 +213,5 @@ export function buildTemplate(key, name = 'Sua empresa') {
       E('button', { label: 'Abrir sacola', link: url(), icon: 'bag', style: 'outline', color: '#f6f0e8', textColor: '#f6f0e8', radius: 999, box: box(840, 112, 245, 58, 17), anim: { enter: 'zoom-in', delay: 260 } }),
     ];
   }
-  return key === 'blank' ? doc : finish(doc);
+  return key === 'blank' ? doc : finish(doc, key);
 }

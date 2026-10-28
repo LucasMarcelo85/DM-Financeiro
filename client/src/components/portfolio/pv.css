@@ -214,6 +214,12 @@
 .pv-card.ratio-custom .pv-card-img { aspect-ratio: auto; height: var(--img-h, 180px); flex: none; }
 .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: 0 0 42%; height: auto; min-height: var(--img-h, 180px); }
 .pv-card-img { flex: none; }
+@media (max-width: 600px) {
+  .pv-card.is-horizontal { flex-direction: column; }
+  .pv-card.is-horizontal .pv-card-img,
+  .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: none; aspect-ratio: 1 / 1; min-height: 0; height: auto; }
+  .pv-card.is-horizontal .pv-card-body { align-content: start; }
+}
 
 /* ---------- rodapé discreto (em toda página) ---------- */
 .pv-credit { position: relative; z-index: 1; flex: none; padding: 14px 16px 18px; text-align: center; font: 400 11.5px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .01em; color: var(--credit, #14202e); opacity: .62; }
