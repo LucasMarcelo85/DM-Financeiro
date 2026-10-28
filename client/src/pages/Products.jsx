@@ -159,8 +159,8 @@ export default function Products() {
                 <label className="pr-switch" title={p.active ? 'Visível no catálogo' : 'Escondido do catálogo'}>
                   <input type="checkbox" checked={p.active} onChange={() => toggle(p)} /><span>{p.active ? 'Ativo' : 'Inativo'}</span>
                 </label>
-                <button className="icon-btn" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`} title="Editar"><Icon name="edit" size={17} /></button>
-                {!shop && <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /></button>}
+                <button type="button" className="icon-btn pr-card-action" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`} title="Editar"><Icon name="edit" size={17} /><span>Editar</span></button>
+                {!shop && <button type="button" className="icon-btn icon-btn-danger pr-card-action" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /><span>Excluir</span></button>}
               </div>
             </li>
           ))}

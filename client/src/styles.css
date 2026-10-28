@@ -436,9 +436,8 @@ button.fat-card:hover { border-color: #b9c4d2; }
   .nav::-webkit-scrollbar { display: none; }
   .nav-link { flex: 1 0 auto; min-width: 3.6rem; flex-direction: column; justify-content: center; gap: 0.15rem; padding: 0.5rem 0.6rem; font-size: 0.7rem; text-align: center; }
   .nav-link.is-locked svg:last-child { display: none; }
-  .page { padding-bottom: 6rem; }
+  .page { padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
   .toasts { bottom: 5rem; }
-
   .auth { grid-template-columns: minmax(0, 1fr); }
   .auth-aside { display: none; }
   .auth-mobile-brand { display: block; }
@@ -1138,19 +1137,32 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 /* ---------- Produtos / serviços ---------- */
 .pr-filters, .od-bar { display: flex; gap: 0.6rem; flex-wrap: wrap; align-items: center; margin-bottom: 1rem; }
 .pr-filters .input { flex: 1 1 11rem; min-width: 0; } .od-bar .input { flex: 1 1 12rem; min-width: 0; }
-.pr-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fill, minmax(min(var(--pr-card-width, 208px), 100%), 1fr)); }
-.pr-card { display: grid; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
+.pr-grid { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.9rem; grid-template-columns: repeat(auto-fill, minmax(min(var(--pr-card-width, 208px), 100%), 1fr)); align-items: stretch; }
+.pr-card { display: grid; grid-template-rows: auto 1fr auto; min-width: 0; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); overflow: hidden; }
 .pr-card.is-off { opacity: 0.6; }
-.pr-img { position: relative; display: grid; place-items: center; height: var(--pr-image-height, 150px); background: #eef2f6; border: 0; padding: 0; cursor: pointer; color: var(--muted); }
-.pr-img img { width: 100%; height: 100%; object-fit: cover; display: block; }
+.pr-img { position: relative; display: grid; place-items: center; width: 100%; height: var(--pr-image-height, 150px); overflow: hidden; background: linear-gradient(145deg, #f8fafc, #edf2f7); border: 0; padding: 0.55rem; cursor: pointer; color: var(--muted); }
+.pr-img img { width: 100%; height: 100%; object-fit: contain; display: block; }
 .pr-var { position: absolute; left: 6px; bottom: 6px; background: rgba(20, 32, 46, .78); color: #fff; font-size: 0.7rem; font-weight: 700; padding: 0.1rem 0.5rem; border-radius: 99px; }
-.pr-body { display: grid; gap: 0.15rem; padding: 0.7rem 0.8rem 0.3rem; }
+.pr-body { display: grid; align-content: start; gap: 0.25rem; min-width: 0; padding: 0.8rem 0.85rem 0.55rem; }
 .pr-body strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .pr-cat { display: flex; justify-content: space-between; gap: 0.4rem; font-size: 0.72rem; font-weight: 700; text-transform: uppercase; letter-spacing: 0.04em; color: var(--muted); }
 .pr-cat em { font-style: normal; color: var(--blue); }
 .pr-price { font-weight: 800; color: var(--green-d); }
-.pr-actions { display: flex; align-items: center; gap: 0.3rem; padding: 0.4rem 0.6rem 0.7rem; }
+.pr-actions { display: flex; align-items: center; gap: 0.3rem; min-width: 0; padding: 0.45rem 0.65rem 0.7rem; border-top: 1px solid #eef1f5; }
 .pr-switch { flex: 1; display: inline-flex; align-items: center; gap: 0.4rem; font-size: 0.82rem; font-weight: 600; cursor: pointer; }
+.pr-card-action { flex: none; }
+.pr-card-action > span { display: none; }
+@media (max-width: 52rem) {
+  .page.page-wide { padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
+  .pr-grid { grid-template-columns: repeat(auto-fill, minmax(min(var(--pr-card-width, 208px), 100%), 1fr)); gap: 0.75rem; }
+  .pr-card { border-radius: 0.9rem; }
+  .pr-img { height: min(var(--pr-image-height, 150px), 11rem); padding: 0.75rem; }
+  .pr-body { padding: 0.7rem 0.75rem 0.5rem; }
+  .pr-actions { flex-wrap: wrap; gap: 0.4rem; padding: 0.55rem 0.65rem; }
+  .pr-switch { min-width: 5rem; }
+  .pr-card-action { width: auto; min-width: 2.5rem; height: 2.5rem; padding: 0 0.55rem; border: 1px solid var(--line); border-radius: 0.55rem; background: #fff; gap: 0.35rem; }
+  .pr-card-action > span { display: inline; font-size: 0.78rem; font-weight: 650; }
+}
 .pr-form { gap: 0.9rem; }
 .pr-wizard-head { display: grid; gap: 0.45rem; }
 .pr-wizard-steps { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 0.4rem; }
