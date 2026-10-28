@@ -7,46 +7,13 @@ import StoreAppModal from '../components/StoreAppModal.jsx';
 import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
+import NewPortfolioWizard from '../components/portfolio/NewPortfolioWizard.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { dateBR, plural } from '../lib/format.js';
 import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
-import { CATALOG_TEMPLATES, SITE_TEMPLATES, TEMPLATES, buildTemplate } from '../lib/portfolio/templates.js';
-
-function TemplateGroup({ title, hint, list, value, onPick, disabled }) {
-  return (
-    <fieldset className="field" disabled={disabled}>
-      <legend>{title}</legend>
-      {hint && <small className="ct-group-hint">{hint}</small>}
-      <div className="ct-templates">
-        {list.map((t) => (
-          <label key={t.key} className={`ct-template ${value === t.key ? 'is-on' : ''} ${disabled ? 'is-locked' : ''}`}>
-            <input type="radio" name="ptpl" value={t.key} checked={value === t.key} onChange={() => onPick(t.key)} />
-            <strong>{t.label}</strong>
-            <span className="muted small">{t.desc}</span>
-          </label>
-        ))}
-      </div>
-    </fieldset>
-  );
-}
-
-function NewPageModal({ onClose, onCreate, busy, catalogOk }) {
-  const [key, setKey] = useState('services');
-  const [name, setName] = useState('');
-  return (
-    <Modal title="Nova página" onClose={busy ? () => {} : onClose} wide
-      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={() => onCreate(key, name)} disabled={busy}>{busy ? 'Criando...' : 'Criar e editar'}</button></>}>
-      <label className="field"><span>Nome da página</span><input className="input" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} placeholder="Ex.: Apresentação da empresa" autoFocus /></label>
-      <TemplateGroup title="Página livre" list={SITE_TEMPLATES} value={key} onPick={setKey} />
-      <TemplateGroup title="Catálogo digital" list={CATALOG_TEMPLATES} value={key} onPick={setKey} disabled={!catalogOk}
-        hint={catalogOk ? 'Vitrine de produtos com carrinho e pedido: duas páginas (início e carrinho), entrega por excursão, motoboy ou Correios.' : 'O seu plano não inclui o catálogo digital. Veja os planos para liberar.'} />
-      {!catalogOk && <Link className="btn btn-ghost btn-sm" to="/plano" onClick={onClose}>Ver planos com catálogo</Link>}
-      <small>Tudo pode ser trocado no editor: arraste elementos, mude cores, imagens, ícones, botões, animações e formatos.</small>
-    </Modal>
-  );
-}
+import { buildTemplate } from '../lib/portfolio/templates.js';
 
 function DomainCard({ domain, onChange, locked }) {
   const toast = useToast();
@@ -129,12 +96,20 @@ export default function Portfolios() {
   const count = data?.used ?? data?.portfolios.length ?? 0;
   const full = data && count >= data.limit;
 
-  async function create(key, name) {
+  async function create(options) {
     setBusy('create');
     try {
-      const tpl = TEMPLATES.find((t) => t.key === key);
-      const doc = buildTemplate(key, user.name);
-      const { portfolio } = await api.post('/portfolios', { name: name.trim() || tpl.label, kind: doc.kind, data: doc });
+      const doc = buildTemplate(options.template, user.name);
+      doc.theme = { ...doc.theme, ...options.theme };
+      doc.seo = { ...doc.seo, title: options.name };
+      if (doc.kind === 'catalog' && options.catalog) {
+        doc.catalog = {
+          ...doc.catalog,
+          ...options.catalog,
+          card: { ...doc.catalog.card, ...options.catalog.card },
+        };
+      }
+      const { portfolio } = await api.post('/portfolios', { name: options.name, kind: doc.kind, data: doc });
       nav(`/portfolio/${portfolio.id}`);
     } catch (e) { toast(e.message, 'error'); setBusy(''); }
   }
@@ -198,6 +173,17 @@ export default function Portfolios() {
   }
 
   const base = data ? pageUrl(`/${data.userSlug}`, data.domain?.verified ? `https://${data.domain.name}` : '').replace(/^https?:\/\//, '') : '';
+
+  if (newOpen) {
+    return (
+      <NewPortfolioWizard
+        catalogOk={(data?.catalogProducts ?? 0) > 0}
+        busy={busy === 'create'}
+        onClose={() => setNewOpen(false)}
+        onCreate={create}
+      />
+    );
+  }
 
   return (
     <>
@@ -280,7 +266,6 @@ export default function Portfolios() {
         </ul>
       )}
 
-      {newOpen && <NewPageModal busy={busy === 'create'} catalogOk={(data?.catalogProducts ?? 0) > 0} onClose={() => setNewOpen(false)} onCreate={create} />}
       {sharing && <ShareModal name={sharing.name} path={sharing.path} customUrl={sharing.customUrl} published={sharing.published} busy={publishing} onPublish={() => publish(sharing)} onClose={() => setSharing(null)} />}
 
       {confirmDel && (

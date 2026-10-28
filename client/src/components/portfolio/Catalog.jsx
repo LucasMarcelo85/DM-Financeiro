@@ -89,7 +89,7 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 );
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
-function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [] }) {
+function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], directOrder = false, storeWhatsapp = '', onDirectOrder }) {
   const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
   const [qty, setQty] = useState(1);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
@@ -107,6 +107,15 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
   const stockQuantity = selectedVariation ? selectedVariation.stockQuantity : p.images.length ? 99 : p.stockQuantity;
   const inCart = cartItems.filter((item) => item.productId === p.id && (item.imageId === (selectedVariation?.id || null) || (!selectedVariation && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
   const maxQty = p.stockEnabled ? Math.max(0, stockQuantity - inCart) : 99;
+  const phone = String(storeWhatsapp || '').replace(/\D/g, '');
+  const whatsapp = phone.length === 10 || phone.length === 11 ? `55${phone}` : phone;
+  const directMessage = [
+    `Olá! Tenho interesse em: ${p.name}`,
+    selectedVariation?.label ? `Variação: ${selectedVariation.label}` : '',
+    `Quantidade: ${qty}`,
+    `Valor unitário: ${unit > 0 ? brl(unit) : 'sob consulta'}`,
+  ].filter(Boolean).join('\n');
+  const directUrl = /^55\d{10,11}$/.test(whatsapp) ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(directMessage)}` : '';
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
     document.addEventListener('keydown', onKey);
@@ -143,7 +152,19 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
             <strong className="cat-price">{unit > 0 ? brl(unit) : 'Sob consulta'}</strong>
             {maxQty > 0 && <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(maxQty, n)))} label="Quantidade" />}
           </div>
-          <button type="button" className="cat-btn" disabled={maxQty < 1 || (p.images.length > 0 && !selectedVariation)} onClick={() => { onAdd(p, selectedVariation, qty); onClose(); }}>{addLabel}</button>
+          {directOrder ? (
+            <a className={`cat-btn${!directUrl || maxQty < 1 || (p.images.length > 0 && !selectedVariation) ? ' is-disabled' : ''}`}
+              href={directUrl || undefined} target="_blank" rel="noopener noreferrer"
+              aria-disabled={!directUrl || maxQty < 1 || (p.images.length > 0 && !selectedVariation)}
+              onClick={(event) => {
+                if (!directUrl || maxQty < 1 || (p.images.length > 0 && !selectedVariation)) { event.preventDefault(); return; }
+                onDirectOrder?.();
+              }}>
+              {directUrl ? addLabel : 'Configure o WhatsApp da loja'}
+            </a>
+          ) : (
+            <button type="button" className="cat-btn" disabled={maxQty < 1 || (p.images.length > 0 && !selectedVariation)} onClick={() => { onAdd(p, selectedVariation, qty); onClose(); }}>{addLabel}</button>
+          )}
         </div>
       </div>
     </div>
@@ -205,6 +226,8 @@ export function CatGridView({ el, device, mode }) {
     const unit = tier ? tier.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
+  const directOrder = cfg.orderMode === 'direct';
+  const trackDirectOrder = () => { if (pixelOn) track('Contact'); };
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
   return (
     <div className="cg-groups" style={{ gap: m.groupGap, pointerEvents: edit ? 'none' : undefined }}>
@@ -214,13 +237,23 @@ export function CatGridView({ el, device, mode }) {
           <div className="cg-grid" style={{ gridTemplateColumns: `repeat(${m.cols}, minmax(0, 1fr))`, gridAutoRows: m.cardH, gap: m.gap }}>
             {g.list.map((p) => (
               <button key={p.id} type="button" className="cat-card" tabIndex={edit ? -1 : undefined} onClick={() => view(p)} aria-label={`Ver ${p.name}`}>
-                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} action={<span className="pv-card-btn">{cfg.addLabel}</span>} />
+                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} action={<span className="pv-card-btn">{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</span>} />
               </button>
             ))}
           </div>
         </div>
       ))}
-      {open && !edit && <ProductModal p={open} addLabel={cfg.addLabel} onAdd={add} onClose={() => setOpen(null)} cartItems={shop?.cart?.items || []} products={products} />}
+      {open && !edit && <ProductModal
+        p={open}
+        addLabel={cfg.addLabel}
+        onAdd={add}
+        onClose={() => setOpen(null)}
+        cartItems={shop?.cart?.items || []}
+        products={products}
+        directOrder={directOrder}
+        storeWhatsapp={shop?.whatsapp}
+        onDirectOrder={trackDirectOrder}
+      />}
     </div>
   );
 }

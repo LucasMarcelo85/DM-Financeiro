@@ -606,6 +606,8 @@ function CatalogSection({ doc, api, categories, meta, products = [] }) {
   return (
     <Section title="Catálogo digital">
       <p className="muted small">Os produtos vêm da aba <strong>Produtos/Serviços</strong>. Os pedidos chegam na aba <strong>Pedidos</strong>.</p>
+      <Seg label="Como o cliente faz o pedido" value={c.orderMode || 'cart'} options={[['cart', 'Carrinho'], ['direct', 'WhatsApp direto']]} onChange={set('orderMode')} id="cc-order-mode" />
+      {c.orderMode === 'direct' && <p className="muted small">O cliente seleciona a variação e a quantidade; o pedido abre pronto para enviar ao WhatsApp da loja. Configure o número abaixo.</p>}
       <Select label="Como mostrar os produtos" value={c.display} options={CATALOG_DISPLAY} onChange={set('display')} />
       {c.display === 'only' && (
         <label className="ce-field">
@@ -623,23 +625,28 @@ function CatalogSection({ doc, api, categories, meta, products = [] }) {
       <CardDesigner doc={doc} api={api} />
       <Check label="Mostrar busca" checked={c.showSearch} onChange={set('showSearch')} />
       <Check label="Mostrar filtro de categorias" checked={c.showCategories} onChange={set('showCategories')} />
-      <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />
-      <TextField label="Título da página do carrinho" value={c.cartTitle} onChange={set('cartTitle')} maxLength={60} id="cc-cart" />
-      <Select label="Layout do carrinho" value={c.cartLayout} options={[['standard', 'Profissional'], ['compact', 'Compacto'], ['split', 'Resumo em destaque']]} onChange={set('cartLayout')} />
-      <TextField label="Identificador do link do carrinho" value={c.cartLink} onChange={(v) => set('cartLink')(v.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24))} maxLength={24} id="cc-cart-link" hint={`Link direto: ${pageUrl(meta.path, meta.customUrl)}?${c.cartLink || 'carrinho'}=1`} />
-      <TextField label="Botão ou link extra no carrinho (opcional)" value={c.cartButtonLabel} onChange={set('cartButtonLabel')} maxLength={40} id="cc-cart-button-label" placeholder="Ex.: Ver ofertas" />
-      <TextField label="Endereço do botão extra" value={c.cartButtonUrl} onChange={set('cartButtonUrl')} maxLength={500} id="cc-cart-button-url" placeholder="https://..." hint="Aceita links http ou https. O botão aparece no carrinho." />
-      <TextField label="Aviso na finalização (opcional)" value={c.checkoutNote} onChange={set('checkoutNote')} multiline rows={2} maxLength={300} id="cc-note" />
-      <button type="button" className="btn btn-ghost btn-sm" onClick={api.openCatalogSettings}>Configurar entregas e frete</button>
+      {c.orderMode === 'direct' ? (
+        <button type="button" className="btn btn-ghost btn-sm" onClick={api.openCatalogSettings}>Configurar WhatsApp da loja</button>
+      ) : (
+        <>
+          <TextField label="Texto do botão de adicionar" value={c.addLabel} onChange={set('addLabel')} maxLength={30} id="cc-add" />
+          <TextField label="Título da página do carrinho" value={c.cartTitle} onChange={set('cartTitle')} maxLength={60} id="cc-cart" />
+          <Select label="Layout do carrinho" value={c.cartLayout} options={[['standard', 'Profissional'], ['compact', 'Compacto'], ['split', 'Resumo em destaque']]} onChange={set('cartLayout')} />
+          <TextField label="Identificador do link do carrinho" value={c.cartLink} onChange={(v) => set('cartLink')(v.toLowerCase().replace(/[^a-z0-9_-]/g, '').slice(0, 24))} maxLength={24} id="cc-cart-link" hint={`Link direto: ${pageUrl(meta.path, meta.customUrl)}?${c.cartLink || 'carrinho'}=1`} />
+          <TextField label="Botão ou link extra no carrinho (opcional)" value={c.cartButtonLabel} onChange={set('cartButtonLabel')} maxLength={40} id="cc-cart-button-label" placeholder="Ex.: Ver ofertas" />
+          <TextField label="Endereço do botão extra" value={c.cartButtonUrl} onChange={set('cartButtonUrl')} maxLength={500} id="cc-cart-button-url" placeholder="https://..." hint="Aceita links http ou https. O botão aparece no carrinho." />
+          <TextField label="Aviso na finalização (opcional)" value={c.checkoutNote} onChange={set('checkoutNote')} multiline rows={2} maxLength={300} id="cc-note" />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={api.openCatalogSettings}>Configurar entregas e frete</button>
+        </>
+      )}
     </Section>
   );
 }
 
-export function PageInspector({ doc, device, meta, api, categories, products = [] }) {
+export function PageInspector({ doc, meta, api, categories, products = [] }) {
   const th = doc.theme;
   const setTheme = (k) => (v, key) => api.patchTheme({ [k]: v }, key || `theme:${k}`);
   const preset = THEME_PRESETS.find((p) => p.primary === th.primary && p.bg === th.bg && p.text === th.text);
-  const setH = (v) => api.heights(device, Math.round(v));
   return (
     <div className="ce-insp">
       <p className="muted small pe-insp-hint">Clique em um elemento para editar. Sem nada selecionado, você ajusta a página inteira.</p>
@@ -667,18 +674,6 @@ export function PageInspector({ doc, device, meta, api, categories, products = [
         <FontSelect label="Fonte padrão dos títulos" value={th.headingFont} onChange={setTheme('headingFont')} />
         <FontSelect label="Fonte padrão dos textos" value={th.bodyFont} onChange={setTheme('bodyFont')} />
         <p className="muted small">As cores e fontes padrão valem para os novos elementos. Os que já estão na página mantêm o que você escolheu neles.</p>
-      </Section>
-      <Section title={`Tamanho da página · ${{ desktop: 'Computador', tablet: 'Tablet', mobile: 'Celular' }[device]}`}>
-        <NumField label="Altura mínima" value={doc.heights[device]} min={200} max={30000} suffix="px" onChange={setH} />
-        <p className="muted small">A página cresce sozinha quando você coloca elementos mais embaixo.</p>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.fitHeight(device)}>Ajustar altura ao conteúdo</button>
-        {device !== 'desktop' && (
-          <div className="pe-tools">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.layout('adapt')}>Ajustar do computador (proporcional)</button>
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.layout('stack')}>Organizar em coluna</button>
-          </div>
-        )}
-        {device !== 'desktop' && <p className="muted small">Pontos de partida: depois é só arrastar cada elemento. Dá para desfazer com Ctrl+Z.</p>}
       </Section>
       {doc.kind === 'catalog' && <CatalogSection doc={doc} api={api} categories={categories} meta={meta} products={products} />}
       <Section title="Pesquisa (Google) e compartilhamento">

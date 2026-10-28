@@ -47,7 +47,7 @@ export const CARD_DEFAULTS = () => ({
 export const CATALOG_DEFAULTS = () => ({
   card: CARD_DEFAULTS(),
   display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
-  addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
+  orderMode: 'cart', addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
   cartButtonLabel: '', cartButtonUrl: '', elementized: false,
 });
 

@@ -11,8 +11,8 @@ import ImageEditor from '../components/portfolio/ImageEditor.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
-  DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, adaptDevice, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc,
-  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, stackDevice, markManual, syncDevices,
+  DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc, pageHeight,
+  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, markManual, syncDevices,
 } from '../lib/portfolio/doc.js';
 import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
@@ -22,6 +22,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
   { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' },
+  { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
@@ -269,6 +270,24 @@ export default function PortfolioEditor() {
     return el;
   }
 
+  function addFooter() {
+    const d = docRef.current;
+    if (d.elements.length + 3 > MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return; }
+    const boxes = Object.fromEntries(DEVICES.map(({ id, w }) => {
+      const y = pageHeight(d, id) + 24;
+      return [id, { x: 0, y, w, h: 144, r: 0, hide: false }];
+    }));
+    const bg = newElement('shape', d.theme, { name: 'Fundo do rodapé', shape: 'rect', full: true, fill: { type: 'solid', c1: '#0f2238', c2: '#0f2238', angle: 135, animate: 'none' }, box: boxes });
+    const textBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: 24, y: boxes[id].y + 28, w: w - 48, h: 30, fs: 15, r: 0, hide: false }]));
+    const text = newElement('text', d.theme, { name: 'Texto do rodapé', text: `© ${nameRef.current} · Todos os direitos reservados`, color: '#ffffff', align: 'center', box: textBoxes });
+    const buttonBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: Math.round((w - 220) / 2), y: boxes[id].y + 76, w: 220, h: 48, fs: 15, r: 0, hide: false }]));
+    const button = newElement('button', d.theme, { name: 'Contato do rodapé', label: 'Fale conosco', style: 'outline', color: '#ffffff', textColor: '#ffffff', radius: 999, link: { kind: 'whatsapp', url: '', phone: '', message: 'Olá! Gostaria de saber mais.' }, box: buttonBoxes });
+    commit({ ...d, manual: { ...d.manual, tablet: true, mobile: true }, elements: [...d.elements, bg, text, button] });
+    setSelectedId(text.id);
+    setPreview(false);
+    setPanelOpen(true);
+  }
+
   async function imageFromFile(file, at) {
     try {
       const { src } = await fitImage(file, 1600);
@@ -281,6 +300,7 @@ export default function PortfolioEditor() {
   }
 
   function addFromPalette(t) {
+    if (t === 'footer') { addFooter(); return; }
     if (t === 'image') { pendingAdd.current = null; fileRef.current?.click(); return; }
     if (t === 'products' && !products.length) toast('Cadastre produtos na aba Produtos/Serviços para escolher aqui.', 'error');
     const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } } : t === 'icon' ? {} : undefined;
@@ -320,21 +340,6 @@ export default function PortfolioEditor() {
     patchSeo: (p, key) => commit(patchSeo(docRef.current, p), key || 'seo'),
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
-    heights: (dv, v) => commit({ ...docRef.current, heights: { ...docRef.current.heights, [dv]: v } }, `height:${dv}`),
-    fitHeight: (dv) => {
-      const d = docRef.current;
-      const height = Math.max(200, Math.ceil(d.elements.reduce((bottom, el) => {
-        const box = boxOf(el, dv);
-        return Math.max(bottom, box.y + box.h);
-      }, 0) + 24));
-      commit({ ...d, heights: { ...d.heights, [dv]: height } }, `height:${dv}`);
-      toast('Altura ajustada ao conteúdo da página.');
-    },
-    layout: (how) => {
-      const d = docRef.current; const dv = deviceRef.current;
-      commit(how === 'adapt' ? { ...adaptDevice(d, 'desktop', dv), manual: { ...d.manual, [dv]: false } } : markManual(stackDevice(d, dv), dv));
-      toast(how === 'adapt' ? 'Layout ajustado a partir do computador. Ele volta a acompanhar o computador.' : 'Elementos organizados em coluna.');
-    },
     act, toast, saveSlug, copyLink,
     error: (m) => toast(m, 'error'),
     imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
@@ -429,10 +434,10 @@ export default function PortfolioEditor() {
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
           </div>
           {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
-            <button key={p.t} type="button" className="ce-tool" draggable onClick={() => addFromPalette(p.t)} onDragStart={(e) => { e.dataTransfer.setData('text/pv-type', p.t); e.dataTransfer.effectAllowed = 'copy'; }}
-              title={`Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
+            <button key={p.t} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); e.dataTransfer.effectAllowed = 'copy'; } }}
+              title={p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
               <EIcon name={p.icon} size={20} />
-              <span>{ELEMENT_LABELS[p.t]}</span>
+              <span>{p.label || ELEMENT_LABELS[p.t]}</span>
             </button>
           )) : (
             <ul className="pe-layers">
