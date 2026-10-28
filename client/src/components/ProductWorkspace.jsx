@@ -1,4 +1,4 @@
-import { useRef, useState } from 'react';
+import { useState } from 'react';
 import { api } from '../api.js';
 import Icon from './Icon.jsx';
 import { useToast } from './Toast.jsx';
@@ -8,6 +8,7 @@ import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 
 const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
+const DEFAULT_VARIATION_TYPES = ['Cor', 'Tamanho', 'Litros', 'Unidade'];
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
 
 async function imageFromFile(file) {
@@ -33,8 +34,33 @@ function blankDraft(image = null) {
   };
 }
 
+function variationFields(image) {
+  const label = image.label || '';
+  if (image.color) return { variationType: 'Cor', variationValue: image.color };
+  if (image.size) return { variationType: 'Tamanho', variationValue: image.size };
+  const separator = label.indexOf(':');
+  if (separator > 0) {
+    return {
+      variationType: label.slice(0, separator).trim(),
+      variationValue: label.slice(separator + 1).trim(),
+    };
+  }
+  return { variationType: 'Cor', variationValue: label === 'Principal' ? '' : label };
+}
+
 function draftFromProduct(product) {
   const rows = product.images || [];
+  const variation = (image) => ({
+    key: `image-${image.id}`,
+    id: image.id,
+    url: image.url,
+    label: image.label || '',
+    color: image.color || '',
+    colorHex: image.colorHex || '',
+    size: image.size || '',
+    stockQuantity: String(image.stockQuantity || 0),
+    ...variationFields(image),
+  });
   return {
     key: `product-${product.id}`,
     id: product.id,
@@ -57,10 +83,8 @@ function draftFromProduct(product) {
       price: option.priceCents === null ? '' : centsToMasked(option.priceCents),
       onRequest: option.priceCents === null,
     })),
-    mainImage: rows[0] ? { key: `image-${rows[0].id}`, id: rows[0].id, url: rows[0].url, label: rows[0].label || '', color: rows[0].color || '', colorHex: rows[0].colorHex || '', size: rows[0].size || '', stockQuantity: String(rows[0].stockQuantity || 0) } : null,
-    variations: rows.slice(1).map((image) => ({
-      key: `image-${image.id}`, id: image.id, url: image.url, label: image.label || '', color: image.color || '', colorHex: image.colorHex || '', size: image.size || '', stockQuantity: String(image.stockQuantity || 0),
-    })),
+    mainImage: rows[0] ? variation(rows[0]) : null,
+    variations: rows.slice(1).map(variation),
   };
 }
 
@@ -70,6 +94,9 @@ function productBody(draft) {
   if (name.length < 2) throw new Error('Informe um nome com pelo menos 2 caracteres.');
   if (!category) throw new Error('Informe a categoria.');
   if (!draft.onRequest && !draft.price) throw new Error('Informe o preço base ou marque “Sob consulta”.');
+  if (draft.variations.some((image) => !(image.variationType === 'Outro' ? image.customVariationType : image.variationType)?.trim() || !image.variationValue?.trim())) {
+    throw new Error('Escolha o tipo e informe o valor de cada variação com foto.');
+  }
   if (!/^\d+$/.test(draft.stockQuantity) || Number(draft.stockQuantity) > 1_000_000) throw new Error('Informe um estoque válido entre 0 e 1.000.000.');
   if ([draft.mainImage, ...draft.variations].filter(Boolean).some((image) => !/^\d+$/.test(image.stockQuantity || '0') || Number(image.stockQuantity || 0) > 1_000_000)) throw new Error('Informe uma quantidade válida no estoque de cada imagem.');
 
@@ -104,12 +131,18 @@ function productBody(draft) {
     priceOptions,
     images: images.map((image, index) => ({
       ...(image.id ? { id: image.id } : { data: image.data }),
-      ...(images.length > 1 ? {
-        label: index === 0 && !image.label ? 'Principal' : image.label.trim(),
-        color: image.color || '',
-        colorHex: image.colorHex || '',
-        size: image.size || '',
-      } : {}),
+      ...(images.length > 1 ? (() => {
+        if (index === 0) return { label: 'Principal', color: '', colorHex: '', size: '' };
+        const type = (image.variationType === 'Outro' ? image.customVariationType : image.variationType).trim();
+        const value = image.variationValue.trim();
+        const normalizedType = type.toLocaleLowerCase('pt-BR');
+        return {
+          label: `${type}: ${value}`.slice(0, 40),
+          color: normalizedType === 'cor' ? value : '',
+          colorHex: image.colorHex || '',
+          size: normalizedType === 'tamanho' ? value : '',
+        };
+      })() : {}),
       stockQuantity: Number(image.stockQuantity) || 0,
       priceCents: null,
     })),
@@ -119,13 +152,12 @@ function productBody(draft) {
 export default function ProductWorkspace({ product, categories, preferences, available, onClose, onSaved }) {
   const editing = Boolean(product);
   const toast = useToast();
-  const [drafts, setDrafts] = useState(() => [product ? draftFromProduct(product) : blankDraft()]);
+  const [drafts, setDrafts] = useState(() => product ? [draftFromProduct(product)] : []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
-  const picker = useRef(null);
-  const hasEmptyPlaceholder = drafts.length === 1 && !drafts[0].name && !drafts[0].mainImage;
-  const existingDraftCount = drafts.length - Number(hasEmptyPlaceholder);
+  const pickerId = 'product-batch-photo-picker';
+  const existingDraftCount = drafts.length;
 
   function patchDraft(key, changes) {
     setDrafts((current) => current.map((draft) => draft.key === key ? { ...draft, ...changes } : draft));
@@ -143,11 +175,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
     try {
       const prepared = [];
       for (const file of selected) prepared.push(await imageFromFile(file));
-      setDrafts((current) => {
-        const emptyFirst = current.length === 1 && !current[0].name && !current[0].mainImage;
-        if (emptyFirst) return [blankDraft(prepared[0]), ...prepared.slice(1).map((image) => blankDraft(image))];
-        return [...current, ...prepared.map((image) => blankDraft(image))];
-      });
+      setDrafts((current) => [...current, ...prepared.map((image) => blankDraft(image))]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -183,7 +211,11 @@ export default function ProductWorkspace({ product, categories, preferences, ava
     try {
       const prepared = [];
       for (const file of selected) prepared.push(await imageFromFile(file));
-      setDrafts((current) => current.map((item) => item.key === key ? { ...item, variations: [...item.variations, ...prepared] } : item));
+      const defaultType = preferences?.variationTypes?.[0] || 'Cor';
+      setDrafts((current) => current.map((item) => item.key === key ? {
+        ...item,
+        variations: [...item.variations, ...prepared.map((image) => ({ ...image, variationType: defaultType, variationValue: '' }))],
+      } : item));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -228,16 +260,27 @@ export default function ProductWorkspace({ product, categories, preferences, ava
           <h1 id="pr-workspace-title">{editing ? 'Editar produto' : 'Cadastrar produtos'}</h1>
           <p className="muted">{editing ? 'Atualize os dados e confira o card antes de salvar.' : 'Cada foto selecionada cria um produto. Preencha o card correspondente; variações são adicionadas dentro dele.'}</p>
         </div>
-        {!editing && <button type="button" className="btn btn-ghost pr-photo-picker" onClick={() => picker.current?.click()} disabled={uploading || existingDraftCount >= Math.min(available, MAX_BATCH)}>
+        {!editing && <label className={`btn btn-primary pr-photo-picker ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
           <Icon name="plus" size={18} /> {uploading ? 'Preparando fotos...' : 'Selecionar fotos de produtos'}
-        </button>}
+          <input id={pickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={uploading || existingDraftCount >= Math.min(available, MAX_BATCH)} onChange={(event) => {
+            const files = Array.from(event.currentTarget.files || []);
+            event.currentTarget.value = '';
+            void addProductsFromPhotos(files);
+          }} />
+        </label>}
       </header>
 
-      <input ref={picker} className="pr-file-input" type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => {
-        const files = event.target.files;
-        event.target.value = '';
-        addProductsFromPhotos(files);
-      }} />
+      {drafts.length === 0 && <div className="pr-upload-empty rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
+        <div className="pr-upload-empty-icon mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-100 text-brand-ink"><Icon name="box" size={30} /></div>
+        <h2>Comece adicionando seus produtos</h2>
+        <p>Selecione várias fotos de uma vez — cada imagem cria um produto separado. Se preferir, cadastre sem foto.</p>
+        <div className="pr-upload-empty-actions">
+          <label className={`btn btn-primary ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
+            <Icon name="plus" size={18} /> Escolher fotos
+          </label>
+          <button type="button" className="btn btn-ghost" onClick={() => setDrafts([blankDraft()])} disabled={available < 1}>Começar sem foto</button>
+        </div>
+      </div>}
 
       <div className="pr-workspace-cards">
         {drafts.map((draft, index) => <ProductDraftCard
@@ -258,13 +301,13 @@ export default function ProductWorkspace({ product, categories, preferences, ava
         />)}
       </div>
 
-      {!editing && <button type="button" className="btn btn-ghost pr-add-blank" onClick={() => setDrafts((current) => current.length < Math.min(available, MAX_BATCH) ? [...current, blankDraft()] : current)} disabled={drafts.length >= Math.min(available, MAX_BATCH)}>
+      {!editing && drafts.length > 0 && <button type="button" className="btn btn-ghost pr-add-blank" onClick={() => setDrafts((current) => current.length < Math.min(available, MAX_BATCH) ? [...current, blankDraft()] : current)} disabled={drafts.length >= Math.min(available, MAX_BATCH)}>
         <Icon name="plus" size={17} /> Adicionar produto sem foto
       </button>}
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer className="pr-workspace-footer">
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
-        <button type="button" className="btn btn-primary" onClick={save} disabled={busy || uploading}>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={busy || uploading || drafts.length === 0}>
           {busy ? 'Salvando...' : editing ? 'Salvar alterações' : `Finalizar ${plural(drafts.length, 'produto', 'produtos')}`}
         </button>
       </footer>
@@ -273,8 +316,8 @@ export default function ProductWorkspace({ product, categories, preferences, ava
 }
 
 function ProductDraftCard({ draft, index, count, categories, preferences, editing, uploading, onPatch, onReplaceMain, onAddVariations, onRemove, onRemoveVariation, onPatchVariation }) {
-  const mainPhotoRef = useRef(null);
-  const variationPickerRef = useRef(null);
+  const mainPhotoPickerId = `main-photo-${draft.key}`;
+  const variationPickerId = `variation-photo-${draft.key}`;
   const images = [draft.mainImage, ...draft.variations].filter(Boolean);
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const addPriceOption = () => onPatch({ priceOptions: [...draft.priceOptions, {
@@ -291,10 +334,15 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
 
       <div className="pr-product-editor-layout">
         <aside className="pr-product-preview">
-          <button type="button" className="pr-main-photo" onClick={() => mainPhotoRef.current?.click()} aria-label={draft.mainImage ? 'Trocar foto principal' : 'Adicionar foto principal'} disabled={uploading}>
+          <label className="pr-main-photo" htmlFor={mainPhotoPickerId} aria-label={draft.mainImage ? 'Trocar foto principal' : 'Adicionar foto principal'}>
+            <input id={mainPhotoPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
+              const file = event.currentTarget.files?.[0];
+              event.currentTarget.value = '';
+              void onReplaceMain(file);
+            }} />
             {draft.mainImage ? <img src={draft.mainImage.url} alt={`Foto principal de ${draft.name || `produto ${index + 1}`}`} /> : <><Icon name="box" size={32} /><span>Adicionar foto principal</span></>}
-          </button>
-          <input ref={mainPhotoRef} type="file" accept={IMAGE_ACCEPT} hidden onChange={(event) => { const file = event.target.files?.[0]; event.target.value = ''; onReplaceMain(file); }} />
+            {draft.mainImage && <span className="pr-photo-change">Trocar foto</span>}
+          </label>
           <strong>Foto principal</strong>
           <small className="muted">Esta é a imagem de referência para os dados abaixo.</small>
           {draft.variations.length > 0 && <div className="pr-mini-gallery">{draft.variations.map((image) => <img key={image.key} src={image.url} alt={image.label || 'Foto de variação'} />)}</div>}
@@ -307,14 +355,29 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
             <div className="pr-section-title"><span>1</span><div><h3>Variações</h3><p>Adicione fotos e indique o que muda: cor, tamanho, volume ou unidade.</p></div></div>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => <div className="pr-variation-row" key={image.key}>
-                <img src={image.url} alt={`Variação ${variationIndex + 1} de ${draft.name || `produto ${index + 1}`}`} />
-                <label className="field"><span>Nome da variação</span><input className="input" value={image.label || [image.color, image.size].filter(Boolean).join(' · ')} maxLength={40} onChange={(event) => onPatchVariation(image.key, { label: event.target.value, color: '', size: '' })} placeholder="Ex.: Azul, Tamanho M, 2 litros" /></label>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}>Remover variação</button>
+                <div className="pr-variation-thumb"><img src={image.url} alt={`Variação ${variationIndex + 1} de ${draft.name || `produto ${index + 1}`}`} /><span>Variação {variationIndex + 1}</span></div>
+                <label className="field"><span>Tipo de variação</span><select className="input" value={image.variationType || preferences?.variationTypes?.[0] || 'Cor'} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
+                  {[...new Set([
+                    ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
+                    'Unidade',
+                    ...(image.variationType ? [image.variationType] : []),
+                    'Outro',
+                  ])].map((type) => <option key={type} value={type}>{type}</option>)}
+                </select></label>
+                {image.variationType === 'Outro' && <label className="field"><span>Qual tipo?</span><input className="input" value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
+                <label className="field"><span>Valor</span><input className="input" value={image.variationValue || ''} maxLength={32} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Cor' ? 'Ex.: Azul-marinho' : image.variationType === 'Tamanho' ? 'Ex.: M, 42' : 'Ex.: 2 litros'} /></label>
+                <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}>Remover</button>
               </div>)}
             </div>
             {draft.variations.length < MAX_IMAGES - 1 && <>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => variationPickerRef.current?.click()} disabled={!draft.mainImage || uploading}><Icon name="plus" size={16} /> Adicionar foto de variação</button>
-              <input ref={variationPickerRef} type="file" accept={IMAGE_ACCEPT} multiple hidden onChange={(event) => { const files = event.target.files; event.target.value = ''; onAddVariations(files); }} />
+              <label className={`btn btn-ghost btn-sm pr-add-variation ${!draft.mainImage || uploading ? 'is-disabled' : ''}`} htmlFor={variationPickerId}>
+                <Icon name="plus" size={16} /> Adicionar fotos das variações
+                <input id={variationPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={!draft.mainImage || uploading} onChange={(event) => {
+                  const files = Array.from(event.currentTarget.files || []);
+                  event.currentTarget.value = '';
+                  void onAddVariations(files);
+                }} />
+              </label>
               {!draft.mainImage && <small className="muted">Adicione primeiro a foto principal para criar variações.</small>}
             </>}
           </section>
