@@ -15,13 +15,13 @@ const FEATURES = [
 ];
 
 const PLAN_FEATURES = [
-  ['instances', 'Conexões WhatsApp para cobranças e lembretes'],
-  ['auditInstances', 'Conexões para auditoria de conversas'],
-  ['contracts', 'Modelos de contrato'],
-  ['portfolios', 'Páginas de portfólio'],
-  ['catalogProducts', 'Produtos e serviços no catálogo'],
-  ['stores', 'Lojas com aplicativo próprio'],
-  ['appUsers', 'Acessos por aplicativo de loja'],
+  ['instances', 'conexão WhatsApp para cobranças e lembretes', 'conexões WhatsApp para cobranças e lembretes'],
+  ['auditInstances', 'conexão para auditoria de conversas', 'conexões para auditoria de conversas'],
+  ['contracts', 'modelo de contrato', 'modelos de contrato'],
+  ['portfolios', 'página de portfólio', 'páginas de portfólio'],
+  ['catalogProducts', 'produto ou serviço no catálogo', 'produtos e serviços no catálogo'],
+  ['stores', 'loja com aplicativo próprio', 'lojas com aplicativo próprio'],
+  ['appUsers', 'acesso por aplicativo de loja', 'acessos por aplicativo de loja'],
 ];
 
 const planValue = (plan, key) => {
@@ -29,16 +29,16 @@ const planValue = (plan, key) => {
   if (key === 'appUsers' && Number(plan.stores) < 1) return 'Não incluído';
   if (key === 'catalogProducts' && value === 0) return 'Não incluído';
   if (key === 'stores' && value === 0) return 'Não incluído';
-  return value === 0 ? 'Não incluído' : value.toLocaleString('pt-BR');
+  return value;
 };
 
 function PlanFeatures({ plan }) {
   return (
     <ul className="mt-5 grid gap-3 text-sm text-slate-600">
-      {PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || Number(plan.stores) > 0).map(([key, label]) => (
+      {PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || Number(plan.stores) > 0).map(([key, singular, plural]) => (
         <li key={key} className="flex items-start gap-2.5">
           <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span>
-          <span><strong className="font-semibold text-slate-800">{planValue(plan, key)}</strong> {label}</span>
+          <span>{planValue(plan, key) === 'Não incluído' ? 'Não incluído' : <><strong className="font-semibold text-slate-800">{planValue(plan, key).toLocaleString('pt-BR')}</strong> {planValue(plan, key) === 1 ? singular : plural}</>}</span>
         </li>
       ))}
       {plan.auditSend && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>Respostas pela auditoria de conversas</span></li>}
@@ -109,15 +109,15 @@ export default function Landing() {
     <main className="min-h-screen overflow-hidden bg-white text-slate-900">
       <header className="relative z-10 border-b border-slate-200/70 bg-white/90 backdrop-blur">
         <div className="mx-auto flex max-w-7xl items-center justify-between px-4 py-4 sm:px-6 lg:px-8">
-          <Link to="/" aria-label="DM Gerenciador - início" className="rounded-lg"><Brand /></Link>
+          <Link to="/" aria-label="DM Gerenciador - início" className="rounded-lg no-underline"><Brand /></Link>
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex" aria-label="Navegação da página">
-            <a className="transition hover:text-slate-950" href="#recursos">Recursos</a>
-            <a className="transition hover:text-slate-950" href="#para-quem">Para quem</a>
-            <a className="transition hover:text-slate-950" href="#planos">Planos</a>
+            <a className="no-underline transition hover:text-slate-950" href="#recursos">Recursos</a>
+            <a className="no-underline transition hover:text-slate-950" href="#para-quem">Para quem</a>
+            <a className="no-underline transition hover:text-slate-950" href="#planos">Planos</a>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
-            <Link to="/entrar" className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 transition hover:bg-slate-100">Entrar</Link>
-            <a href="#planos" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-bold text-slate-950 shadow-sm transition hover:bg-amber-300 sm:px-5">Começar grátis</a>
+            <Link to="/entrar" className="rounded-xl px-3 py-2 text-sm font-semibold text-slate-700 no-underline transition hover:bg-slate-100">Entrar</Link>
+            <a href="#planos" className="inline-flex min-h-10 items-center justify-center rounded-xl bg-amber-400 px-3 py-2 text-sm font-bold text-slate-950 no-underline shadow-sm transition hover:bg-amber-300 sm:px-5">Começar grátis</a>
           </div>
         </div>
       </header>
@@ -137,10 +137,10 @@ export default function Landing() {
               O DM Gerenciador conecta clientes, WhatsApp, cobranças, contratos, portfólio, produtos e pedidos em um só lugar — para você organizar sua operação e atender com confiança.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
-              <a href="#planos" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-6 text-base font-bold text-slate-950 shadow-lg shadow-amber-950/25 transition hover:-translate-y-0.5 hover:bg-amber-300">
+              <a href="#planos" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-6 text-base font-bold text-slate-950 no-underline shadow-lg shadow-amber-950/25 transition hover:-translate-y-0.5 hover:bg-amber-300">
                 Começar teste grátis de {trialDays} dias <Icon name="right" size={18} />
               </a>
-              <a href="#recursos" className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-white/20 px-6 text-base font-semibold text-white transition hover:bg-white/10">Conhecer recursos</a>
+              <a href="#recursos" className="inline-flex min-h-14 items-center justify-center rounded-2xl border border-white/20 px-6 text-base font-semibold text-white no-underline transition hover:bg-white/10">Conhecer recursos</a>
             </div>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-300">
               <span className="flex items-center gap-2"><Icon name="check" size={16} /> {trialDays} dias para experimentar</span>
@@ -228,7 +228,7 @@ export default function Landing() {
                     <p className="mt-6"><strong className="text-4xl font-bold tracking-tight">{brl(plan.priceCents)}</strong><span className={index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}>/mês</span></p>
                     <p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}`}>Teste por {trialDays} dias antes de decidir.</p>
                     <PlanFeatures plan={plan} />
-                    <Link to={`/cadastro?plan=${encodeURIComponent(plan.id)}`} className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 transition hover:bg-amber-300">
+                    <Link to={`/cadastro?plan=${encodeURIComponent(plan.id)}`} className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 no-underline transition hover:bg-amber-300">
                       Escolher {plan.name} <Icon name="right" size={17} />
                     </Link>
                   </article>
@@ -238,10 +238,13 @@ export default function Landing() {
                 <div className="overflow-x-auto">
                   <table className="w-full min-w-[42rem] border-collapse text-left text-sm">
                     <thead><tr className="bg-white/10 text-slate-200"><th className="px-5 py-4 font-semibold">Recursos incluídos</th>{plans.map((p) => <th key={p.id} className="px-5 py-4 font-semibold">{p.name}</th>)}</tr></thead>
-                    <tbody>{PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || plans.some((plan) => Number(plan.stores) > 0)).map(([key, label]) => (
+                    <tbody>{PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || plans.some((plan) => Number(plan.stores) > 0)).map(([key, , plural]) => (
                       <tr key={key} className="border-t border-white/10">
-                        <th scope="row" className="px-5 py-3.5 font-medium text-slate-200">{label}</th>
-                        {plans.map((plan) => <td key={plan.id} className="px-5 py-3.5 text-slate-300">{planValue(plan, key)}</td>)}
+                        <th scope="row" className="px-5 py-3.5 font-medium text-slate-200">{plural}</th>
+                        {plans.map((plan) => {
+                          const value = planValue(plan, key);
+                          return <td key={plan.id} className="px-5 py-3.5 text-slate-300">{typeof value === 'number' ? value.toLocaleString('pt-BR') : value}</td>;
+                        })}
                       </tr>
                     ))}</tbody>
                   </table>
@@ -256,7 +259,7 @@ export default function Landing() {
       <section className="bg-amber-400 px-4 py-14 sm:px-6 sm:py-16">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 text-center sm:px-2 md:flex-row md:text-left">
           <div><h2 className="text-3xl font-bold tracking-tight text-slate-950">Pronto para organizar seu negócio?</h2><p className="mt-2 text-slate-800">Crie sua conta e explore o DM Gerenciador por {trialDays} dias.</p></div>
-          <Link to={`/cadastro${plans[0] ? `?plan=${encodeURIComponent(plans[0].id)}` : ''}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 font-bold text-white transition hover:bg-slate-800">Começar teste grátis <Icon name="right" size={18} /></Link>
+          <Link to={`/cadastro${plans[0] ? `?plan=${encodeURIComponent(plans[0].id)}` : ''}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 font-bold text-white no-underline transition hover:bg-slate-800">Começar teste grátis <Icon name="right" size={18} /></Link>
         </div>
       </section>
 
@@ -264,7 +267,7 @@ export default function Landing() {
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-4 sm:flex-row">
           <Brand light />
           <p>Gestão mais simples para negócios que querem crescer.</p>
-          <Link to="/entrar" className="font-semibold text-white hover:text-amber-300">Já tenho uma conta</Link>
+          <Link to="/entrar" className="font-semibold text-white no-underline hover:text-amber-300">Já tenho uma conta</Link>
         </div>
       </footer>
     </main>

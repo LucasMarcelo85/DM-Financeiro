@@ -55,6 +55,23 @@ export async function auth(req, _res, next) {
   next();
 }
 
+export async function optionalAuth(req, _res, next) {
+  const token = req.cookies?.[COOKIE];
+  if (!token) {
+    next();
+    return;
+  }
+  let id;
+  try {
+    id = jwt.verify(token, config.jwtSecret).id;
+  } catch {
+    next();
+    return;
+  }
+  req.user = await prisma.user.findUnique({ where: { id } }) || null;
+  next();
+}
+
 export function requireAccess(req, _res, next) {
   if (!computeAccess(req.user).hasAccess) {
     throw new AppError(402, 'Seu teste grátis acabou. Faça o pagamento para continuar usando o sistema.', 'PAYMENT_REQUIRED');

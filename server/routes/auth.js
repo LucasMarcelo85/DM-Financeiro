@@ -3,7 +3,7 @@ import bcrypt from 'bcryptjs';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 import { AppError, DAY, isValidCNPJ, isValidCPF, normalizePhone, onlyDigits } from '../utils/helpers.js';
-import { auth, clearSession, setSession, touchActivity } from '../middleware/auth.js';
+import { auth, clearSession, optionalAuth, setSession, touchActivity } from '../middleware/auth.js';
 import { publicUser } from '../services/access.js';
 import { defaultPlanId, isPlan, listPlans, trialSettings } from '../plans.js';
 import { assertPin, cleanPinTabs, clearPinFailures, hashPin, issuePinUnlock, PIN_RE, pinUnlockedUntil } from '../utils/pin.js';
@@ -77,8 +77,8 @@ router.post('/auth/logout', (_req, res) => {
   res.json({ ok: true });
 });
 
-router.get('/auth/me', auth, (req, res) => {
-  res.json({ user: publicUser(req.user), pinUnlockedUntil: pinUnlockedUntil(req, req.user) });
+router.get('/auth/me', optionalAuth, (req, res) => {
+  res.json({ user: req.user ? publicUser(req.user) : null, pinUnlockedUntil: req.user ? pinUnlockedUntil(req, req.user) : null });
 });
 
 // Acha a conta pelo e-mail ou CPF/CNPJ (o mesmo critério do login).

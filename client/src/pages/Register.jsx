@@ -7,18 +7,18 @@ import { AuthShell } from './Login.jsx';
 import { brl, maskDoc, maskPhone, plural } from '../lib/format.js';
 
 const PLAN_FEATURES = [
-  ['instances', 'conexões para cobranças'],
-  ['auditInstances', 'conexões para auditoria'],
-  ['contracts', 'modelos de contrato'],
-  ['portfolios', 'páginas de portfólio'],
-  ['catalogProducts', 'produtos e serviços'],
-  ['stores', 'lojas com aplicativo'],
+  ['instances', 'conexão para cobranças', 'conexões para cobranças'],
+  ['auditInstances', 'conexão para auditoria', 'conexões para auditoria'],
+  ['contracts', 'modelo de contrato', 'modelos de contrato'],
+  ['portfolios', 'página de portfólio', 'páginas de portfólio'],
+  ['catalogProducts', 'produto ou serviço', 'produtos e serviços'],
+  ['stores', 'loja com aplicativo', 'lojas com aplicativo'],
 ];
 
-function planLimit(plan, key) {
+function planLimit(plan, key, singular, plural) {
   const count = Number(plan[key] || 0);
   if ((key === 'catalogProducts' || key === 'stores') && count === 0) return 'Não incluído';
-  return count ? count.toLocaleString('pt-BR') : 'Não incluído';
+  return count ? `${count.toLocaleString('pt-BR')} ${count === 1 ? singular : plural}` : 'Não incluído';
 }
 
 export default function Register() {
@@ -170,8 +170,8 @@ export default function Register() {
                         <span className="shrink-0 text-right"><strong className="block text-xl text-slate-950">{brl(plan.priceCents)}</strong><small className="text-slate-500">por mês</small></span>
                       </span>
                       <span className="mt-3 grid gap-x-4 gap-y-2 border-t border-slate-200/80 pt-3 text-xs text-slate-700 sm:grid-cols-2">
-                        {PLAN_FEATURES.filter(([key]) => key !== 'stores' || plan.stores > 0).map(([key, label]) => (
-                          <span key={key} className="flex items-start gap-1.5"><Icon name="check" size={14} />{planLimit(plan, key)} {label}</span>
+                        {PLAN_FEATURES.filter(([key]) => key !== 'stores' || plan.stores > 0).map(([key, singular, plural]) => (
+                          <span key={key} className="flex items-start gap-1.5"><Icon name="check" size={14} />{planLimit(plan, key, singular, plural)}</span>
                         ))}
                         {plan.auditSend && <span className="flex items-start gap-1.5 sm:col-span-2"><Icon name="check" size={14} />Responder conversas pela auditoria</span>}
                       </span>
