@@ -59,20 +59,21 @@ export function priced(items, products) {
   const cartQty = items.reduce((sum, item) => sum + item.qty, 0);
   const cartBaseCents = items.reduce((sum, item) => {
     const product = byId.get(item.productId);
-    const image = product?.images.find((row) => row.id === item.imageId) || (product?.images.length === 1 ? product.images[0] : null);
+    const image = product?.images.find((row) => row.id === item.imageId);
     return sum + (product ? (image?.priceCents ?? product.priceCents) * item.qty : 0);
   }, 0);
   const lines = [];
   for (const it of items) {
     const p = byId.get(it.productId);
     if (!p) continue;
-    const img = p.images.find((i) => i.id === it.imageId) || (p.images.length === 1 ? p.images[0] : null);
-    const staleSelection = Boolean((it.imageId && !img) || (p.stockEnabled && p.images.length > 1 && !img));
+    const img = p.images.find((i) => i.id === it.imageId) || null;
+    const legacyMainImage = Boolean(it.imageId && p.mainImage?.id === it.imageId);
+    const staleSelection = Boolean((it.imageId && !img && !legacyMainImage) || (p.images.length > 0 && !img));
     const priceOption = pickTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
     const upcoming = nextTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
     const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
-    const reservedInCart = items.filter((item) => item.productId === p.id && item.imageId === (img?.id || null)).reduce((sum, item) => sum + item.qty, 0);
+    const reservedInCart = items.filter((item) => item.productId === p.id && (item.imageId === (img?.id || null) || (!img && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
     const stockAvailable = p.stockEnabled ? Math.max(0, stockQuantity - reservedInCart) : 99;
     lines.push({ ...it, p, img, priceOption, upcoming, staleSelection, unit, total: unit * it.qty, stockAvailable, stockExceeded: p.stockEnabled && it.qty > stockQuantity });
   }
@@ -89,21 +90,22 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
 function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [] }) {
-  const [idx, setIdx] = useState(0);
+  const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
   const [qty, setQty] = useState(1);
-  const img = p.images[idx] || p.images[0];
+  const selectedVariation = idx >= 0 ? p.images[idx] : null;
+  const img = selectedVariation || p.mainImage || p.images[0] || null;
   const productQty = cartItems.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0) + qty;
   const cartQty = cartItems.reduce((sum, item) => sum + item.qty, 0) + qty;
   const productById = new Map(products.map((product) => [product.id, product]));
   const cartBaseCents = cartItems.reduce((sum, item) => {
     const product = productById.get(item.productId);
-    const image = product?.images.find((row) => row.id === item.imageId) || (product?.images.length === 1 ? product.images[0] : null);
+    const image = product?.images.find((row) => row.id === item.imageId);
     return sum + (product ? item.qty * (image?.priceCents ?? product.priceCents) : 0);
   }, 0) + qty * (img?.priceCents ?? p.priceCents);
   const priceOption = pickTier(p.priceOptions, productQty, cartQty, cartBaseCents);
-  const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
-  const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
-  const inCart = cartItems.filter((item) => item.productId === p.id && item.imageId === (p.images.length > 1 ? img?.id : null)).reduce((sum, item) => sum + item.qty, 0);
+  const unit = priceOption ? priceOption.priceCents : selectedVariation && selectedVariation.priceCents !== null ? selectedVariation.priceCents : p.priceCents;
+  const stockQuantity = selectedVariation ? selectedVariation.stockQuantity : p.images.length ? 99 : p.stockQuantity;
+  const inCart = cartItems.filter((item) => item.productId === p.id && (item.imageId === (selectedVariation?.id || null) || (!selectedVariation && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
   const maxQty = p.stockEnabled ? Math.max(0, stockQuantity - inCart) : 99;
   useEffect(() => {
     const onKey = (e) => e.key === 'Escape' && onClose();
@@ -120,7 +122,7 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
         <div className="cat-modal-body">
           <span className="pv-card-cat">{p.category}</span>
           <h2>{p.name}</h2>
-          {p.images.length > 1 && (
+          {p.images.length > 0 && (
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
                 <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
@@ -135,12 +137,13 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
             <small>As faixas por valor consideram o subtotal dos itens antes da aplicação dessa faixa.</small>
           </div>}
           {p.description && <p className="cat-desc">{p.description}</p>}
-          {p.stockEnabled && <small className={maxQty ? '' : 'cat-error'}>{maxQty ? `${maxQty} unidade(s) disponível(is) para adicionar` : 'Esta variação está sem estoque.'}</small>}
+          {p.images.length > 0 && idx < 0 && <small>Escolha uma variação para continuar.</small>}
+          {p.stockEnabled && (!p.images.length || selectedVariation) && <small className={maxQty ? '' : 'cat-error'}>{maxQty ? `${maxQty} unidade(s) disponível(is) para adicionar` : 'Esta opção está sem estoque.'}</small>}
           <div className="cat-buy">
             <strong className="cat-price">{unit > 0 ? brl(unit) : 'Sob consulta'}</strong>
             {maxQty > 0 && <Qty value={qty} onChange={(n) => setQty(Math.max(1, Math.min(maxQty, n)))} label="Quantidade" />}
           </div>
-          <button type="button" className="cat-btn" disabled={maxQty < 1} onClick={() => { onAdd(p, img, qty); onClose(); }}>{addLabel}</button>
+          <button type="button" className="cat-btn" disabled={maxQty < 1 || (p.images.length > 0 && !selectedVariation)} onClick={() => { onAdd(p, selectedVariation, qty); onClose(); }}>{addLabel}</button>
         </div>
       </div>
     </div>
@@ -197,7 +200,7 @@ export function CatGridView({ el, device, mode }) {
     : [...shown.reduce((map, p) => map.set(p.category, [...(map.get(p.category) || []), p]), new Map()).entries()].sort((a, b) => sortBR(a[0], b[0])).map(([title, list]) => ({ title, list }));
   const pixelOn = Boolean(shop?.pixelOn);
   const add = (p, img, qty) => {
-    shop?.cart?.add(p.id, p.images.length > 1 ? img?.id : null, null, qty);
+    shop?.cart?.add(p.id, img?.id || null, null, qty);
     const tier = pickTier(p.priceOptions, qty);
     const unit = tier ? tier.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
@@ -407,7 +410,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           <ul className="cat-lines">
             {lines.map((l) => (
               <li key={l.id}>
-                <span className="cat-line-img">{(l.img || l.p.images[0]) && <img src={(l.img || l.p.images[0]).url} alt="" />}</span>
+                <span className="cat-line-img">{(l.img || l.p.mainImage || l.p.images[0]) && <img src={(l.img || l.p.mainImage || l.p.images[0]).url} alt="" />}</span>
                 <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming && <small className="cat-tier-hint">{l.upcoming.scope === 'cart_value' ? `Carrinho a partir de ${brl(l.upcoming.minCartCents)}` : `Leve ${l.upcoming.minQuantity} ${l.upcoming.scope === 'cart_quantity' ? 'itens no carrinho' : 'deste produto'}`} para pagar {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} max={l.p.stockEnabled ? (l.img ? l.img.stockQuantity : l.p.stockQuantity) : 99} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>

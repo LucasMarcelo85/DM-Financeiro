@@ -408,7 +408,7 @@ function ProductsSection({ el, api, products }) {
             {list.map((p) => (
               <label key={p.id} className="pe-check pe-prod">
                 <input type="checkbox" checked={el.ids.includes(p.id)} onChange={() => toggle(p.id)} />
-                {p.images[0] && <img src={p.images[0].url} alt="" />}
+                {(p.mainImage || p.images[0]) && <img src={(p.mainImage || p.images[0]).url} alt="" />}
                 <span>{p.name}<small>{p.category}</small></span>
               </label>
             ))}

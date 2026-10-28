@@ -64,23 +64,28 @@ export function cleanProduct(b = {}) {
       : intIn(option.priceCents, 0, MAX_PRICE, `Preço de ${label}`);
     return { ...(option.id === undefined ? {} : { id: option.id }), label, priceCents, minQuantity, scope, minCartCents };
   });
+  const explicitMainImage = Object.hasOwn(b, 'mainImage');
   const rawImages = Array.isArray(b.images) ? b.images : [];
-  if (rawImages.length > MAX_PRODUCT_IMAGES) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens (uma por variação).`);
-  const varied = rawImages.length > 1 || rawImages.some((im) => im && (im.color || im.size || im.label));
-  const images = rawImages.map((im, i) => {
+  const rawMainImage = explicitMainImage ? b.mainImage : rawImages[0] || null;
+  const rawVariations = explicitMainImage ? rawImages : rawImages.slice(1);
+  if (rawVariations.length + Number(Boolean(rawMainImage)) > MAX_PRODUCT_IMAGES) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens no produto.`);
+  const images = [];
+  const cleanImage = (im, i, isPrimary) => {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');
-    const size = varied ? line(im.size, 20) : '';
-    const color = varied ? line(im.color, 20) : '';
-    const colorHex = varied && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
+    const size = isPrimary ? '' : line(im.size, 20);
+    const color = isPrimary ? '' : line(im.color, 20);
+    const colorHex = !isPrimary && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
     const stockQuantity = intIn(im.stockQuantity ?? 0, 0, 1_000_000, `Estoque da variação ${i + 1}`);
-    const label = varied ? ([color, size].filter(Boolean).join(' · ') || line(im.label, 40)) : '';
-    if (varied && !label) throw new AppError(400, `Informe a cor ou o tamanho da variação ${i + 1}.`);
-    const out = { label, size, color, colorHex, priceCents: null, stockQuantity };
+    const label = isPrimary ? '' : (line(im.label, 100) || [color, size].filter(Boolean).join(' · '));
+    if (!isPrimary && !label) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
+    const out = { isPrimary, label, size, color, colorHex, priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');
     return out;
-  });
+  };
+  if (rawMainImage) images.push(cleanImage(rawMainImage, 0, true));
+  for (const [index, image] of rawVariations.entries()) images.push(cleanImage(image, index + Number(Boolean(rawMainImage)), false));
   return { kind, name, category, description, priceCents, stockEnabled, stockQuantity, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
 }
 
@@ -174,9 +179,24 @@ export function publicCatalogConfig(cfg) {
   };
 }
 
-export const publicProduct = (p) => ({
-  id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
-  stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
-  images: [...(p.images || [])].sort((a, b) => a.position - b.position).map((i) => ({ id: i.id, label: i.label, size: i.size || '', color: i.color || '', colorHex: i.colorHex || '', priceCents: i.priceCents, stockQuantity: i.stockQuantity ?? 0, url: `/api/public/product-image/${i.id}` })),
-  priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
-});
+export const publicProduct = (p) => {
+  const images = [...(p.images || [])].sort((a, b) => a.position - b.position);
+  const mainImage = images.find((image) => image.isPrimary);
+  const imageDto = (image) => ({
+    id: image.id,
+    label: image.label,
+    size: image.size || '',
+    color: image.color || '',
+    colorHex: image.colorHex || '',
+    priceCents: image.priceCents,
+    stockQuantity: image.stockQuantity ?? 0,
+    url: `/api/public/product-image/${image.id}`,
+  });
+  return {
+    id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
+    stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
+    mainImage: mainImage ? { id: mainImage.id, url: `/api/public/product-image/${mainImage.id}` } : null,
+    images: images.filter((image) => !image.isPrimary).map(imageDto),
+    priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
+  };
+};

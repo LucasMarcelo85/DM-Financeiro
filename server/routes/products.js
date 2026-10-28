@@ -7,7 +7,7 @@ import { storeScope } from '../utils/store.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, label: true, size: true, color: true, colorHex: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
@@ -56,7 +56,7 @@ function createData(data, userId, storeId) {
     ...product,
     userId,
     storeId,
-    images: { create: images.map((image, position) => ({ position, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
+    images: { create: images.map((image, position) => ({ position, isPrimary: image.isPrimary, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
     priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
   };
 }
@@ -114,9 +114,10 @@ router.post('/', async (req, res) => {
 router.post('/bulk', async (req, res) => {
   const list = req.body?.products;
   if (!Array.isArray(list) || list.length < 1 || list.length > 30) throw new AppError(400, 'Envie de 1 a 30 produtos por cadastro.');
-  const imagePayloadSize = list.reduce((total, product) => total + (Array.isArray(product?.images)
-    ? product.images.reduce((size, image) => size + (typeof image?.data === 'string' ? image.data.length : 0), 0)
-    : 0), 0);
+  const imagePayloadSize = list.reduce((total, product) => total + [
+    ...(Array.isArray(product?.images) ? product.images : []),
+    ...(product?.mainImage ? [product.mainImage] : []),
+  ].reduce((size, image) => size + (typeof image?.data === 'string' ? image.data.length : 0), 0), 0);
   if (imagePayloadSize > 32 * 1024 * 1024) throw new AppError(413, 'O lote de fotos ficou muito grande. Cadastre menos produtos ou reduza o número de imagens por produto.');
   await assertCanCreate(req.user, list.length);
   const prepared = list.map((product) => cleanProduct(product));
@@ -149,8 +150,8 @@ router.patch('/:id', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
-      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
-      else await tx.productImage.create({ data: { productId: current.id, position, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
+      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
+      else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {

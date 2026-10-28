@@ -33,7 +33,7 @@ router.get('/portfolio', async (req, res) => {
   const { owner, page } = found;
   const doc = page.data || {};
   const out = {};
-  const imgs = { select: { id: true, position: true, label: true, priceCents: true, color: true, size: true, colorHex: true, stockQuantity: true } };
+  const imgs = { select: { id: true, position: true, isPrimary: true, label: true, priceCents: true, color: true, size: true, colorHex: true, stockQuantity: true } };
   const priceOptions = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true } };
   if (doc.v === 2 && page.kind === 'catalog') {
     // Catálogo digital: todos os produtos ativos + as formas de entrega (sem token e sem endereço de saída). Sem plano com catálogo = 404.

@@ -576,6 +576,7 @@ model ProductImage {
   id         Int    @id @default(autoincrement())
   productId  Int    @map("product_id")
   position   Int    @default(0)
+  isPrimary  Boolean @default(false) @map("is_primary")
   label      String @default("")
   size       String @default("")
   color      String @default("")

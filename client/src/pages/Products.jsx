@@ -87,7 +87,7 @@ export default function Products() {
 
   return (
     <>
-      <header className="page-head head-row">
+      <header className="page-head head-row rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 p-5 shadow-sm">
         <div>
           <h1>Produtos e serviços</h1>
           <p className="muted">
@@ -95,10 +95,10 @@ export default function Products() {
             {data && data.limit > 0 ? ` Você usou ${data.count} de ${plural(data.limit, 'item', 'itens')} do seu plano.` : ''}
           </p>
         </div>
-        <button className="btn btn-primary" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo</button>
+        <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>
       </header>
       <StoreBar />
-      {data && <div className="pr-toolbar">
+      {data && <div className="pr-toolbar rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <label className="pr-view-control"><span>Tamanho dos cards <strong>{cardView.cardWidth}px</strong></span><input type="range" min="160" max="360" step="8" value={cardView.cardWidth} onChange={(e) => setCardView((v) => ({ ...v, cardWidth: Number(e.target.value) }))} aria-label="Largura dos cards de produtos" /></label>
         <label className="pr-view-control"><span>Altura das fotos <strong>{cardView.imageHeight}px</strong></span><input type="range" min="90" max="280" step="10" value={cardView.imageHeight} onChange={(e) => setCardView((v) => ({ ...v, imageHeight: Number(e.target.value) }))} aria-label="Altura das fotos dos produtos" /></label>
         {!shop && <button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Organizar categorias e opções</button>}
@@ -119,7 +119,7 @@ export default function Products() {
       )}
 
       {data && data.count > 0 && (
-        <div className="pr-filters">
+        <div className="pr-filters rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
           <input className="input" type="search" placeholder="Buscar por nome ou categoria" value={q} onChange={(e) => setQ(e.target.value)} aria-label="Buscar" />
           <select className="input" value={category} onChange={(e) => setCategory(e.target.value)} aria-label="Categoria">
             <option value="">Todas as categorias</option>
@@ -141,12 +141,12 @@ export default function Products() {
           {!data.count && !blocked && <button className="btn btn-primary" onClick={() => setEditing('new')}>Cadastrar</button>}
         </section>
       ) : (
-        <ul className="pr-grid" style={{ '--pr-card-width': `${cardView.cardWidth}px`, '--pr-image-height': `${cardView.imageHeight}px` }}>
+        <ul className="pr-grid gap-4" style={{ '--pr-card-width': `${cardView.cardWidth}px`, '--pr-image-height': `${cardView.imageHeight}px` }}>
           {data.products.map((p) => (
-            <li key={p.id} className={`pr-card ${p.active ? '' : 'is-off'}`}>
-              <button type="button" className="pr-img" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`}>
-                {p.images[0] ? <img src={p.images[0].url} alt="" loading="lazy" /> : <Icon name="box" size={28} />}
-                {p.images.length > 1 && <span className="pr-var">{p.images.length} variações</span>}
+            <li key={p.id} className={`pr-card rounded-xl border-slate-200 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg ${p.active ? '' : 'is-off'}`}>
+              <button type="button" className="pr-img transition duration-200 hover:brightness-95" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`}>
+                {(p.mainImage || p.images[0]) ? <img src={(p.mainImage || p.images[0]).url} alt="" loading="lazy" /> : <Icon name="box" size={28} />}
+                {p.images.length > 0 && <span className="pr-var">{p.images.length} {plural(p.images.length, 'variação', 'variações')}</span>}
               </button>
               <div className="pr-body">
                 <span className="pr-cat">{p.category}<em>{p.kind === 'servico' ? 'Serviço' : 'Produto'}</em></span>

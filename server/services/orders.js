@@ -87,7 +87,7 @@ export async function createOrder(userSlug, body = {}) {
   const cartQuantity = [...qtyByProduct.values()].reduce((sum, qty) => sum + qty, 0);
   const cartBaseCents = rawItems.reduce((sum, item) => {
     const product = byId.get(Number(item?.productId));
-    const image = product?.images.find((row) => row.id === Number(item?.imageId)) || (product?.images.length === 1 ? product.images[0] : null);
+    const image = product?.images.find((row) => row.id === Number(item?.imageId) && !row.isPrimary);
     const qty = Number(item?.qty);
     return sum + (product && Number.isInteger(qty) && qty > 0 ? (image?.priceCents ?? product.priceCents) * qty : 0);
   }, 0);
@@ -97,8 +97,10 @@ export async function createOrder(userSlug, body = {}) {
     const p = byId.get(Number(it?.productId));
     const qty = Number(it?.qty);
     if (!p || !Number.isInteger(qty) || qty < 1 || qty > 99) throw new AppError(400, 'Um dos itens do carrinho não está mais disponível. Atualize a página.');
-    const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId)) : p.images.length === 1 ? p.images[0] : null;
-    if (it.imageId && !img) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
+    const img = it.imageId ? p.images.find((x) => x.id === Number(it.imageId) && !x.isPrimary) : null;
+    const oldPrimaryImageId = it.imageId && p.images.some((image) => image.id === Number(it.imageId) && image.isPrimary);
+    if (it.imageId && !img && !oldPrimaryImageId) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
+    if (p.images.some((image) => !image.isPrimary) && !img) throw new AppError(400, `Escolha uma variação de ${p.name}.`);
     const eligible = p.priceOptions.filter((option) => {
       if (option.priceCents === null) return false;
       if (option.scope === 'cart_quantity') return (option.minQuantity || 1) <= cartQuantity;
@@ -110,7 +112,6 @@ export async function createOrder(userSlug, body = {}) {
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
     if (p.stockEnabled) {
-      if (p.images.length && !img) throw new AppError(400, `Escolha uma variação de ${p.name} para conferir o estoque.`);
       const key = img ? `image:${img.id}` : `product:${p.id}`;
       const previous = stockDemand.get(key);
       stockDemand.set(key, { product: p, image: img, qty: qty + (previous?.qty || 0) });

@@ -261,7 +261,7 @@ function VideoView({ el, mode }) {
 
 export function ProductCard({ p, cardStyle = 'soft', price = true, action, card }) {
   const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
-  const img = p.images[0];
+  const img = p.mainImage || p.images[0];
   const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null);
   const tierThreshold = (option) => option.scope === 'cart_value'
     ? `a partir de ${brl(option.minCartCents || 0)} no carrinho`
@@ -297,7 +297,7 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
         <div className="pv-card-img" style={k.imgBg ? { background: k.imgBg } : undefined}>
           {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />}
           {iconAt('corner') && <span className="pv-card-corner">{iconNode}</span>}
-          {k.showVariations && p.images.length > 1 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
+          {k.showVariations && p.images.length > 0 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
         </div>
       )}
       <div className="pv-card-body">
@@ -306,7 +306,7 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
         {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} {tierThreshold(t)}</small>)}</span>}
-        {k.showVariations && p.images.length > 1 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
+        {k.showVariations && p.images.length > 0 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
         {k.showButton && actionNode}
       </div>
     </div>

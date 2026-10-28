@@ -66,7 +66,7 @@ publicApi.use(async (req, res, next) => {
 });
 
 const include = {
-  images: { select: { id: true, position: true, label: true, priceCents: true, color: true, size: true, colorHex: true, stockQuantity: true }, orderBy: { position: 'asc' } },
+  images: { select: { id: true, position: true, isPrimary: true, label: true, priceCents: true, color: true, size: true, colorHex: true, stockQuantity: true }, orderBy: { position: 'asc' } },
   priceOptions: { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } },
 };
 const page = (req) => ({ take: Math.min(Math.max(Number(req.query.limit) || 50, 1), 200), skip: Math.max(Number(req.query.offset) || 0, 0) });
