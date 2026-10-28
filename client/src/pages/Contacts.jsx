@@ -3,12 +3,21 @@ import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
+import CsvTransfer from '../components/CsvTransfer.jsx';
 import { useToast } from '../components/Toast.jsx';
+import { importCsvBatches } from '../lib/csv.js';
 import { digits, formatStoredPhone, initials, maskCNPJ, maskCPF, maskPhone, plural } from '../lib/format.js';
 
 const maskAnyDoc = (v) => (digits(v).length > 11 ? maskCNPJ(v) : maskCPF(v));
 const maskCEP = (v) => { const d = digits(v).slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
 const EXTRA = ['document', 'zip', 'street', 'number', 'complement', 'district', 'city', 'state'];
+const CONTACT_CSV_COLUMNS = [
+  { key: 'name', type: 'string' }, { key: 'phone', type: 'string' }, { key: 'email', type: 'string' },
+  { key: 'notes', type: 'string' }, { key: 'document', type: 'string' }, { key: 'zip', type: 'string' },
+  { key: 'street', type: 'string' }, { key: 'number', type: 'string' }, { key: 'complement', type: 'string' },
+  { key: 'district', type: 'string' }, { key: 'city', type: 'string' }, { key: 'state', type: 'string' },
+  { key: 'createdAt', type: 'date' },
+];
 
 function ContactForm({ initial, onClose, onSaved }) {
   const toast = useToast();
@@ -100,7 +109,19 @@ export default function Contacts() {
           <h1>Clientes</h1>
           <p className="muted">{data ? `${plural(data.total, 'cliente cadastrado', 'clientes cadastrados')}. ` : ''}Salve uma vez e escolha rápido nas cobranças e lembretes.</p>
         </div>
-        <button className="btn btn-primary" onClick={() => setForm({})}><Icon name="plus" size={18} /> Novo cliente</button>
+        <div className="btn-group">
+          <CsvTransfer
+            resource="contacts" title="clientes" filename="clientes.csv" exportUrl="/contacts/export"
+            columns={CONTACT_CSV_COLUMNS}
+            description="Exporte os dados cadastrais completos, incluindo contatos, documentos e endereço."
+            onImport={async (contacts) => {
+              const result = await importCsvBatches(contacts, (batch) => api.post('/contacts/import', { contacts: batch }), 500, 2 * 1024 * 1024);
+              load();
+              return result;
+            }}
+          />
+          <button className="btn btn-primary" onClick={() => setForm({})}><Icon name="plus" size={18} /> Novo cliente</button>
+        </div>
       </header>
 
       <div className="search-box search-wide">

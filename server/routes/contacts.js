@@ -2,6 +2,7 @@ import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError, isValidCNPJ, isValidCPF, normalizePhone, onlyDigits } from '../utils/helpers.js';
 import { contactDTO } from '../utils/serialize.js';
+import { dateRange, importedDate } from '../utils/date-range.js';
 
 const router = Router();
 const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]{2,}$/;
@@ -73,6 +74,44 @@ router.get('/', async (req, res) => {
     prisma.contact.count({ where: { userId: req.user.id } }),
   ]);
   res.json({ contacts: rows.map(contactDTO), total });
+});
+
+router.get('/export', async (req, res) => {
+  const where = { userId: req.user.id, ...dateRange(req.query) };
+  const rows = await prisma.contact.findMany({ where, orderBy: { createdAt: 'asc' } });
+  res.json({ rows: rows.map((contact) => ({
+    name: contact.name, phone: contact.phone, email: contact.email, notes: contact.notes,
+    document: contact.document, zip: contact.zip, street: contact.street, number: contact.number,
+    complement: contact.complement, district: contact.district, city: contact.city, state: contact.state,
+    createdAt: contact.createdAt.getTime(),
+  })) });
+});
+
+router.post('/import', async (req, res) => {
+  const rows = req.body?.contacts;
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500) throw new AppError(400, 'Envie de 1 a 500 clientes por importação.');
+  let created = 0;
+  let updated = 0;
+  const errors = [];
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new AppError(400, 'Registro de cliente inválido.');
+      const data = parseBody(row);
+      const createdAt = importedDate(row.createdAt, 'cadastro');
+      const current = await prisma.contact.findUnique({ where: { userId_phone: { userId: req.user.id, phone: data.phone } } });
+      if (current) {
+        await prisma.contact.update({ where: { id: current.id }, data });
+        updated += 1;
+      } else {
+        await prisma.contact.create({ data: { ...data, userId: req.user.id, ...(createdAt ? { createdAt } : {}) } });
+        created += 1;
+      }
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      errors.push({ row: index + 2, message: error.message });
+    }
+  }
+  res.json({ created, updated, skipped: 0, errors });
 });
 
 router.get('/:id', async (req, res) => {

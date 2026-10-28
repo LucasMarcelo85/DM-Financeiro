@@ -9,6 +9,7 @@ import { changeOrderStock } from '../services/order-stock.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
 import * as whatsapp from '../services/whatsapp.js';
+import { dateRange, importedDate } from '../utils/date-range.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -85,6 +86,95 @@ router.get('/orders', async (req, res) => {
   res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays });
 });
 
+router.get('/orders/export', async (req, res) => {
+  const where = { userId: req.user.id, storeId: await storeScope(req), ...dateRange(req.query) };
+  const rows = await prisma.order.findMany({ where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }] });
+  res.json({ rows: rows.map(orderDTO) });
+});
+
+router.post('/orders/import', async (req, res) => {
+  const rows = req.body?.orders;
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500) throw new AppError(400, 'Envie de 1 a 500 pedidos por importação.');
+  const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
+  const prepared = [];
+  const errors = [];
+  const paymentStatuses = new Set(['unpaid', 'pending', 'paid', 'failed']);
+  const deliveryTypes = new Set(['retirada', 'excursao', 'motoboy', 'correios']);
+  const cents = (value, label) => {
+    const number = Number(value);
+    if (!Number.isSafeInteger(number) || number < 0 || number > 1_000_000_000) throw new AppError(400, `${label} inválido.`);
+    return number;
+  };
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new AppError(400, 'Registro de pedido inválido.');
+      const code = String(row.code || '').trim();
+      const customerName = String(row.customerName || '').trim();
+      const customerPhone = normalizePhone(row.customerPhone);
+      if (!code || code.length > 32) throw new AppError(400, 'Código do pedido inválido.');
+      if (customerName.length < 2 || customerName.length > 120 || !customerPhone) throw new AppError(400, 'Nome ou telefone do cliente inválido.');
+      if (!deliveryTypes.has(row.deliveryType) || !row.delivery || typeof row.delivery !== 'object' || Array.isArray(row.delivery)) throw new AppError(400, 'Dados de entrega inválidos.');
+      if (!Array.isArray(row.items) || row.items.length < 1 || row.items.length > 60) throw new AppError(400, 'O pedido deve conter de 1 a 60 itens.');
+      const items = row.items.map((item) => {
+        if (!item || typeof item !== 'object' || Array.isArray(item)) throw new AppError(400, 'Um item do pedido é inválido.');
+        const qty = Number(item?.qty);
+        const name = String(item?.name || '').trim();
+        if (!Number.isInteger(qty) || qty < 1 || qty > 999 || !name || name.length > 120) throw new AppError(400, 'Um item do pedido é inválido.');
+        return {
+          productId: Number.isInteger(Number(item.productId)) && Number(item.productId) > 0 ? Number(item.productId) : null,
+          imageId: Number.isInteger(Number(item.imageId)) && Number(item.imageId) > 0 ? Number(item.imageId) : null,
+          stockTracked: Boolean(item.stockTracked), name, variation: String(item.variation || '').slice(0, 200),
+          qty, unitCents: cents(item.unitCents, 'Preço do item'), totalCents: cents(item.totalCents, 'Total do item'),
+        };
+      });
+      const status = row.status === 'atendido' ? 'atendido' : row.status === 'novo' ? 'novo' : null;
+      const paymentStatus = paymentStatuses.has(row.paymentStatus) ? row.paymentStatus : null;
+      if (!status || !paymentStatus) throw new AppError(400, 'Situação do pedido ou do pagamento inválida.');
+      const createdAt = importedDate(row.createdAt, 'pedido') || new Date();
+      const deletedAt = importedDate(row.deletedAt, 'arquivamento');
+      const paidAt = importedDate(row.paidAt, 'pagamento');
+      prepared.push({
+        sourceRow: index + 2,
+        data: {
+          code, customerName, customerPhone, deliveryType: row.deliveryType, delivery: row.delivery, items,
+          subtotalCents: cents(row.subtotalCents, 'Subtotal'),
+          shippingCents: cents(row.shippingCents, 'Frete'),
+          totalCents: cents(row.totalCents, 'Total'),
+          notes: String(row.notes || '').slice(0, 500), status, paymentStatus,
+          paymentProvider: row.paymentProvider ? String(row.paymentProvider).slice(0, 40) : null,
+          paymentId: row.paymentId ? String(row.paymentId).slice(0, 200) : null,
+          paymentProofUrl: row.paymentProofUrl ? String(row.paymentProofUrl).slice(0, 2000) : null,
+          paidAt, createdAt, deletedAt, stockReserved: false,
+        },
+      });
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      errors.push({ row: index + 2, message: error.message });
+    }
+  }
+  let created = 0;
+  let updated = 0;
+  let skipped = 0;
+  await prisma.$transaction(async (tx) => {
+    for (const { data } of prepared) {
+      const current = await tx.order.findFirst({ where: { userId: req.user.id, storeId, code: data.code } });
+      if (current) {
+        skipped += 1;
+      } else {
+        await tx.order.create({ data: { ...data, userId: req.user.id, storeId } });
+        created += 1;
+      }
+      await tx.orderCustomerProfile.upsert({
+        where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone } },
+        create: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone, customerName: data.customerName },
+        update: { customerName: data.customerName },
+      });
+    }
+  });
+  res.json({ created, updated, skipped: skipped + errors.length, errors });
+});
+
 router.get('/customers', async (req, res) => {
   const requestedDays = Number(req.query.days);
   const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
@@ -114,6 +204,50 @@ router.get('/customers', async (req, res) => {
     }),
     retentionDays: config.orderRetentionDays, days,
   });
+});
+
+router.get('/customers/export', async (req, res) => {
+  const storeId = await storeScope(req);
+  const profiles = await prisma.orderCustomerProfile.findMany({
+    where: { userId: req.user.id, scopeKey: customerScopeKey(storeId), ...dateRange(req.query, 'updatedAt') },
+    orderBy: { updatedAt: 'asc' },
+  });
+  res.json({ rows: profiles.map((profile) => ({
+    name: profile.customerName, phone: profile.customerPhone, labels: profile.labels,
+    notes: profile.notes, updatedAt: profile.updatedAt.getTime(),
+  })) });
+});
+
+router.post('/customers/import', async (req, res) => {
+  const rows = req.body?.customers;
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500) throw new AppError(400, 'Envie de 1 a 500 clientes por importação.');
+  const scopeKey = customerScopeKey(await storeScope(req));
+  let created = 0;
+  let updated = 0;
+  const errors = [];
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new AppError(400, 'Registro de cliente inválido.');
+      const name = String(row.name || '').trim();
+      const phone = normalizePhone(row.phone);
+      const labels = row.labels;
+      const notes = String(row.notes || '').slice(0, 500);
+      if (name.length < 2 || name.length > 120 || !phone) throw new AppError(400, 'Nome ou telefone do cliente inválido.');
+      if (!Array.isArray(labels) || labels.length > 30 || labels.some((label) => typeof label !== 'string' || label.length > 40)) throw new AppError(400, 'Etiquetas inválidas.');
+      const existing = await prisma.orderCustomerProfile.findUnique({ where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } } });
+      await prisma.orderCustomerProfile.upsert({
+        where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } },
+        create: { userId: req.user.id, scopeKey, customerPhone: phone, customerName: name, labels, notes },
+        update: { customerName: name, labels, notes },
+      });
+      if (existing) updated += 1;
+      else created += 1;
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      errors.push({ row: index + 2, message: error.message });
+    }
+  }
+  res.json({ created, updated, skipped: 0, errors });
 });
 
 router.get('/customers/:phone', async (req, res) => {

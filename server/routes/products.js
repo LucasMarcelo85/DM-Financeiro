@@ -5,6 +5,7 @@ import { limitsFor } from '../plans.js';
 import { cleanProduct, publicProduct } from '../utils/catalog.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
+import { dateRange } from '../utils/date-range.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
@@ -88,6 +89,71 @@ router.get('/', async (req, res) => {
   };
   preferences.categories = [...new Set([...preferences.categories, ...cats.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
   res.json({ products: rows.map(dto), count, limit: limitsFor(req.user).catalogProducts, categories: preferences.categories, preferences });
+});
+
+router.get('/export', async (req, res) => {
+  const storeId = await storeScope(req);
+  const where = { userId: req.user.id, storeId, ...dateRange(req.query) };
+  const products = await prisma.product.findMany({
+    where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
+    include: {
+      images: { select: { position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, stockQuantity: true, mime: true, data: true }, orderBy: { position: 'asc' } },
+      priceOptions: optionSelect,
+    },
+  });
+  res.json({ rows: products.map((product) => {
+    const images = product.images.map((image) => ({
+      data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}`,
+      label: image.label, size: image.size, color: image.color, colorHex: image.colorHex,
+      stockQuantity: image.stockQuantity,
+    }));
+    return {
+      kind: product.kind, name: product.name, category: product.category, description: product.description,
+      priceCents: product.priceCents, stockEnabled: product.stockEnabled, stockQuantity: product.stockQuantity,
+      active: product.active,
+      mainImage: images.find((_image, index) => product.images[index].isPrimary) || null,
+      images: images.filter((_image, index) => !product.images[index].isPrimary),
+      priceOptions: product.priceOptions.map(({ label, priceCents, minQuantity, scope, minCartCents }) => ({ label, priceCents, minQuantity, scope, minCartCents })),
+      sourceId: product.id, sourceUserId: req.user.id, sourceStoreId: storeId,
+    };
+  }) });
+});
+
+router.post('/import', async (req, res) => {
+  const rows = req.body?.products;
+  if (!Array.isArray(rows) || rows.length < 1 || rows.length > 500) throw new AppError(400, 'Envie de 1 a 500 produtos por importação.');
+  const storeId = await storeScope(req);
+  let created = 0;
+  let skipped = 0;
+  const errors = [];
+  for (const [index, row] of rows.entries()) {
+    try {
+      if (!row || typeof row !== 'object' || Array.isArray(row)) throw new AppError(400, 'Registro de produto inválido.');
+      const sourceStoreId = row.sourceStoreId === null || row.sourceStoreId === '' ? null : Number(row.sourceStoreId);
+      if (Number(row.sourceUserId) === req.user.id && sourceStoreId === storeId && Number.isInteger(Number(row.sourceId))) {
+        const existing = await prisma.product.findFirst({
+          where: { id: Number(row.sourceId), userId: req.user.id, storeId },
+          select: { id: true },
+        });
+        if (existing) {
+          skipped += 1;
+          continue;
+        }
+      }
+      await assertCanCreate(req.user);
+      const data = cleanProduct(row);
+      const product = await prisma.product.create({
+        data: createData(data, req.user.id, storeId),
+        include: productInclude,
+      });
+      publishProduct(req.user.id, product, 'product.created');
+      created += 1;
+    } catch (error) {
+      if (!(error instanceof AppError)) throw error;
+      errors.push({ row: index + 2, message: error.message });
+    }
+  }
+  res.json({ created, updated: 0, skipped: skipped + errors.length, errors });
 });
 
 router.put('/preferences', async (req, res) => {

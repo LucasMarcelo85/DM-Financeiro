@@ -3,13 +3,27 @@ import { api, isShopMode } from '../api.js';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import Icon from '../components/Icon.jsx';
 import StoreBar from '../components/StoreBar.jsx';
+import CsvTransfer from '../components/CsvTransfer.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
+import { importCsvBatches } from '../lib/csv.js';
 
 const DAY = 86400000;
 const TYPE = { retirada: 'Retirada', excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
 const PAYMENT_PROVIDER = { infinitepay: 'InfinitePay', manual: 'manualmente' };
+const ORDER_CSV_COLUMNS = [
+  { key: 'code', type: 'string' }, { key: 'customerName', type: 'string' }, { key: 'customerPhone', type: 'string' },
+  { key: 'deliveryType', type: 'string' }, { key: 'delivery', type: 'json' }, { key: 'items', type: 'json' },
+  { key: 'subtotalCents', type: 'number' }, { key: 'shippingCents', type: 'number' }, { key: 'totalCents', type: 'number' },
+  { key: 'notes', type: 'string' }, { key: 'status', type: 'string' }, { key: 'paymentStatus', type: 'string' },
+  { key: 'paymentProvider', type: 'string' }, { key: 'paymentId', type: 'string' }, { key: 'paymentProofUrl', type: 'string' },
+  { key: 'paidAt', type: 'date' }, { key: 'createdAt', type: 'date' }, { key: 'deletedAt', type: 'date' },
+];
+const CUSTOMER_CSV_COLUMNS = [
+  { key: 'name', type: 'string' }, { key: 'phone', type: 'string' }, { key: 'labels', type: 'json' },
+  { key: 'notes', type: 'string' }, { key: 'updatedAt', type: 'date' },
+];
 const timeSince = (timestamp) => {
   const minutes = Math.max(0, Math.floor((Date.now() - timestamp) / 60000));
   if (minutes === 0) return 'agora';
@@ -104,7 +118,30 @@ export default function Orders({ allow }) {
           <h1>Pedidos e clientes</h1>
           <p className="muted">Acompanhe as vendas, clientes e o histórico. Pedidos removidos ficam em Arquivados por até {data?.retentionDays || 20} dias.</p>
         </div>
-        {!isShopMode() && <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>}
+        <div className="btn-group">
+          {can(tab === 'customers' ? 'clientes' : 'pedidos') && (
+            <CsvTransfer
+              resource={tab === 'customers' ? 'order-customers' : 'orders'}
+              title={tab === 'customers' ? 'clientes' : 'pedidos'}
+              filename={tab === 'customers' ? 'clientes-da-loja.csv' : 'pedidos.csv'}
+              exportUrl={tab === 'customers' ? '/catalog/customers/export' : '/catalog/orders/export'}
+              columns={tab === 'customers' ? CUSTOMER_CSV_COLUMNS : ORDER_CSV_COLUMNS}
+              dateDescription={tab === 'customers' ? 'última atualização' : 'criação'}
+              description={tab === 'customers'
+                ? 'Exporte os clientes da loja, incluindo etiquetas e observações.'
+                : 'Exporte pedidos ativos e arquivados, com itens, entrega e informações de pagamento.'}
+              onImport={async (rows) => {
+                const result = tab === 'customers'
+                  ? await importCsvBatches(rows, (batch) => api.post('/catalog/customers/import', { customers: batch }), 500, 2 * 1024 * 1024)
+                  : await importCsvBatches(rows, (batch) => api.post('/catalog/orders/import', { orders: batch }), 500, 5 * 1024 * 1024);
+                if (tab === 'customers') loadCustomers();
+                else load();
+                return result;
+              }}
+            />
+          )}
+          {!isShopMode() && <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>}
+        </div>
       </header>
       <StoreBar />
 

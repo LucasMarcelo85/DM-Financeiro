@@ -134,10 +134,12 @@ router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   }
   const isCustomers = /^\/customers(?:\/|$)/.test(req.path);
   const isOrders = /^\/orders(?:\/|$)/.test(req.path);
+  const isCustomerTransfer = /^\/customers\/(?:export|import)$/.test(req.path);
+  const isOrderTransfer = /^\/orders\/(?:export|import)$/.test(req.path);
   const isRestore = req.method === 'POST' && /^\/orders\/\d+\/restore$/.test(req.path);
   const isArchive = req.method === 'POST' && req.path === '/orders/bulk-delete';
-  const allowed = (isCustomers && (req.method === 'GET' || req.method === 'PATCH'))
-    || (isOrders && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path))))
+  const allowed = (isCustomers && (req.method === 'GET' || req.method === 'PATCH' || isCustomerTransfer && (req.method === 'GET' || req.method === 'POST')))
+    || (isOrders && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path)) || isOrderTransfer && (req.method === 'GET' || req.method === 'POST')))
     || isRestore || isArchive;
   if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
   const archivedArea = isRestore || (req.path === '/orders' && req.query.view === 'log');

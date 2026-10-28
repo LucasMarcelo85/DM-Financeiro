@@ -122,9 +122,12 @@ app.use(
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
-const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p === '/api/contacts/import' || p === '/api/catalog/orders/import' || p === '/api/catalog/customers/import' || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
+app.use('/api/contacts/import', express.json({ limit: '5mb' }));
+app.use('/api/catalog/orders/import', express.json({ limit: '15mb' }));
+app.use('/api/catalog/customers/import', express.json({ limit: '5mb' }));
 
 const limiter = (limit, windowMs) => rateLimit({ windowMs, limit, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitas tentativas. Aguarde um pouco e tente de novo.' } });
 app.use('/api', limiter(config.rateLimitPerMinute, 60 * 1000));
@@ -159,7 +162,7 @@ app.use('/api/billing', auth, billingRouter);
 app.use('/api/instances', auth, requireAccess, instanceRoutes);
 app.use('/api/audit/instances', auth, requireAccess, pinGuard('auditoria'), instanceRouter('auditoria'));
 app.use('/api/audit', auth, requireAccess, pinGuard('auditoria'), auditRoutes);
-app.use('/api/contacts', auth, requireAccess, contactRoutes);
+app.use('/api/contacts', auth, requireAccess, express.json({ limit: '5mb' }), contactRoutes);
 app.use('/api/schedules', auth, requireAccess, scheduleRoutes);
 app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);

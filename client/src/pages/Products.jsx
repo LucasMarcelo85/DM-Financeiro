@@ -5,6 +5,7 @@ import BuyMore from '../components/BuyMore.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import ProductWorkspace from '../components/ProductWorkspace.jsx';
 import Icon from '../components/Icon.jsx';
+import CsvTransfer from '../components/CsvTransfer.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { IMAGE_ACCEPT } from '../lib/contract/image.js';
@@ -15,6 +16,15 @@ import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 const MAX_IMAGES = 12;
 const PRODUCT_VIEW_KEY = 'dm:products:view';
 const DEFAULT_PRODUCT_VIEW = { cardWidth: 208, imageHeight: 150 };
+const PRODUCT_CSV_COLUMNS = [
+  { key: 'kind', type: 'string' }, { key: 'name', type: 'string' }, { key: 'category', type: 'string' },
+  { key: 'description', type: 'string' }, { key: 'priceCents', type: 'number' },
+  { key: 'stockEnabled', type: 'boolean' }, { key: 'stockQuantity', type: 'number' },
+  { key: 'active', type: 'boolean' }, { key: 'mainImage', type: 'json' },
+  { key: 'images', type: 'json' }, { key: 'priceOptions', type: 'json' },
+  { key: 'sourceId', type: 'number' }, { key: 'sourceUserId', type: 'number' },
+  { key: 'sourceStoreId', type: 'number' },
+];
 
 function productPriceLabel(product) {
   if (product.priceCents > 0) return brl(product.priceCents);
@@ -95,7 +105,19 @@ export default function Products() {
             {data && data.limit > 0 ? ` Você usou ${data.count} de ${plural(data.limit, 'item', 'itens')} do seu plano.` : ''}
           </p>
         </div>
-        <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>
+        <div className="btn-group">
+          <CsvTransfer
+            resource="products" title="produtos" filename="produtos.csv" exportUrl="/products/export"
+            columns={PRODUCT_CSV_COLUMNS}
+            description="Exporte produtos e serviços com descrições, preços, estoque, faixas de preço, variações e imagens."
+            onImport={async (products) => {
+              const result = await importCsvBatches(products, (batch) => api.post('/products/import', { products: batch }), 500, 25 * 1024 * 1024);
+              load();
+              return result;
+            }}
+          />
+          <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>
+        </div>
       </header>
       <StoreBar />
       {data && <div className="pr-toolbar rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
