@@ -308,7 +308,7 @@ export default function Audit({ canReply = false }) {
         </div>
         <div className="btn-row">
           <span className={`au-live ${online ? 'is-on' : ''}`} role="status" title={online ? 'Recebendo mensagens em tempo real' : 'Sem o tempo real: a tela continua se atualizando a cada poucos segundos'}><i />{online ? 'Ao vivo' : 'Atualizando...'}</span>
-          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({inst?.count ?? instances.length}/{inst?.limit ?? user?.limits?.auditInstances ?? 0})</button>}
+          {hasInstances && <button className="btn btn-ghost" onClick={() => setManager((m) => !m)} aria-expanded={manager}>Números conectados ({inst?.count ?? instances.length}/{user?.role === 'admin' ? 'Ilimitado' : inst?.limit ?? user?.limits?.auditInstances ?? 0})</button>}
           {!shopMode && <BuyMore resource="auditInstances" label="Adquirir mais números" />}
                  </div>
       </header>

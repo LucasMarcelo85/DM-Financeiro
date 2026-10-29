@@ -316,7 +316,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
           {!shop && <BuyMore resource={audit ? 'auditInstances' : 'instances'} />}
         </div>
       )}
-      {data && <p className="muted small">Seu plano permite {plural(limit, noun[0], noun[1])}.</p>}
+      {data && <p className="muted small">{user?.role === 'admin' ? 'O administrador tem limites ilimitados.' : `Seu plano permite ${plural(limit, noun[0], noun[1])}.`}</p>}
 
       {choose && (
         <Modal title="Como você quer conectar?" onClose={() => setChoose(false)} footer={<button className="btn btn-ghost" onClick={() => setChoose(false)}>Cancelar</button>}>

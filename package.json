@@ -13,6 +13,7 @@
     "build": "vite build --config client/vite.config.js",
     "start": "node server/index.js",
     "smoke": "node scripts/smoke-test.mjs",
+    "seed:admin-demo": "node scripts/seed-admin-demo.mjs",
     "postinstall": "prisma generate",
     "db:generate": "prisma generate",
     "db:deploy": "prisma migrate deploy",

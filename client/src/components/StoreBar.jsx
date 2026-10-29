@@ -1,10 +1,12 @@
 import { useEffect, useState } from 'react';
 import { api, getActiveStore, isShopMode, setActiveStore } from '../api.js';
+import { useAuth } from '../auth.jsx';
 import BuyMore from './BuyMore.jsx';
 import { useToast } from './Toast.jsx';
 
 // Escolhe a loja do painel (principal ou uma loja extra) e, com `manage`, cria e exclui lojas.
 export default function StoreBar({ manage = false }) {
+  const { user } = useAuth();
   const toast = useToast();
   const [data, setData] = useState(null);
   const [name, setName] = useState('');
@@ -54,7 +56,7 @@ export default function StoreBar({ manage = false }) {
         </>
       )}
       {manage && full && <BuyMore resource="stores" label="Adquirir mais lojas" />}
-      {manage && <span className="muted small">{data.stores.length} de {data.limit} {data.limit === 1 ? 'loja' : 'lojas'}</span>}
+      {manage && <span className="muted small">{user?.role === 'admin' ? `${data.stores.length} lojas (sem limite)` : `${data.stores.length} de ${data.limit} ${data.limit === 1 ? 'loja' : 'lojas'}`}</span>}
     </div>
   );
 }

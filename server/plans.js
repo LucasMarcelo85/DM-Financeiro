@@ -145,7 +145,19 @@ export function isTrialUser(user) {
 }
 
 export function limitsFor(user) {
-  if (user.role === 'admin') return { ...limitsOf(topPlanId()), tabs: [...PLAN_TABS] };
+  if (user.role === 'admin') {
+    const unlimited = Number.MAX_SAFE_INTEGER;
+    return {
+      ...limitsOf(topPlanId()),
+      instances: unlimited,
+      auditInstances: unlimited,
+      contracts: unlimited,
+      portfolios: unlimited,
+      catalogProducts: unlimited,
+      stores: unlimited,
+      tabs: [...PLAN_TABS],
+    };
+  }
   const base = limitsOf(user.plan); // o teste grátis tem todo o acesso do plano escolhido
   const extras = extrasFor(user.id);
   // Limite do plano + o que o usuário pagou à parte (só enquanto estiver em dia).
