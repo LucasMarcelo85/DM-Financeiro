@@ -104,8 +104,7 @@ const tokenInfo = (token) => ({ hasSuperfreteToken: Boolean(config.geo.superfret
 router.get('/settings', async (req, res) => {
   const storeId = await storeScope(req);
   const { cfg, token } = await loadSettings(req.user.id, storeId);
-  const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { appWhatsapp: true } }) : null;
-  res.json({ config: cfg, creatorWhatsapp: store?.appWhatsapp || '', ...tokenInfo(token) });
+  res.json({ config: cfg, ...tokenInfo(token) });
 });
 
 router.put('/settings', async (req, res) => {
@@ -113,8 +112,7 @@ router.put('/settings', async (req, res) => {
   const storeId = await storeScope(req);
   const current = await loadSettings(req.user.id, storeId);
   const token = current.token;
-  const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { appWhatsapp: true } }) : null;
-  const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token), creatorWhatsapp: store?.appWhatsapp || '' });
+  const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
   if (cfg.orderNotifications.enabled) {
     const instance = await prisma.instance.findFirst({
       where: {
@@ -128,7 +126,7 @@ router.put('/settings', async (req, res) => {
   }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
   else await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
-  res.json({ config: cfg, creatorWhatsapp: store?.appWhatsapp || '', ...tokenInfo(token) });
+  res.json({ config: cfg, ...tokenInfo(token) });
 });
 
 // "Testar frete": simula com a configuração salva para um CEP de exemplo.

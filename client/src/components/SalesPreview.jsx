@@ -107,10 +107,17 @@ function ScreenContent({ screen }) {
   );
 }
 
-export default function SalesPreview({ variant = 'business' }) {
-  const [active, setActive] = useState('pedidos');
+export default function SalesPreview({ variant = 'business', activeScreen, onScreenChange }) {
+  const [localActive, setLocalActive] = useState('pedidos');
+  const active = activeScreen || localActive;
+  const selectScreen = (key) => {
+    setLocalActive(key);
+    onScreenChange?.(key);
+  };
   const screen = SCREENS.find((item) => item.key === active) || SCREENS[0];
-  const visibleScreens = variant === 'agency' ? SCREENS : SCREENS.filter((item) => ['pedidos', 'cobrancas', 'clientes', 'pdv'].includes(item.key));
+  const visibleScreens = variant === 'agency' || variant === 'features'
+    ? SCREENS
+    : SCREENS.filter((item) => ['pedidos', 'cobrancas', 'clientes', 'pdv'].includes(item.key));
 
   return (
     <div className="relative mx-auto w-full max-w-[42rem]">
@@ -126,7 +133,7 @@ export default function SalesPreview({ variant = 'business' }) {
             <div className="flex items-center gap-1.5 border-b border-white/10 px-1 pb-3 pt-1"><span className="grid h-6 w-6 place-items-center rounded-lg bg-amber-400 text-[9px] font-black text-slate-950">DM</span><span className="text-[9px] font-bold sm:text-[10px]">Gerenciador</span></div>
             <p className="px-1 pb-1 pt-3 text-[7px] font-bold uppercase tracking-wider text-slate-500 sm:text-[8px]">Áreas do sistema</p>
             <nav className="grid max-h-[15.5rem] gap-1 overflow-y-auto" aria-label="Prévia das abas do sistema">
-              {visibleScreens.map((item) => <button key={item.key} type="button" onClick={() => setActive(item.key)} className={`flex w-full items-center gap-1.5 rounded-lg px-1.5 py-2 text-left text-[8px] transition sm:gap-2 sm:px-2 sm:text-[9px] ${active === item.key ? 'bg-amber-400 font-bold text-slate-950' : 'text-slate-300 hover:bg-white/10'}`}><Icon name={item.icon} size={13} /><span className="truncate">{item.label}</span></button>)}
+              {visibleScreens.map((item) => <button key={item.key} type="button" onClick={() => selectScreen(item.key)} aria-pressed={active === item.key} className={`flex w-full items-center gap-1.5 rounded-lg px-1.5 py-2 text-left text-[8px] transition sm:gap-2 sm:px-2 sm:text-[9px] ${active === item.key ? 'bg-amber-400 font-bold text-slate-950' : 'text-slate-300 hover:bg-white/10'}`}><Icon name={item.icon} size={13} /><span className="truncate">{item.label}</span></button>)}
             </nav>
             {variant === 'agency' && <div className="mt-3 rounded-lg border border-white/10 bg-white/5 p-2"><small className="block text-[7px] text-slate-400">GESTÃO DE CLIENTES</small><strong className="mt-1 block text-[8px] text-amber-200">3 lojas conectadas</strong></div>}
           </aside>

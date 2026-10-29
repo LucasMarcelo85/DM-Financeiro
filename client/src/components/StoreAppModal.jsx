@@ -2,7 +2,6 @@ import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
-import { formatStoredPhone, maskPhone } from '../lib/format.js';
 import { copyText } from '../lib/portfolio/share.js';
 
 const PERM_LABELS = [
@@ -35,14 +34,14 @@ function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', whatsapp: '', userLimit: 10 });
+  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10 });
   const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS });
   const [busy, setBusy] = useState(false);
   const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key));
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
     setData(r);
-    setCfg({ enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A', whatsapp: r.store.app.whatsapp ? formatStoredPhone(r.store.app.whatsapp) : '', userLimit: r.store.app.userLimit });
+    setCfg({ enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A', userLimit: r.store.app.userLimit });
   }).catch((e) => toast(e.message, 'error')), [storeId, toast]);
   useEffect(() => { load(); }, [load]);
 
@@ -75,11 +74,6 @@ export default function StoreAppModal({ storeId, onClose }) {
           <input className="input" value={cfg.name} onChange={(e) => setCfg({ ...cfg, name: e.target.value })} placeholder={`Nome do app (padrão: ${store.name})`} maxLength={40} aria-label="Nome do app" />
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             Cor <input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
-          </label>
-          <label style={{ display: 'grid', gap: 4 }}>
-            <span>WhatsApp da agência/criador do aplicativo</span>
-            <input className="input" inputMode="tel" value={cfg.whatsapp} onChange={(e) => setCfg({ ...cfg, whatsapp: maskPhone(e.target.value) })} placeholder="(85) 99999-9999" aria-label="WhatsApp da agência ou criador do aplicativo" />
-            <small className="muted">Este número poderá receber as notificações de pedidos desta loja, quando selecionado nas configurações de entregas.</small>
           </label>
           <label style={{ display: 'grid', gap: 4 }}>
             <span>Quantidade de acessos permitidos nesta loja</span>

@@ -7,12 +7,17 @@ import SalesPreview from '../components/SalesPreview.jsx';
 import { brl, plural } from '../lib/format.js';
 
 const FEATURES = [
-  { icon: 'chat', title: 'Cobranças e lembretes pelo WhatsApp', text: 'Organize cobranças avulsas ou recorrentes e acompanhe vencimentos e envios usando suas conexões WhatsApp.' },
-  { icon: 'user', title: 'Clientes e atendimento organizados', text: 'Reúna informações, histórico e oportunidades para cuidar de cada relacionamento com mais contexto.' },
-  { icon: 'file', title: 'Contratos com a sua identidade', text: 'Crie documentos estilizados a partir de modelos e dados dos clientes, mantendo tudo organizado.' },
-  { icon: 'eye', title: 'Auditoria de conversas', text: 'Supervisione mensagens das conexões autorizadas e acompanhe o atendimento em um só lugar.' },
-  { icon: 'globe', title: 'Sites, catálogos e páginas', text: 'Monte um portfólio digital para apresentar serviços e produtos, divulgar ofertas e receber pedidos.' },
-  { icon: 'receipt', title: 'Produtos, pedidos, PDV e APIs', text: 'Controle estoque e vendas presenciais ou online e conecte automações por API e webhooks.' },
+  { key: 'whatsapp', icon: 'chat', title: 'WhatsApp', text: 'Visualize conversas e use suas conexões para se comunicar com clientes.' },
+  { key: 'cobrancas', icon: 'money', title: 'Cobranças', text: 'Acompanhe valores, vencimentos e notificações de cobrança.' },
+  { key: 'lembretes', icon: 'bell', title: 'Lembretes', text: 'Programe retornos e mensagens para não perder acompanhamentos.' },
+  { key: 'clientes', icon: 'user', title: 'Clientes', text: 'Consulte cadastros, histórico e oportunidades de relacionamento.' },
+  { key: 'contratos', icon: 'file', title: 'Contratos', text: 'Gere documentos usando modelos personalizados e dados do cliente.' },
+  { key: 'auditoria', icon: 'eye', title: 'Auditoria WhatsApp', text: 'Supervisione conversas das conexões autorizadas pela sua equipe.' },
+  { key: 'portfolio', icon: 'globe', title: 'Portfólio digital', text: 'Monte páginas, sites e catálogos para apresentar seus serviços.' },
+  { key: 'produtos', icon: 'box', title: 'Produtos e serviços', text: 'Gerencie itens do catálogo, preços e disponibilidade.' },
+  { key: 'pedidos', icon: 'receipt', title: 'Pedidos e clientes', text: 'Acompanhe pedidos, situação de atendimento e valores vendidos.' },
+  { key: 'pdv', icon: 'cart', title: 'Frente de caixa', text: 'Simule uma venda presencial selecionando itens e conferindo o total.' },
+  { key: 'api', icon: 'link', title: 'API e webhooks', text: 'Veja como conectar integrações e automatizar eventos do sistema.' },
 ];
 
 const PLAN_FEATURES = [
@@ -59,6 +64,7 @@ export default function Landing() {
   const [meta, setMeta] = useState(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
+  const [activeFeature, setActiveFeature] = useState('cobrancas');
 
   async function loadPlans() {
     setLoading(true);
@@ -161,16 +167,25 @@ export default function Landing() {
           <div className="max-w-2xl">
             <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-700">Tudo conectado</p>
             <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Ferramentas para cuidar da operação e crescer com organização</h2>
-            <p className="mt-4 leading-7 text-slate-600">Use os recursos incluídos no plano que fizer sentido para o momento do seu negócio.</p>
+            <p className="mt-4 leading-7 text-slate-600">Selecione uma área para explorar uma simulação visual da tela e entender como ela funciona no sistema.</p>
           </div>
-          <div className="mt-9 grid gap-4 sm:grid-cols-2 lg:grid-cols-3">
-            {FEATURES.map(({ icon, title, text }) => (
-              <article key={title} className="rounded-2xl border border-slate-200 bg-white p-5 transition hover:border-amber-300 hover:shadow-md sm:p-6">
-                <span className="grid h-11 w-11 place-items-center rounded-xl bg-slate-100 text-slate-800"><Icon name={icon} size={21} /></span>
-                <h3 className="mt-4 text-lg font-bold">{title}</h3>
-                <p className="mt-2 text-sm leading-6 text-slate-600">{text}</p>
-              </article>
-            ))}
+          <div className="mt-9 grid items-start gap-6 lg:grid-cols-[minmax(17rem,0.72fr)_minmax(0,1.28fr)]">
+            <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-1" role="tablist" aria-label="Funcionalidades do sistema">
+              {FEATURES.map(({ key, icon, title, text }) => (
+                <button key={key} type="button" role="tab" aria-selected={activeFeature === key} aria-controls="feature-preview" onClick={() => setActiveFeature(key)}
+                  className={`group flex min-h-[4.5rem] items-start gap-3 rounded-xl border p-3 text-left transition sm:p-3.5 ${activeFeature === key ? 'border-amber-400 bg-amber-50 shadow-sm' : 'border-slate-200 bg-white hover:border-amber-300 hover:bg-slate-50'}`}>
+                  <span className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${activeFeature === key ? 'bg-amber-400 text-slate-950' : 'bg-slate-100 text-slate-700 group-hover:bg-amber-100'}`}><Icon name={icon} size={18} /></span>
+                  <span><strong className="block text-sm text-slate-900">{title}</strong><small className="mt-1 block text-xs leading-5 text-slate-600">{text}</small></span>
+                </button>
+              ))}
+            </div>
+            <div id="feature-preview" role="tabpanel" className="min-w-0 rounded-2xl border border-slate-200 bg-slate-50 p-3 sm:p-5">
+              <div className="mb-4 flex items-center justify-between gap-3">
+                <div><p className="text-xs font-bold uppercase tracking-wider text-amber-700">Conheça por dentro</p><p className="mt-1 text-sm text-slate-600">Use o menu da prévia para alternar entre as telas.</p></div>
+                <span className="hidden rounded-full bg-white px-3 py-1 text-xs font-semibold text-slate-600 sm:inline">Demonstração interativa</span>
+              </div>
+              <SalesPreview variant="features" activeScreen={activeFeature} onScreenChange={setActiveFeature} />
+            </div>
           </div>
         </div>
       </section>

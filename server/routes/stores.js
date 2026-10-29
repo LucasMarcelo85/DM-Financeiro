@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import { prisma } from '../prisma.js';
-import { AppError, normalizePhone } from '../utils/helpers.js';
+import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
@@ -14,7 +14,7 @@ const router = Router();
 const dto = (s) => ({
   id: s.id, name: s.name, slug: s.slug, path: `/${s.slug}`,
   domain: { name: s.customDomain || '', verified: !!s.customDomainVerifiedAt },
-  app: { enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '', whatsapp: s.appWhatsapp || '', userLimit: s.appUserLimit },
+  app: { enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '', userLimit: s.appUserLimit },
   createdAt: s.createdAt,
 });
 
@@ -212,9 +212,6 @@ router.put('/:id/app', async (req, res) => {
   }
   const color = String(req.body?.color ?? '').trim();
   if (color && !/^#[0-9a-fA-F]{6}$/.test(color)) throw new AppError(400, 'Cor inválida. Use o formato #RRGGBB.');
-  const rawWhatsapp = String(req.body?.whatsapp ?? '').trim();
-  const whatsapp = rawWhatsapp ? normalizePhone(rawWhatsapp) : null;
-  if (rawWhatsapp && !whatsapp) throw new AppError(400, 'WhatsApp do criador inválido. Use DDD + número.');
   const userLimit = Number(req.body?.userLimit);
   const unchangedOverPlanLimit = userLimit === store.appUserLimit && userLimit > limits.appUsers;
   if (!Number.isInteger(userLimit) || userLimit < 1 || (userLimit > limits.appUsers && !unchangedOverPlanLimit)) {
@@ -229,7 +226,7 @@ router.put('/:id/app', async (req, res) => {
       }
       return tx.store.update({
         where: { id: store.id },
-        data: { appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null, appColor: color || null, appWhatsapp: whatsapp, appUserLimit: userLimit },
+        data: { appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null, appColor: color || null, appUserLimit: userLimit },
       });
     }, { isolationLevel: 'Serializable' });
   } catch (e) {

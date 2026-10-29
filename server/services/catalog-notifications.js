@@ -7,19 +7,20 @@ const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency'
 
 async function catalogConfig(userId, storeId) {
   if (storeId) {
-    const store = await prisma.store.findFirst({ where: { id: storeId, userId }, select: { config: true, appWhatsapp: true } });
-    return { config: { ...defaultCatalogConfig(), ...(store?.config || {}) }, creatorWhatsapp: store?.appWhatsapp || '' };
+    const store = await prisma.store.findFirst({ where: { id: storeId, userId }, select: { config: true } });
+    return { ...defaultCatalogConfig(), ...(store?.config || {}) };
   }
   const row = await prisma.catalogSettings.findUnique({ where: { userId }, select: { config: true } });
-  return { config: { ...defaultCatalogConfig(), ...(row?.config || {}) }, creatorWhatsapp: '' };
+  return { ...defaultCatalogConfig(), ...(row?.config || {}) };
 }
 
 export async function notifyCatalogOrder(order, event) {
-  const { config: cfg, creatorWhatsapp } = await catalogConfig(order.userId, order.storeId);
+  if (order.source !== 'catalog') return false;
+  const cfg = await catalogConfig(order.userId, order.storeId);
   const notification = cfg.orderNotifications;
   if (!notification?.enabled) return false;
-  const number = normalizePhone(notification.recipient === 'creator' ? creatorWhatsapp : cfg.whatsapp);
-  if (!number || !Number.isInteger(notification.instanceId)) throw new Error('Configure o WhatsApp selecionado para receber notificações e a instância de envio.');
+  const number = normalizePhone(cfg.whatsapp);
+  if (!number || !Number.isInteger(notification.instanceId)) throw new Error('Configure o WhatsApp da loja para receber notificações e a instância de envio.');
 
   const instance = await prisma.instance.findFirst({
     where: {
