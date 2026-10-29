@@ -9,6 +9,7 @@ import PointOfSale from '../components/PointOfSale.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 import { importCsvBatches } from '../lib/csv.js';
+import { BRAZIL_MAP } from '../lib/brazilMap.js';
 
 const DAY = 86400000;
 const TYPE = { retirada: 'Retirada', excursao: 'Excursão', motoboy: 'Motoboy', correios: 'Correios' };
@@ -37,11 +38,11 @@ const timeSince = (timestamp) => {
 };
 
 const SALES_REGIONS = [
-  { key: 'norte', name: 'Norte', ddds: [63, 68, 69, 91, 92, 93, 94, 95, 96, 97], x: 138, y: 80, color: '#0e9f6e' },
-  { key: 'nordeste', name: 'Nordeste', ddds: [71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 98, 99], x: 238, y: 145, color: '#d97706' },
-  { key: 'centro-oeste', name: 'Centro-Oeste', ddds: [61, 62, 64, 65, 66, 67], x: 150, y: 170, color: '#7c3aed' },
-  { key: 'sudeste', name: 'Sudeste', ddds: [11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38], x: 202, y: 232, color: '#2563eb' },
-  { key: 'sul', name: 'Sul', ddds: [41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55], x: 147, y: 292, color: '#db2777' },
+  { key: 'norte', name: 'Norte', ddds: [63, 68, 69, 91, 92, 93, 94, 95, 96, 97], color: '#0e9f6e' },
+  { key: 'nordeste', name: 'Nordeste', ddds: [71, 73, 74, 75, 77, 79, 81, 82, 83, 84, 85, 86, 87, 88, 89, 98, 99], color: '#d97706' },
+  { key: 'centro-oeste', name: 'Centro-Oeste', ddds: [61, 62, 64, 65, 66, 67], color: '#7c3aed' },
+  { key: 'sudeste', name: 'Sudeste', ddds: [11, 12, 13, 14, 15, 16, 17, 18, 19, 21, 22, 24, 27, 28, 31, 32, 33, 34, 35, 37, 38], color: '#2563eb' },
+  { key: 'sul', name: 'Sul', ddds: [41, 42, 43, 44, 45, 46, 47, 48, 49, 51, 53, 54, 55], color: '#db2777' },
 ];
 const regionForPhone = (phone) => {
   let digits = String(phone || '').replace(/\D/g, '');
@@ -51,16 +52,21 @@ const regionForPhone = (phone) => {
 };
 
 function StrategyDashboard({ data, days, query, sort, onSortChange, kind, onKindChange, onOpenCustomer }) {
+  const [activeRegion, setActiveRegion] = useState(null);
   const regions = SALES_REGIONS.map((region) => {
     const customers = data.customers.filter((customer) => regionForPhone(customer.phone)?.key === region.key);
     return {
       ...region,
+      ...BRAZIL_MAP.centers[region.key],
       customers: customers.length,
       buyers: customers.filter((customer) => customer.orders > 0).length,
       salesCents: customers.reduce((sum, customer) => sum + customer.totalCents, 0),
     };
   });
   const rankedRegions = [...regions].sort((a, b) => b.salesCents - a.salesCents);
+  const regionColor = Object.fromEntries(regions.map((region) => [region.key, region.color]));
+  const maxRegionCustomers = Math.max(1, ...regions.map((region) => region.customers));
+  const highlight = (key) => ({ onMouseEnter: () => setActiveRegion(key), onMouseLeave: () => setActiveRegion(null), onFocus: () => setActiveRegion(key), onBlur: () => setActiveRegion(null) });
   const customersWithoutRegion = data.customers.filter((customer) => !regionForPhone(customer.phone)).length;
   const filtered = data.customers
     .filter((customer) => !query.trim() || `${customer.name} ${customer.phone} ${customer.labels.join(' ')}`.toLowerCase().includes(query.trim().toLowerCase()))
@@ -88,25 +94,33 @@ function StrategyDashboard({ data, days, query, sort, onSortChange, kind, onKind
 
       <div className="od-strategy-grid">
         <section className="od-strategy-map-card">
-          <div className="od-strategy-subhead"><div><h3>Clientes por região</h3><p className="muted small">Os pinos agrupam clientes pela região do DDD, não pelo endereço exato.</p></div></div>
+          <div className="od-strategy-subhead"><div><h3>Clientes por região</h3><p className="muted small">Os pinos agrupam clientes pela região do DDD, não pelo endereço exato. Passe o mouse ou toque em um pino para destacar a região.</p></div></div>
           <div className="od-brazil-map">
-            <svg viewBox="0 0 320 360" role="img" aria-label="Mapa esquemático do Brasil com clientes agrupados por região">
-              <defs><clipPath id="brazil-map-clip"><path d="M124 25 153 29 172 43 198 47 214 61 240 65 254 83 274 89 280 109 268 124 287 137 279 156 291 174 273 190 265 211 248 218 239 239 222 249 214 270 198 284 192 306 175 322 162 310 146 313 129 297 110 294 96 278 77 275 72 256 58 248 63 226 49 213 57 193 48 180 58 162 51 142 62 126 60 108 74 94 78 75 96 66 103 48Z" /></clipPath></defs>
-              <path className="od-map-outline" d="M124 25 153 29 172 43 198 47 214 61 240 65 254 83 274 89 280 109 268 124 287 137 279 156 291 174 273 190 265 211 248 218 239 239 222 249 214 270 198 284 192 306 175 322 162 310 146 313 129 297 110 294 96 278 77 275 72 256 58 248 63 226 49 213 57 193 48 180 58 162 51 142 62 126 60 108 74 94 78 75 96 66 103 48Z" />
-              <g clipPath="url(#brazil-map-clip)" className="od-map-regions">
-                <path fill="#0e9f6e" d="M45 15H200L198 95 162 132 122 122 84 150 45 120Z" />
-                <path fill="#d97706" d="M190 42H305V193L266 187 239 154 203 139 172 98Z" />
-                <path fill="#7c3aed" d="M85 118 161 107 211 143 207 204 171 232 115 214 71 185Z" />
-                <path fill="#2563eb" d="M169 174 224 166 271 192 248 253 211 274 170 243Z" />
-                <path fill="#db2777" d="M111 221 177 234 217 269 203 330 147 326 113 296Z" />
+            <svg viewBox={`0 0 ${BRAZIL_MAP.width} ${BRAZIL_MAP.height}`} role="img" aria-label="Mapa do Brasil com os estados e os clientes agrupados por região">
+              <g className="od-map-states">
+                {BRAZIL_MAP.states.map((state) => (
+                  <path key={state.uf} d={state.d} fill={regionColor[state.region]} className={`od-map-state${activeRegion === state.region ? ' is-active' : activeRegion ? ' is-dim' : ''}`}>
+                    <title>{`${state.name} (${state.uf})`}</title>
+                  </path>
+                ))}
               </g>
-              {regions.map((region) => (
-                <g key={region.key} transform={`translate(${region.x} ${region.y})`}>
-                  <circle r="19" fill={region.color} stroke="#fff" strokeWidth="3" />
-                  <text className="od-map-count" textAnchor="middle" dominantBaseline="central">{region.customers}</text>
-                  <title>{`${region.name}: ${region.customers} clientes, ${brl(region.salesCents)} em vendas pagas`}</title>
-                </g>
-              ))}
+              {[...regions].sort((a, b) => (a.key === activeRegion) - (b.key === activeRegion)).map((region) => {
+                const scale = 0.8 + 0.5 * Math.sqrt(region.customers / maxRegionCustomers);
+                const digits = String(region.customers).length;
+                return (
+                  <g key={region.key} className={`od-map-pin${activeRegion === region.key ? ' is-active' : ''}${region.customers === 0 ? ' is-empty' : ''}`} transform={`translate(${region.x} ${region.y})`} tabIndex={0} role="img" aria-label={`${region.name}: ${region.customers} clientes, ${brl(region.salesCents)} em vendas pagas`} {...highlight(region.key)}>
+                    <ellipse className="od-map-pin-shadow" cx="0" cy="0" rx={6 * scale} ry={2.2 * scale} />
+                    <g transform={`scale(${scale})`}>
+                      <path className="od-map-pin-body" fill={region.color} d="M0 0C-4 -7 -13 -13 -13 -24a13 13 0 0 1 26 0C13 -13 4 -7 0 0Z" />
+                      <circle cx="0" cy="-24" r="9.5" fill="#fff" fillOpacity="0.18" />
+                      <text className="od-map-count" x="0" y="-24" textAnchor="middle" dominantBaseline="central" fontSize={digits > 3 ? 7.5 : digits > 2 ? 9 : 11.5}>{region.customers}</text>
+                    </g>
+                    <text className="od-map-label-halo" x="0" y={13 * scale} textAnchor="middle" fontSize="9" aria-hidden="true">{region.name}</text>
+                    <text className="od-map-label" x="0" y={13 * scale} textAnchor="middle" fontSize="9">{region.name}</text>
+                    <title>{`${region.name}: ${region.customers} clientes, ${brl(region.salesCents)} em vendas pagas`}</title>
+                  </g>
+                );
+              })}
             </svg>
           </div>
           <div className="od-region-ranking">
@@ -115,7 +129,7 @@ function StrategyDashboard({ data, days, query, sort, onSortChange, kind, onKind
           </div>
           {customersWithoutRegion > 0 && <p className="muted small">{customersWithoutRegion} {plural(customersWithoutRegion, 'cliente sem DDD identificado', 'clientes sem DDD identificado')} não aparecem no mapa.</p>}
           <ul className="od-region-list">
-            {rankedRegions.map((region) => <li key={region.key}><span className="od-region-dot" style={{ background: region.color }} /><strong>{region.name}</strong><span>{region.customers} clientes · {region.buyers} compradores</span><b>{brl(region.salesCents)}</b></li>)}
+            {rankedRegions.map((region) => <li key={region.key} className={activeRegion === region.key ? 'is-active' : undefined} tabIndex={0} {...highlight(region.key)}><span className="od-region-dot" style={{ background: region.color }} /><strong>{region.name}</strong><span>{region.customers} clientes · {region.buyers} compradores</span><b>{brl(region.salesCents)}</b></li>)}
           </ul>
         </section>
 
