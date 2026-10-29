@@ -3,6 +3,7 @@ import { Link } from 'react-router-dom';
 import { api } from '../api.js';
 import Icon from '../components/Icon.jsx';
 import { Brand } from '../components/Layout.jsx';
+import SalesPreview from '../components/SalesPreview.jsx';
 import { brl, plural } from '../lib/format.js';
 
 const FEATURES = [
@@ -50,38 +51,7 @@ function PlanFeatures({ plan }) {
 
 function DemoPanel() {
   return (
-    <div className="relative mx-auto w-full max-w-[34rem]">
-      <div className="absolute -inset-5 rounded-[2.5rem] bg-amber-300/20 blur-2xl" />
-      <div className="relative overflow-hidden rounded-3xl border border-white/70 bg-white p-4 shadow-2xl shadow-slate-900/15 sm:p-6">
-        <div className="flex items-center justify-between border-b border-slate-100 pb-4">
-          <div className="flex items-center gap-3">
-            <span className="grid h-10 w-10 place-items-center rounded-xl bg-amber-100 text-amber-800"><Icon name="trend" /></span>
-            <div><p className="font-bold text-slate-900">Visão geral</p><p className="text-xs text-slate-500">Seu negócio, organizado</p></div>
-          </div>
-          <span className="rounded-full bg-emerald-50 px-3 py-1 text-xs font-semibold text-emerald-700">Tudo em ordem</span>
-        </div>
-        <div className="grid grid-cols-2 gap-3 py-4">
-          {[['Clientes', 'Organizados', 'user'], ['Cobranças', 'Acompanhe', 'money'], ['Pedidos', 'Em um só lugar', 'receipt'], ['Portfólio', 'Compartilhe', 'globe']].map(([label, sub, icon]) => (
-            <div key={label} className="rounded-2xl border border-slate-100 bg-slate-50/70 p-3 sm:p-4">
-              <span className="grid h-9 w-9 place-items-center rounded-xl bg-white text-slate-700 shadow-sm"><Icon name={icon} size={17} /></span>
-              <p className="mt-3 text-sm font-bold text-slate-900">{label}</p>
-              <p className="text-xs text-slate-500">{sub}</p>
-            </div>
-          ))}
-        </div>
-        <div className="rounded-2xl bg-slate-900 p-4 text-white">
-          <div className="flex items-center justify-between gap-3">
-            <div><p className="text-xs text-slate-300">Uma rotina mais simples</p><p className="mt-1 font-semibold">Atendimento e gestão conectados</p></div>
-            <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-amber-400 text-slate-900"><Icon name="check" /></span>
-          </div>
-          <div className="mt-4 h-2 overflow-hidden rounded-full bg-white/15"><div className="h-full w-3/4 rounded-full bg-amber-400" /></div>
-        </div>
-      </div>
-      <div className="absolute -bottom-5 -left-2 hidden items-center gap-2 rounded-2xl border border-slate-100 bg-white px-4 py-3 shadow-xl sm:flex">
-        <span className="grid h-9 w-9 place-items-center rounded-xl bg-emerald-100 text-emerald-700"><Icon name="chat" size={17} /></span>
-        <span><strong className="block text-sm text-slate-900">Mais clareza no dia a dia</strong><small className="text-slate-500">Acesse de qualquer dispositivo</small></span>
-      </div>
-    </div>
+    <SalesPreview />
   );
 }
 
@@ -226,13 +196,13 @@ export default function Landing() {
             <>
               <div className="mt-10 grid gap-5 md:grid-cols-2 xl:grid-cols-3">
                 {plans.map((plan, index) => (
-                  <article key={plan.id} className={`flex flex-col rounded-3xl border p-6 sm:p-7 ${index === plans.length - 1 ? 'border-amber-300 bg-white text-slate-950 shadow-2xl shadow-amber-950/20' : 'border-white/15 bg-white/[0.06] text-white'}`}>
+                  <article key={plan.id} className={`flex flex-col rounded-3xl border p-6 text-slate-950 shadow-xl shadow-slate-950/10 sm:p-7 ${index === 0 ? 'border-white bg-white' : index === 1 ? 'border-amber-300 bg-amber-50' : 'border-slate-200 bg-white'}`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div><h3 className="text-xl font-bold">{plan.name}</h3><p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-600' : 'text-slate-300'}`}>{index === 0 ? 'Para organizar a própria operação' : index === 1 ? 'Para gerenciar operações de clientes' : 'Para acompanhar seu negócio'}</p></div>
+                      <div><h3 className="text-xl font-bold text-slate-950">{plan.name}</h3><p className="mt-1 text-sm text-slate-700">{index === 0 ? 'Para organizar a própria operação' : index === 1 ? 'Para gerenciar operações de clientes' : 'Para acompanhar seu negócio'}</p></div>
                       <span className="h-3 w-3 rounded-full" style={{ backgroundColor: plan.color || '#f2a33a' }} />
                     </div>
-                    <p className="mt-6"><strong className="text-4xl font-bold tracking-tight">{brl(plan.priceCents)}</strong><span className={index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}>/mês</span></p>
-                    <p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}`}>Teste por {trialDays} dias antes de decidir.</p>
+                    <p className="mt-6"><strong className="text-4xl font-bold tracking-tight text-slate-950">{brl(plan.priceCents)}</strong><span className="text-slate-600">/mês</span></p>
+                    <p className="mt-1 text-sm text-slate-600">Teste por {trialDays} dias antes de decidir.</p>
                     <PlanFeatures plan={plan} />
                     <Link to={`/cadastro?plan=${encodeURIComponent(plan.id)}`} className="mt-7 inline-flex min-h-12 items-center justify-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 no-underline transition hover:bg-amber-300">
                       Escolher {plan.name} <Icon name="right" size={17} />

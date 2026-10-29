@@ -1,6 +1,7 @@
 import { Link, Navigate, useParams } from 'react-router-dom';
 import Icon from '../components/Icon.jsx';
 import { Brand } from '../components/Layout.jsx';
+import SalesPreview from '../components/SalesPreview.jsx';
 
 const SOLUTIONS = {
   lojas: {
@@ -63,14 +64,17 @@ export default function SalesDetails() {
       </header>
 
       <section className="bg-slate-950 text-white">
-        <div className="mx-auto max-w-7xl px-4 py-16 sm:px-6 sm:py-20 lg:px-8">
-          <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-300">{solution.eyebrow}</p>
-          <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">{solution.title}</h1>
-          <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">{solution.intro}</p>
-          <div className="mt-8 flex flex-wrap gap-3">
-            <Link to="/#planos" className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 no-underline hover:bg-amber-300">{solution.cta}<Icon name="right" size={17} /></Link>
-            <Link to="/cadastro" className="inline-flex min-h-12 items-center rounded-xl border border-white/25 px-5 font-semibold text-white no-underline hover:bg-white/10">Começar teste grátis</Link>
+        <div className="mx-auto grid max-w-7xl items-center gap-10 px-4 py-14 sm:px-6 sm:py-20 lg:grid-cols-[0.9fr_1.1fr] lg:px-8">
+          <div>
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-300">{solution.eyebrow}</p>
+            <h1 className="mt-4 max-w-4xl text-4xl font-bold leading-tight tracking-tight sm:text-5xl">{solution.title}</h1>
+            <p className="mt-6 max-w-3xl text-lg leading-8 text-slate-300">{solution.intro}</p>
+            <div className="mt-8 flex flex-wrap gap-3">
+              <Link to="/#planos" className="inline-flex min-h-12 items-center gap-2 rounded-xl bg-amber-400 px-5 font-bold text-slate-950 no-underline hover:bg-amber-300">{solution.cta}<Icon name="right" size={17} /></Link>
+              <Link to="/cadastro" className="inline-flex min-h-12 items-center rounded-xl border border-white/25 px-5 font-semibold text-white no-underline hover:bg-white/10">Começar teste grátis</Link>
+            </div>
           </div>
+          <SalesPreview variant={audience === 'agencias' ? 'agency' : 'business'} />
         </div>
       </section>
 

@@ -117,10 +117,13 @@ router.put('/settings', async (req, res) => {
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token), creatorWhatsapp: store?.appWhatsapp || '' });
   if (cfg.orderNotifications.enabled) {
     const instance = await prisma.instance.findFirst({
-      where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio', storeId },
+      where: {
+        id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
+        ...(storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId }] }),
+      },
     });
     if (!instance || await whatsapp.getState(instance) !== 'open') {
-      throw new AppError(400, 'Conecte uma instância de WhatsApp deste site antes de ativar as notificações.');
+      throw new AppError(400, 'Selecione uma instância de WhatsApp conectada da sua conta ou desta loja.');
     }
   }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });

@@ -162,8 +162,12 @@ export function instanceRouter(purpose) {
     req.auditStores = stores;
     const auditScope = audit ? cleanAuditScope(req.query.scope, req.user, req) : undefined;
     const storeFilter = !audit && req.forcedStore !== undefined
-      ? { storeId: req.forcedStore }
-      : !audit && req.query.store !== undefined ? { storeId: await storeScope(req) } : {};
+      ? req.query.includeOwner === '1' ? { OR: [{ storeId: null }, { storeId: req.forcedStore }] } : { storeId: req.forcedStore }
+      : !audit && req.query.store !== undefined
+        ? req.query.includeOwner === '1'
+          ? { OR: [{ storeId: null }, { storeId: await storeScope(req) }] }
+          : { storeId: await storeScope(req) }
+        : {};
     const where = {
       userId: req.user.id, purpose,
       ...(audit ? { auditScope } : {}),

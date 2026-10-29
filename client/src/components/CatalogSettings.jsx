@@ -58,7 +58,9 @@ export default function CatalogSettings({ onClose, onSaved }) {
       setInfiniteHandle(r.providers?.find((p) => p.provider === 'infinitepay')?.handle || '');
     }).catch((e) => setError(e.message));
     const activeStore = !isShopMode() ? getActiveStore() : null;
-    api.get(`/instances${activeStore ? `?store=${encodeURIComponent(activeStore)}` : ''}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
+    const instanceQuery = new URLSearchParams({ includeOwner: '1' });
+    if (activeStore) instanceQuery.set('store', activeStore);
+    api.get(`/instances?${instanceQuery}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
   }, []);
 
   if (!f) return <Modal title="Entregas e frete" onClose={onClose}><p className="muted">{error || 'Carregando...'}</p></Modal>;
@@ -149,15 +151,15 @@ export default function CatalogSettings({ onClose, onSaved }) {
                 <option value="">Selecione uma instância</option>
                 {instances.filter((instance) => instance.connected || String(instance.id) === f.orderNotifications.instanceId).map((instance) => (
                   <option key={instance.id} value={instance.id}>
-                    {instance.label || instance.metaPhoneDisplay || instance.name}{instance.connected ? '' : ' · desconectada'}
+                    {instance.label || instance.metaPhoneDisplay || instance.name}{instance.storeId ? ' · loja' : ' · conta do criador'}{instance.connected ? '' : ' · desconectada'}
                   </option>
                 ))}
               </select>
             </label>
             <p className="muted small">
-              A notificação será enviada para o número escolhido acima usando a instância conectada a esta loja. Pedidos novos e pagamentos confirmados pela InfinitePay serão notificados; marcar um pedido como pago manualmente não envia aviso de pagamento.
+              A notificação será enviada para o número escolhido acima usando a instância conectada à conta do criador ou a esta loja. Pedidos novos e pagamentos confirmados pela InfinitePay serão notificados; marcar um pedido como pago manualmente não envia aviso de pagamento.
             </p>
-            {!instances.some((instance) => instance.connected) && <p className="muted small">Conecte um WhatsApp em “WhatsApp conectado” para habilitar o envio.</p>}
+            {!instances.some((instance) => instance.connected) && <p className="muted small">Conecte um WhatsApp na conta do criador ou na loja para habilitar o envio.</p>}
           </>}
         </fieldset>
         <fieldset className="cs-box">

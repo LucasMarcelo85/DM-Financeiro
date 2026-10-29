@@ -22,9 +22,12 @@ export async function notifyCatalogOrder(order, event) {
   if (!number || !Number.isInteger(notification.instanceId)) throw new Error('Configure o WhatsApp selecionado para receber notificações e a instância de envio.');
 
   const instance = await prisma.instance.findFirst({
-    where: { id: notification.instanceId, userId: order.userId, purpose: 'envio', storeId: order.storeId },
+    where: {
+      id: notification.instanceId, userId: order.userId, purpose: 'envio',
+      ...(order.storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId: order.storeId }] }),
+    },
   });
-  if (!instance) throw new Error('A instância de notificação não pertence mais a esta loja.');
+  if (!instance) throw new Error('A instância de notificação não pertence mais à conta ou a esta loja.');
   if (await whatsapp.getState(instance) !== 'open') throw new Error('A instância de notificação está desconectada.');
 
   const lines = (Array.isArray(order.items) ? order.items : [])
