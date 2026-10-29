@@ -12,12 +12,13 @@ import InstanceManager from '../components/InstanceManager.jsx';
 const TABS = [
   ['produtos', 'Produtos'],
   ['pedidos', 'Pedidos e clientes'],
+  ['pdv', 'Frente de caixa'],
   ['entregas', 'Entregas e WhatsApp'],
   ['api', 'API e webhooks'],
   ['auditoria', 'Auditoria'],
 ];
 const firstTab = (perms) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) : key === 'pedidos'
-  ? ['pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv'].some((perm) => perms.includes(perm))
+  ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
   : perms.includes(key))?.[0] || '';
 const foregroundFor = (color) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
@@ -41,7 +42,6 @@ export default function ShopApp() {
   const [authed, setAuthed] = useState(Boolean(getShopToken()));
   const [perms, setPerms] = useState(null);
   const [tab, setTab] = useState('');
-  const [contactWhatsapp, setContactWhatsapp] = useState('');
   const [auditCanSend, setAuditCanSend] = useState(false);
   const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
   const [form, setForm] = useState({ login: '', password: '' });
@@ -52,7 +52,6 @@ export default function ShopApp() {
     api.get('/shop-app/me').then((r) => {
       setPerms(r.user.perms);
       setTab(firstTab(r.user.perms));
-      setContactWhatsapp(r.app.whatsapp || '');
       setAuditCanSend(Boolean(r.app.auditSend));
     }).catch((e) => toast(e.message, 'error'));
   }, [authed]);
@@ -88,7 +87,6 @@ export default function ShopApp() {
       setShopToken(r.token);
       setPerms(r.user.perms);
       setTab(firstTab(r.user.perms));
-      setContactWhatsapp(r.app.whatsapp || '');
       setAuditCanSend(Boolean(r.app.auditSend));
       setAuthed(true);
     } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
@@ -118,8 +116,9 @@ export default function ShopApp() {
   const tabs = TABS.filter(([key]) => key === 'produtos'
     ? perms?.includes('produtos')
     : key === 'pedidos'
-      ? ['pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv'].some((p) => perms?.includes(p))
+      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((p) => perms?.includes(p))
       : perms?.includes(key));
+  const otherTab = tabs.find(([key]) => key !== 'pdv')?.[0];
 
   return (
     <>
@@ -130,7 +129,6 @@ export default function ShopApp() {
             <button key={key} type="button" className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </nav>
-        {contactWhatsapp && <a className="btn btn-ghost btn-sm" href={`https://wa.me/${contactWhatsapp}`} target="_blank" rel="noopener noreferrer">WhatsApp da loja</a>}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShopToken(null); setAuthed(false); }}>Sair</button>
       </header>
       <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
@@ -138,6 +136,7 @@ export default function ShopApp() {
           : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
             : tab === 'produtos' ? <Products />
               : tab === 'pedidos' ? <Orders allow={perms} />
+                : tab === 'pdv' ? <Orders allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
                 : tab === 'api' ? <Api />
                   : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
                     : tab === 'entregas' ? <>

@@ -95,7 +95,7 @@ const UF = /^[A-Z]{2}$/;
 
 export const defaultCatalogConfig = () => ({
   storeName: '', whatsapp: '',
-  orderNotifications: { enabled: false, instanceId: null },
+  orderNotifications: { enabled: false, instanceId: null, recipient: 'store' },
   checkout: { minItems: 1, minSubtotalCents: 0 },
   pickup: { enabled: false, name: '', address: '' },
   excursion: { enabled: false },
@@ -104,7 +104,7 @@ export const defaultCatalogConfig = () => ({
 });
 
 // `hasToken`: há credencial do SuperFrete configurada no servidor ou legada para este usuário.
-export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
+export function cleanCatalogConfig(raw, { hasToken = false, creatorWhatsapp = '' } = {}) {
   const r = raw && typeof raw === 'object' ? raw : {};
   const d = defaultCatalogConfig();
   const ex = r.excursion && typeof r.excursion === 'object' ? r.excursion : {};
@@ -120,12 +120,19 @@ export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
   const notificationInstanceId = !notificationsEnabled || notifications.instanceId === '' || notifications.instanceId === null || notifications.instanceId === undefined
     ? null
     : intIn(notifications.instanceId, 1, Number.MAX_SAFE_INTEGER, 'Instância de notificação');
-  if (notificationsEnabled && (!whatsapp || !notificationInstanceId)) {
-    throw new AppError(400, 'Informe o WhatsApp da loja e escolha uma instância para receber as notificações.');
+  const notificationRecipient = notifications.recipient ?? 'store';
+  if (notificationRecipient !== 'store' && notificationRecipient !== 'creator') {
+    throw new AppError(400, 'Escolha um número válido para receber as notificações.');
+  }
+  const recipientWhatsapp = notificationRecipient === 'creator' ? normalizePhone(creatorWhatsapp) : whatsapp;
+  if (notificationsEnabled && (!recipientWhatsapp || !notificationInstanceId)) {
+    throw new AppError(400, notificationRecipient === 'creator'
+      ? 'Configure o WhatsApp do criador do aplicativo e escolha uma instância para enviar as notificações.'
+      : 'Informe o WhatsApp da loja e escolha uma instância para receber as notificações.');
   }
   const cfg = {
     storeName: line(r.storeName, 80), whatsapp: whatsapp || '',
-    orderNotifications: { enabled: notificationsEnabled, instanceId: notificationInstanceId },
+    orderNotifications: { enabled: notificationsEnabled, instanceId: notificationInstanceId, recipient: notificationRecipient },
     checkout: {
       minItems: intIn(checkout.minItems ?? d.checkout.minItems, 1, 999, 'Quantidade mínima do pedido'),
       minSubtotalCents: intIn(checkout.minSubtotalCents ?? d.checkout.minSubtotalCents, 0, MAX_PRICE, 'Valor mínimo do pedido'),

@@ -1616,7 +1616,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .od-strategy-heading p, .od-strategy-subhead p { margin: 0.25rem 0 0; }
 .od-strategy-note { border-radius: 999px; padding: 0.35rem 0.65rem; background: var(--primary-soft, #eef2ff); color: var(--primary); font-size: 0.78rem; font-weight: 700; }
 .od-strategy-stats { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
-.od-strategy-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 1rem; align-items: start; }
+.od-strategy-grid { display: grid; grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr); gap: 1rem; align-items: start; }
 .od-strategy-map-card, .od-strategy-customers { min-width: 0; padding: 1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }
 .od-brazil-map { display: grid; place-items: center; padding: 0.5rem; border-radius: var(--r-md); background: radial-gradient(circle at 50% 40%, #f7fafd 0%, #e8f0f8 100%); }
 .od-brazil-map svg { width: min(100%, 24rem); max-height: 26rem; overflow: visible; }
@@ -1642,8 +1642,21 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .od-region-list, .od-strategy-customer-list { display: grid; gap: 0.45rem; list-style: none; padding: 0; margin: 0.8rem 0 0; }
 .od-region-list li { display: grid; grid-template-columns: 0.6rem minmax(5rem, 0.7fr) minmax(8rem, 1.2fr) auto; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-top: 1px solid var(--line); }
 .od-region-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; }
-.od-region-list li { border-radius: var(--r-sm); transition: background 0.15s; outline: none; }
-.od-region-list li:hover, .od-region-list li.is-active, .od-region-list li:focus-visible { background: #f2f6fb; }
+.od-region-list li { border-radius: var(--r-sm); transition: background 0.15s; outline: none; cursor: pointer; }
+.od-region-list li:hover, .od-region-list li.is-active, .od-region-list li.is-selected, .od-region-list li:focus-visible { background: #f2f6fb; }
+.od-region-list li:focus-visible { box-shadow: inset 0 0 0 2px var(--primary); }
+.od-region-detail { margin-top: 0.9rem; padding: 0.85rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: #f8fafc; }
+.od-region-detail-heading { display: flex; align-items: center; gap: 0.6rem; }
+.od-region-detail-heading > div { flex: 1; }
+.od-region-detail-heading h4, .od-region-detail-heading p { margin: 0; }
+.od-region-detail-heading .icon-btn { font-size: 1.2rem; }
+.od-region-cities { margin: 0.5rem 0; font-weight: 700; }
+.od-region-detail-list { display: grid; gap: 0.35rem; max-height: 16rem; overflow: auto; list-style: none; margin: 0.7rem 0; padding: 0; }
+.od-region-detail-list li { display: grid; grid-template-columns: minmax(7rem, 1fr) minmax(5rem, auto) auto; align-items: center; gap: 0.55rem; padding: 0.45rem 0; border-top: 1px solid var(--line); font-size: 0.85rem; }
+.od-region-detail-list li > span:first-child { display: grid; min-width: 0; }
+.od-region-detail-list li strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.od-region-detail-list li small, .od-region-detail-list li > span:nth-child(2) { color: var(--muted); font-size: 0.78rem; }
+.od-region-detail > p:last-child { margin-bottom: 0; }
 .od-strategy-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.8rem; }
 .od-strategy-customer-list { max-height: 42rem; overflow: auto; }
 .od-strategy-customer { display: grid; grid-template-columns: minmax(9rem, 1.5fr) repeat(3, minmax(5.5rem, 1fr)); gap: 0.65rem; align-items: center; width: 100%; padding: 0.7rem 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; text-align: left; cursor: pointer; }
@@ -1675,6 +1688,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .od-strategy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .od-region-list li { grid-template-columns: 0.6rem minmax(4rem, 0.7fr) minmax(0, 1.2fr); }
   .od-region-list li b { grid-column: 2 / -1; }
+  .od-region-detail-list li { grid-template-columns: minmax(0, 1fr) auto; }
+  .od-region-detail-list li > span:nth-child(2) { grid-column: 1; }
+  .od-region-detail-list li > button { grid-row: 1 / span 2; grid-column: 2; }
   .od-strategy-customer { grid-template-columns: minmax(0, 1fr) auto; }
   .od-strategy-customer > span:nth-child(3), .od-strategy-customer > span:last-child { grid-column: auto; }
   .od-strategy-customer > span:nth-child(2) { grid-row: 2; }

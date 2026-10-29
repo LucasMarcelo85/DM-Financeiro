@@ -4,6 +4,7 @@ import Layout from './components/Layout.jsx';
 import Login from './pages/Login.jsx';
 import Register from './pages/Register.jsx';
 import Landing from './pages/Landing.jsx';
+import SalesDetails from './pages/SalesDetails.jsx';
 import Dashboard from './pages/Dashboard.jsx';
 import WhatsApp from './pages/WhatsApp.jsx';
 import Contacts from './pages/Contacts.jsx';
@@ -78,6 +79,7 @@ export default function App() {
       <Route path="/" element={<HomeRoute />}>
         <Route index element={<Dashboard />} />
       </Route>
+      <Route path="solucoes/:audience" element={<SalesDetails />} />
       <Route element={<GuestOnly />}>
         <Route path="/entrar" element={<Login />} />
         <Route path="/cadastro" element={<Register />} />

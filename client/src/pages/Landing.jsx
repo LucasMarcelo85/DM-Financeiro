@@ -6,12 +6,12 @@ import { Brand } from '../components/Layout.jsx';
 import { brl, plural } from '../lib/format.js';
 
 const FEATURES = [
-  { icon: 'chat', title: 'WhatsApp conectado ao seu trabalho', text: 'Organize conversas e envie cobranças e lembretes com praticidade, usando suas próprias conexões.' },
-  { icon: 'user', title: 'Clientes em um só lugar', text: 'Mantenha os dados dos clientes organizados para acompanhar seu atendimento.' },
-  { icon: 'calendar', title: 'Cobranças e lembretes', text: 'Registre cobranças avulsas ou recorrentes e acompanhe vencimentos e envios.' },
-  { icon: 'file', title: 'Contratos e documentos', text: 'Crie contratos com modelos e dados dos seus clientes, sem perder o histórico.' },
-  { icon: 'globe', title: 'Portfólio e presença digital', text: 'Monte páginas profissionais para apresentar serviços, divulgar produtos e receber pedidos.' },
-  { icon: 'receipt', title: 'Produtos, pedidos e integrações', text: 'Gerencie o catálogo, acompanhe pedidos e use API e webhooks conforme os recursos do plano.' },
+  { icon: 'chat', title: 'Cobranças e lembretes pelo WhatsApp', text: 'Organize cobranças avulsas ou recorrentes e acompanhe vencimentos e envios usando suas conexões WhatsApp.' },
+  { icon: 'user', title: 'Clientes e atendimento organizados', text: 'Reúna informações, histórico e oportunidades para cuidar de cada relacionamento com mais contexto.' },
+  { icon: 'file', title: 'Contratos com a sua identidade', text: 'Crie documentos estilizados a partir de modelos e dados dos clientes, mantendo tudo organizado.' },
+  { icon: 'eye', title: 'Auditoria de conversas', text: 'Supervisione mensagens das conexões autorizadas e acompanhe o atendimento em um só lugar.' },
+  { icon: 'globe', title: 'Sites, catálogos e páginas', text: 'Monte um portfólio digital para apresentar serviços e produtos, divulgar ofertas e receber pedidos.' },
+  { icon: 'receipt', title: 'Produtos, pedidos, PDV e APIs', text: 'Controle estoque e vendas presenciais ou online e conecte automações por API e webhooks.' },
 ];
 
 const PLAN_FEATURES = [
@@ -42,6 +42,8 @@ function PlanFeatures({ plan }) {
         </li>
       ))}
       {plan.auditSend && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>Respostas pela auditoria de conversas</span></li>}
+      {plan.tabs?.includes('pedidos') && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>Pedidos, clientes e frente de caixa</span></li>}
+      {plan.tabs?.includes('api') && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>API e webhooks para integrações</span></li>}
     </ul>
   );
 }
@@ -112,7 +114,7 @@ export default function Landing() {
           <Link to="/" aria-label="DM Gerenciador - início" className="rounded-lg no-underline"><Brand /></Link>
           <nav className="hidden items-center gap-8 text-sm font-semibold text-slate-600 md:flex" aria-label="Navegação da página">
             <a className="no-underline transition hover:text-slate-950" href="#recursos">Recursos</a>
-            <a className="no-underline transition hover:text-slate-950" href="#para-quem">Para quem</a>
+            <a className="no-underline transition hover:text-slate-950" href="#para-quem">Soluções</a>
             <a className="no-underline transition hover:text-slate-950" href="#planos">Planos</a>
           </nav>
           <div className="flex items-center gap-2 sm:gap-3">
@@ -130,11 +132,11 @@ export default function Landing() {
               <span className="h-2 w-2 rounded-full bg-emerald-400" /> Gestão de negócios, sem complicação
             </span>
             <h1 className="mt-6 text-4xl font-bold leading-[1.05] tracking-tight text-white sm:text-5xl lg:text-6xl">
-              Mais tempo para cuidar do seu negócio.
-              <span className="mt-2 block text-amber-300">Menos tarefas espalhadas.</span>
+              Sua operação mais organizada.
+              <span className="mt-2 block text-amber-300">Seu próximo passo mais perto.</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-              O DM Gerenciador conecta clientes, WhatsApp, cobranças, contratos, portfólio, produtos e pedidos em um só lugar — para você organizar sua operação e atender com confiança.
+              Do primeiro atendimento ao pedido pago: centralize clientes, cobranças e lembretes pelo WhatsApp, contratos, presença digital, vendas e automações em uma só plataforma.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href="#planos" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-6 text-base font-bold text-slate-950 no-underline shadow-lg shadow-amber-950/25 transition hover:-translate-y-0.5 hover:bg-amber-300">
@@ -144,7 +146,7 @@ export default function Landing() {
             </div>
             <div className="mt-6 flex flex-wrap gap-x-5 gap-y-2 text-sm text-slate-300">
               <span className="flex items-center gap-2"><Icon name="check" size={16} /> {trialDays} dias para experimentar</span>
-              <span className="flex items-center gap-2"><Icon name="check" size={16} /> Escolha seu plano no cadastro</span>
+              <span className="flex items-center gap-2"><Icon name="check" size={16} /> Opções para negócios e agências</span>
               <span className="flex items-center gap-2"><Icon name="check" size={16} /> Acesse pelo celular ou computador</span>
             </div>
           </div>
@@ -155,26 +157,30 @@ export default function Landing() {
       <section id="para-quem" className="scroll-mt-20 bg-slate-50 py-16 sm:py-20">
         <div className="mx-auto max-w-7xl px-4 sm:px-6 lg:px-8">
           <div className="mx-auto max-w-2xl text-center">
-            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-700">Feito para quem empreende</p>
-            <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Uma gestão que acompanha o seu jeito de trabalhar</h2>
-            <p className="mt-4 text-slate-600">Seja você responsável por uma loja, clínica, agência ou serviço, reúna as tarefas do negócio em uma rotina mais clara.</p>
+            <p className="text-sm font-bold uppercase tracking-[0.16em] text-amber-700">Dois caminhos, uma plataforma</p>
+            <h2 className="mt-3 text-3xl font-bold tracking-tight text-slate-950 sm:text-4xl">Escolha a solução que combina com o seu negócio</h2>
+            <p className="mt-4 text-slate-600">Use o sistema para organizar a sua própria operação ou administre várias empresas com aplicativos separados para cada cliente.</p>
           </div>
           <div className="mt-10 grid gap-5 md:grid-cols-2">
             <article className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:p-8">
               <span className="grid h-12 w-12 place-items-center rounded-2xl bg-amber-100 text-amber-800"><Icon name="box" size={23} /></span>
-              <h3 className="mt-5 text-xl font-bold">Lojas, clínicas e atendimento local</h3>
-              <p className="mt-2 leading-7 text-slate-600">Organize seus clientes e atendimentos, divulgue produtos ou serviços, receba pedidos e acompanhe cobranças e conversas com mais facilidade.</p>
+              <p className="mt-5 text-xs font-bold uppercase tracking-wider text-amber-700">Plano para a operação</p>
+              <h3 className="mt-1 text-xl font-bold">Lojas e prestadores de serviços</h3>
+              <p className="mt-2 leading-7 text-slate-600">Para lojas, clínicas, escritórios de advocacia e profissionais que querem organizar a rotina, vender e atender melhor sem depender de várias ferramentas.</p>
               <ul className="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                {['Catálogo e pedidos', 'WhatsApp da loja', 'Cadastro de clientes', 'Cobranças e lembretes'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
+                {['Cobranças e lembretes', 'Contratos estilizados', 'Auditoria WhatsApp', 'Sites e catálogos', 'Produtos, pedidos e PDV', 'APIs e webhooks'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
               </ul>
+              <Link to="/solucoes/lojas" className="mt-6 inline-flex items-center gap-2 font-bold text-slate-900 no-underline hover:text-amber-700">Saiba mais sobre o plano <Icon name="right" size={16} /></Link>
             </article>
             <article className="group rounded-3xl border border-slate-200 bg-white p-6 shadow-sm transition hover:-translate-y-1 hover:shadow-lg sm:p-8">
               <span className="grid h-12 w-12 place-items-center rounded-2xl bg-blue-100 text-blue-800"><Icon name="globe" size={23} /></span>
-              <h3 className="mt-5 text-xl font-bold">Agências e prestadores de serviços</h3>
-              <p className="mt-2 leading-7 text-slate-600">Apresente seu trabalho, cuide dos relacionamentos com clientes e centralize contratos, cobranças recorrentes e comunicação.</p>
+              <p className="mt-5 text-xs font-bold uppercase tracking-wider text-blue-700">Plano para quem gerencia clientes</p>
+              <h3 className="mt-1 text-xl font-bold">Agências e empresas de serviços</h3>
+              <p className="mt-2 leading-7 text-slate-600">Atenda várias empresas com estruturas separadas e crie um aplicativo para cada cliente trabalhar com as ferramentas do plano de operação.</p>
               <ul className="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                {['Páginas de portfólio', 'Modelos de contrato', 'Clientes organizados', 'Cobranças recorrentes'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
+                {['Tudo do plano de operação', 'Lojas e dados separados', 'Aplicativos por cliente', 'Acessos por permissão', 'Gestão de várias empresas', 'Escala para a agência'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
               </ul>
+              <Link to="/solucoes/agencias" className="mt-6 inline-flex items-center gap-2 font-bold text-slate-900 no-underline hover:text-blue-700">Saiba mais sobre o plano <Icon name="right" size={16} /></Link>
             </article>
           </div>
         </div>
@@ -222,7 +228,7 @@ export default function Landing() {
                 {plans.map((plan, index) => (
                   <article key={plan.id} className={`flex flex-col rounded-3xl border p-6 sm:p-7 ${index === plans.length - 1 ? 'border-amber-300 bg-white text-slate-950 shadow-2xl shadow-amber-950/20' : 'border-white/15 bg-white/[0.06] text-white'}`}>
                     <div className="flex items-start justify-between gap-3">
-                      <div><h3 className="text-xl font-bold">{plan.name}</h3><p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-600' : 'text-slate-300'}`}>Para acompanhar seu negócio</p></div>
+                      <div><h3 className="text-xl font-bold">{plan.name}</h3><p className={`mt-1 text-sm ${index === plans.length - 1 ? 'text-slate-600' : 'text-slate-300'}`}>{index === 0 ? 'Para organizar a própria operação' : index === 1 ? 'Para gerenciar operações de clientes' : 'Para acompanhar seu negócio'}</p></div>
                       <span className="h-3 w-3 rounded-full" style={{ backgroundColor: plan.color || '#f2a33a' }} />
                     </div>
                     <p className="mt-6"><strong className="text-4xl font-bold tracking-tight">{brl(plan.priceCents)}</strong><span className={index === plans.length - 1 ? 'text-slate-500' : 'text-slate-300'}>/mês</span></p>
@@ -258,7 +264,7 @@ export default function Landing() {
 
       <section className="bg-amber-400 px-4 py-14 sm:px-6 sm:py-16">
         <div className="mx-auto flex max-w-7xl flex-col items-center justify-between gap-6 text-center sm:px-2 md:flex-row md:text-left">
-          <div><h2 className="text-3xl font-bold tracking-tight text-slate-950">Pronto para organizar seu negócio?</h2><p className="mt-2 text-slate-800">Crie sua conta e explore o DM Gerenciador por {trialDays} dias.</p></div>
+          <div><h2 className="text-3xl font-bold tracking-tight text-slate-950">Pronto para organizar ou expandir?</h2><p className="mt-2 text-slate-800">Crie sua conta e explore o DM Gerenciador por {trialDays} dias.</p></div>
           <Link to={`/cadastro${plans[0] ? `?plan=${encodeURIComponent(plans[0].id)}` : ''}`} className="inline-flex min-h-12 shrink-0 items-center justify-center gap-2 rounded-xl bg-slate-950 px-6 font-bold text-white no-underline transition hover:bg-slate-800">Começar teste grátis <Icon name="right" size={18} /></Link>
         </div>
       </section>

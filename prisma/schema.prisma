@@ -711,6 +711,7 @@ model Store {
   appEnabled             Boolean   @default(false) @map("app_enabled")
   appName                String?   @map("app_name")
   appColor               String?   @map("app_color")
+  appWhatsapp            String?   @map("app_whatsapp")
   appUserLimit           Int       @default(10) @map("app_user_limit")
   appUsers               StoreUser[]
   strategyRecords        OrderStrategyRecord[]

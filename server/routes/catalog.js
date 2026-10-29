@@ -102,8 +102,10 @@ async function loadSettings(userId, storeId = null) {
 const tokenInfo = (token) => ({ hasSuperfreteToken: Boolean(config.geo.superfreteToken || token) });
 
 router.get('/settings', async (req, res) => {
-  const { cfg, token } = await loadSettings(req.user.id, await storeScope(req));
-  res.json({ config: cfg, ...tokenInfo(token) });
+  const storeId = await storeScope(req);
+  const { cfg, token } = await loadSettings(req.user.id, storeId);
+  const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { appWhatsapp: true } }) : null;
+  res.json({ config: cfg, creatorWhatsapp: store?.appWhatsapp || '', ...tokenInfo(token) });
 });
 
 router.put('/settings', async (req, res) => {
@@ -111,7 +113,8 @@ router.put('/settings', async (req, res) => {
   const storeId = await storeScope(req);
   const current = await loadSettings(req.user.id, storeId);
   const token = current.token;
-  const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
+  const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { appWhatsapp: true } }) : null;
+  const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token), creatorWhatsapp: store?.appWhatsapp || '' });
   if (cfg.orderNotifications.enabled) {
     const instance = await prisma.instance.findFirst({
       where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio', storeId },
@@ -122,7 +125,7 @@ router.put('/settings', async (req, res) => {
   }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
   else await prisma.catalogSettings.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, config: cfg }, update: { config: cfg } });
-  res.json({ config: cfg, ...tokenInfo(token) });
+  res.json({ config: cfg, creatorWhatsapp: store?.appWhatsapp || '', ...tokenInfo(token) });
 });
 
 // "Testar frete": simula com a configuração salva para um CEP de exemplo.
@@ -472,6 +475,19 @@ router.get('/strategy', async (req, res) => {
   const days = reportDays(req.query.days);
   const result = await customerReport(req.user.id, storeId, customerScopeKey(storeId), days);
   const { customers, ...summary } = result;
+  const phones = customers.map((customer) => customer.phone);
+  const recentOrders = phones.length ? await prisma.order.findMany({
+    where: { userId: req.user.id, storeId, deletedAt: null, createdAt: { gte: new Date(Date.now() - days * 86400000) }, customerPhone: { in: phones } },
+    select: { customerPhone: true, delivery: true },
+    orderBy: { createdAt: 'desc' },
+  }) : [];
+  const cityByPhone = new Map();
+  for (const order of recentOrders) {
+    if (cityByPhone.has(order.customerPhone)) continue;
+    const delivery = order.delivery && typeof order.delivery === 'object' && !Array.isArray(order.delivery) ? order.delivery : {};
+    const city = String(delivery.city || '').trim();
+    if (city) cityByPhone.set(order.customerPhone, String(delivery.state || '').trim() ? `${city}/${String(delivery.state).trim()}` : city);
+  }
   res.json({
     ...summary,
     customers: customers.map((customer) => ({
@@ -482,6 +498,7 @@ router.get('/strategy', async (req, res) => {
       totalCents: customer.totalCents,
       averageCents: customer.averageCents,
       lastOrderAt: customer.lastOrderAt,
+      city: cityByPhone.get(customer.phone) || '',
     })),
     salesCents: result.salesCents,
   });
