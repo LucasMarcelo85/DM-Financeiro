@@ -102,6 +102,7 @@ model User {
   orders          Order[]
   orderCustomerProfiles OrderCustomerProfile[]
   orderStrategyRecords OrderStrategyRecord[]
+  posSettings     PosSettings[]
   catalogSettings CatalogSettings?
   catalogPaymentConnections CatalogPaymentConnection[]
   productPreferences ProductPreferences?
@@ -678,6 +679,11 @@ model Order {
   stockReserved Boolean  @default(true) @map("stock_reserved")
   paymentStatus String   @default("unpaid") @map("payment_status")
   paymentProvider String? @map("payment_provider")
+  source        String   @default("catalog")
+  paymentMethod String?  @map("payment_method")
+  paymentBreakdown Json? @map("payment_breakdown")
+  discountCents Int      @default(0) @map("discount_cents")
+  surchargeCents Int     @default(0) @map("surcharge_cents")
   paymentId     String?  @map("payment_id")
   paymentProofUrl String? @map("payment_proof_url")
   paidAt        DateTime? @map("paid_at")
@@ -708,6 +714,7 @@ model Store {
   appUserLimit           Int       @default(10) @map("app_user_limit")
   appUsers               StoreUser[]
   strategyRecords        OrderStrategyRecord[]
+  posSettings            PosSettings[]
   instances              Instance[]
   createdAt              DateTime  @default(now()) @map("created_at")
 
@@ -725,7 +732,7 @@ model StoreUser {
   login        String
   passwordHash String   @map("password_hash")
   active       Boolean  @default(true)
-  perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,api,entregas,auditoria")
+  perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,pdv,api,entregas,auditoria")
   createdAt    DateTime @default(now()) @map("created_at")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -822,4 +829,20 @@ model OrderStrategyRecord {
   @@index([userId, storeId, createdAt])
   @@index([userId, storeId, customerPhone, createdAt], map: "order_strategy_customer_recent_idx")
   @@map("order_strategy_records")
+}
+
+model PosSettings {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  storeId   Int?     @map("store_id")
+  scopeKey  String   @map("scope_key")
+  receipt   Json     @default("{}")
+  updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@unique([userId, scopeKey])
+  @@index([storeId])
+  @@map("pos_settings")
 }

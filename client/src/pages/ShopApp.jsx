@@ -17,7 +17,7 @@ const TABS = [
   ['auditoria', 'Auditoria'],
 ];
 const firstTab = (perms) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) : key === 'pedidos'
-  ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
+  ? ['pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv'].some((perm) => perms.includes(perm))
   : perms.includes(key))?.[0] || '';
 const foregroundFor = (color) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
@@ -118,7 +118,7 @@ export default function ShopApp() {
   const tabs = TABS.filter(([key]) => key === 'produtos'
     ? perms?.includes('produtos')
     : key === 'pedidos'
-      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((p) => perms?.includes(p))
+      ? ['pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv'].some((p) => perms?.includes(p))
       : perms?.includes(key));
 
   return (

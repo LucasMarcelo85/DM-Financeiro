@@ -227,6 +227,8 @@ export async function createOrder(userSlug, body = {}) {
 export const orderDTO = (o) => ({
   id: o.id, code: o.code, customerName: o.customerName, customerPhone: o.customerPhone, deliveryType: o.deliveryType, delivery: o.delivery, items: o.items,
   subtotalCents: o.subtotalCents, shippingCents: o.shippingCents, totalCents: o.totalCents, notes: o.notes, status: o.status,
+  source: o.source || 'catalog', paymentMethod: o.paymentMethod || null, paymentBreakdown: o.paymentBreakdown || [],
+  discountCents: o.discountCents || 0, surchargeCents: o.surchargeCents || 0,
   paymentStatus: o.paymentStatus || 'unpaid', paymentProvider: o.paymentProvider || null, paymentId: o.paymentId || null,
   paymentProofUrl: o.paymentProofUrl || null, paidAt: o.paidAt?.getTime() || null,
   createdAt: o.createdAt.getTime(), deletedAt: o.deletedAt?.getTime() || null,

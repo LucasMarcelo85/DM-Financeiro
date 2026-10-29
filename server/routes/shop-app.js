@@ -36,6 +36,7 @@ const allowedPerms = (user, permissions) => {
   const tabs = limits.tabs;
   return permissions.filter((perm) => {
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
+    if (perm === 'pdv') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
@@ -130,7 +131,13 @@ router.get('/me', shopAuth, (req, res) => {
 });
 
 // Lojista cadastra, edita e desativa produtos, mas não exclui nem muda preferências da conta.
-router.use('/products', shopAuth, needPerm('produtos'), needTab('produtos'), (req, _res, next) => {
+router.use('/products', shopAuth, needPerm('produtos', 'pdv'), (req, _res, next) => {
+  if (!req.shopPerms.includes('produtos')) {
+    if (req.method !== 'GET' || req.path !== '/') throw new AppError(403, 'Seu acesso só libera a consulta de produtos para o PDV.', 'FORBIDDEN');
+    return needTab('pedidos')(req, _res, next);
+  }
+  return needTab('produtos')(req, _res, next);
+}, (req, _res, next) => {
   if (req.method === 'DELETE' || req.path.startsWith('/preferences') && req.method !== 'GET') throw new AppError(403, 'O aplicativo não permite esta ação.', 'FORBIDDEN');
   next();
 }, productRoutes);
@@ -145,18 +152,20 @@ router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   }
   const isCustomers = /^\/customers(?:\/|$)/.test(req.path);
   const isOrders = /^\/orders(?:\/|$)/.test(req.path);
+  const isPOS = /^\/pos(?:\/|$)/.test(req.path);
   const isStrategy = req.path === '/strategy';
   const isCustomerTransfer = /^\/customers\/(?:export|import)$/.test(req.path);
   const isOrderTransfer = /^\/orders\/(?:export|import)$/.test(req.path);
   const isRestore = req.method === 'POST' && /^\/orders\/\d+\/restore$/.test(req.path);
   const isArchive = req.method === 'POST' && req.path === '/orders/bulk-delete';
-  const allowed = (isCustomers && (req.method === 'GET' || req.method === 'PATCH' || isCustomerTransfer && (req.method === 'GET' || req.method === 'POST')))
+  const allowed = (isPOS && (req.method === 'GET' || req.method === 'POST' || req.method === 'PUT'))
+    || (isCustomers && (req.method === 'GET' || req.method === 'POST' || req.method === 'PATCH' || req.method === 'DELETE' || isCustomerTransfer && (req.method === 'GET' || req.method === 'POST')))
     || (isOrders && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path)) || isOrderTransfer && (req.method === 'GET' || req.method === 'POST')))
     || (isStrategy && req.method === 'GET')
     || isRestore || isArchive;
   if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
   const archivedArea = isRestore || (req.path === '/orders' && req.query.view === 'log');
-  const area = isStrategy ? 'estrategia' : isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
+  const area = isPOS ? 'pdv' : isStrategy ? 'estrategia' : isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
   needPerm(area)(req, _res, next);
 }, catalogRoutes);
 

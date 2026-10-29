@@ -47,7 +47,8 @@ export async function changeOrderStock(tx, order, direction) {
       ? await tx.productImage.updateMany({ where, data: { stockQuantity: delta } })
       : await tx.product.updateMany({ where, data: { stockQuantity: delta } });
     if (result.count !== 1) {
-      throw new AppError(409, `Estoque insuficiente para restaurar o pedido de ${row.product.name}. Reponha o estoque e tente novamente.`);
+      const action = direction === 'reserve' ? 'vender' : 'restaurar o pedido';
+      throw new AppError(409, `Estoque insuficiente para ${action} ${row.product.name}. Reponha o estoque e tente novamente.`);
     }
   }
 }

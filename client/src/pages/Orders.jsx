@@ -5,6 +5,7 @@ import Icon from '../components/Icon.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import CsvTransfer from '../components/CsvTransfer.jsx';
 import Modal from '../components/Modal.jsx';
+import PointOfSale from '../components/PointOfSale.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 import { importCsvBatches } from '../lib/csv.js';
@@ -17,6 +18,8 @@ const ORDER_CSV_COLUMNS = [
   { key: 'deliveryType', type: 'string' }, { key: 'delivery', type: 'json' }, { key: 'items', type: 'json' },
   { key: 'subtotalCents', type: 'number' }, { key: 'shippingCents', type: 'number' }, { key: 'totalCents', type: 'number' },
   { key: 'notes', type: 'string' }, { key: 'status', type: 'string' }, { key: 'paymentStatus', type: 'string' },
+  { key: 'source', type: 'string' }, { key: 'paymentMethod', type: 'string' }, { key: 'paymentBreakdown', type: 'json' },
+  { key: 'discountCents', type: 'number' }, { key: 'surchargeCents', type: 'number' },
   { key: 'paymentProvider', type: 'string' }, { key: 'paymentId', type: 'string' }, { key: 'paymentProofUrl', type: 'string' },
   { key: 'paidAt', type: 'date' }, { key: 'createdAt', type: 'date' }, { key: 'deletedAt', type: 'date' },
 ];
@@ -167,11 +170,14 @@ export default function Orders({ allow }) {
   const [customers, setCustomers] = useState(null);
   const [strategy, setStrategy] = useState(null);
   const [customer, setCustomer] = useState(null);
+  const [customerForm, setCustomerForm] = useState(false);
+  const [customerDelete, setCustomerDelete] = useState(null);
   const [q, setQ] = useState('');
   const [status, setStatus] = useState('');
   const [period, setPeriod] = useState('30');
   const [deliveryType, setDeliveryType] = useState('');
-  const [tab, setTab] = useState(() => (can('pedidos') ? 'orders' : can('clientes') ? 'customers' : can('estrategia') ? 'strategy' : 'log'));
+  const [source, setSource] = useState('');
+  const [tab, setTab] = useState(() => (can('pedidos') ? 'orders' : can('clientes') ? 'customers' : can('estrategia') ? 'strategy' : can('pdv') ? 'pos' : 'log'));
   const [customerKind, setCustomerKind] = useState('all');
   const [customerSort, setCustomerSort] = useState('high');
   const [strategyKind, setStrategyKind] = useState('all');
@@ -183,15 +189,16 @@ export default function Orders({ allow }) {
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
   const load = useCallback(() => {
-    if (tab === 'customers' || tab === 'strategy') return Promise.resolve();
+    if (tab === 'customers' || tab === 'strategy' || tab === 'pos' || !can('pedidos')) return Promise.resolve();
     const qs = new URLSearchParams();
     if (q.trim()) qs.set('q', q.trim());
     if (status) qs.set('status', status);
     qs.set('days', period);
     if (deliveryType) qs.set('deliveryType', deliveryType);
+    if (source) qs.set('source', source);
     if (tab === 'log') qs.set('view', 'log');
     return api.get(`/catalog/orders?${qs}`).then((r) => alive.current && setData(r)).catch((e) => toast(e.message, 'error'));
-  }, [q, status, period, deliveryType, tab, toast]);
+  }, [q, status, period, deliveryType, source, tab, toast, allow]);
   const loadCustomers = useCallback(() => api.get(`/catalog/customers?days=${period}`).then((r) => alive.current && setCustomers(r)).catch((e) => toast(e.message, 'error')), [period, toast]);
   const loadStrategy = useCallback(() => api.get(`/catalog/strategy?days=${period}`).then((r) => alive.current && setStrategy(r)).catch((e) => toast(e.message, 'error')), [period, toast]);
   useEffect(() => { const t = setTimeout(load, q ? 250 : 0); return () => clearTimeout(t); }, [load, q]);
@@ -232,12 +239,35 @@ export default function Orders({ allow }) {
       toast('Dados do cliente salvos.');
     } catch (e) { toast(e.message, 'error'); }
   }
+  async function createCustomer(data) {
+    try {
+      await api.post('/catalog/customers', data);
+      setCustomerForm(false);
+      loadCustomers();
+      toast('Cliente cadastrado.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
+  async function deleteCustomer() {
+    if (!customerDelete) return;
+    try {
+      await api.del(`/catalog/customers/${encodeURIComponent(customerDelete.phone)}`, { pin: customerDelete.pin });
+      setCustomerDelete(null);
+      setCustomer(null);
+      loadCustomers();
+      toast('Cadastro do cliente excluído. Os pedidos e relatórios históricos foram preservados.');
+    } catch (e) { toast(e.message, 'error'); }
+  }
 
   const shownCustomers = (customers?.customers || [])
     .filter((c) => !q.trim() || `${c.name} ${c.phone} ${c.labels.join(' ')}`.toLowerCase().includes(q.trim().toLowerCase()))
     .filter((c) => customerKind === 'recurring' ? c.orders > 1 : customerKind === 'once' ? c.orders === 1 : customerKind === 'none' ? c.orders === 0 : true)
     .sort((a, b) => customerSort === 'low' ? a.totalCents - b.totalCents : customerSort === 'recent' ? (b.lastOrderAt || 0) - (a.lastOrderAt || 0) : b.totalCents - a.totalCents);
   const isLog = tab === 'log';
+
+  if (tab === 'pos') return <PointOfSale
+    onClose={can('pedidos') ? () => setTab('orders') : can('clientes') ? () => setTab('customers') : can('estrategia') ? () => setTab('strategy') : null}
+    allowCustomers={can('clientes')}
+  />;
 
   return (
     <>
@@ -269,6 +299,8 @@ export default function Orders({ allow }) {
             />
           )}
           {!isShopMode() && <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>}
+          {can('pdv') && <button className="btn btn-primary" onClick={() => setTab('pos')}>Abrir frente de caixa</button>}
+          {tab === 'customers' && can('clientes') && <button className="btn btn-primary" onClick={() => setCustomerForm(true)}>Novo cliente</button>}
         </div>
       </header>
       <StoreBar />
@@ -308,6 +340,9 @@ export default function Orders({ allow }) {
           </select>
           {(tab === 'orders' || tab === 'log') && <select className="input" value={deliveryType} onChange={(e) => setDeliveryType(e.target.value)} aria-label="Forma de entrega">
             <option value="">Todas as entregas</option><option value="retirada">Retirada</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
+          </select>}
+          {tab === 'orders' && <select className="input" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origem do pedido">
+            <option value="">Todas as origens</option><option value="catalog">Catálogo</option><option value="pdv">Frente de caixa (PDV)</option>
           </select>}
           {tab === 'customers' && <>
             <select className="input" value={customerKind} onChange={(e) => setCustomerKind(e.target.value)} aria-label="Tipo de cliente">
@@ -367,18 +402,19 @@ export default function Orders({ allow }) {
                   <strong className="od-code">#{o.code}</strong>
                   <span className={`pill ${o.status === 'novo' ? 'pill-partial' : 'pill-sent'}`}>{o.status === 'novo' ? 'Novo' : 'Atendido'}</span>
                   <span className={`pill ${o.paymentStatus === 'paid' ? 'pill-sent' : 'pill-partial'}`}>{o.paymentStatus === 'paid' ? `Pago · ${PAYMENT_PROVIDER[o.paymentProvider] || 'online'}` : o.paymentStatus === 'pending' ? 'Pagamento pendente' : 'Não pago'}</span>
-                  <span className="tag">{TYPE[o.deliveryType]}</span>
+                  {o.source === 'pdv' ? <span className="tag">Frente de caixa</span> : <span className="tag">{TYPE[o.deliveryType]}</span>}
                   <span className="muted small od-date">{dateTimeBR(o.createdAt)}{isLog ? ` · apaga em ${plural(daysLeft, 'dia', 'dias')}` : ''}</span>
                 </div>
-                <div className="od-cust"><button type="button" className="od-customer-link" onClick={() => openCustomer(o.customerPhone)}>{o.customerName}</button><a href={wa} target="_blank" rel="noopener noreferrer">{formatStoredPhone(o.customerPhone)}</a></div>
+                <div className="od-cust">{can('clientes') && o.customerPhone ? <button type="button" className="od-customer-link" onClick={() => openCustomer(o.customerPhone)}>{o.customerName}</button> : <strong>{o.customerName}</strong>}{o.customerPhone && <a href={wa} target="_blank" rel="noopener noreferrer">{formatStoredPhone(o.customerPhone)}</a>}</div>
                 <p className="od-deliv">{deliveryText(o)}</p>
                 <ul className="od-items">{o.items.map((i, n) => <li key={n}><span>{i.qty}× {i.name}{i.variation ? ` (${i.variation})` : ''}</span><span>{brl(i.totalCents)}</span></li>)}</ul>
                 {o.notes && <p className="od-notes"><Icon name="note" size={14} /> {o.notes}</p>}
-                {o.paymentStatus === 'paid' && <p className="muted small">Pagamento confirmado{o.paymentId ? ` · ID ${o.paymentId}` : ''}{o.paidAt ? ` · ${dateTimeBR(o.paidAt)}` : ''}{o.paymentProofUrl ? <> · <a href={o.paymentProofUrl} download={`comprovante-${o.code}`}>Baixar comprovante</a></> : ' · Comprovante ainda não disponibilizado pela InfinitePay.'}</p>}
-                <div className="od-total"><span>Subtotal {brl(o.subtotalCents)}</span><span>{o.deliveryType === 'excursao' ? 'Frete a combinar' : `Frete ${brl(o.shippingCents)}${o.deliveryType === 'correios' ? ' (SuperFrete)' : ''}`}</span><strong>Total {brl(o.totalCents)}{o.deliveryType === 'excursao' ? ' + frete' : ''}</strong></div>
+                {o.source === 'pdv' && <p className="muted small">Pagamento: {(o.paymentBreakdown || []).map((payment) => `${payment.method}: ${brl(payment.amountCents)}`).join(' · ')}</p>}
+                {o.paymentStatus === 'paid' && <p className="muted small">Pagamento confirmado{o.paymentId ? ` · ID ${o.paymentId}` : ''}{o.paidAt ? ` · ${dateTimeBR(o.paidAt)}` : ''}{o.paymentProofUrl ? <> · <a href={o.paymentProofUrl} download={`comprovante-${o.code}`}>Baixar comprovante</a></> : o.source !== 'pdv' ? ' · Comprovante ainda não disponibilizado pela InfinitePay.' : ''}</p>}
+                <div className="od-total"><span>Subtotal {brl(o.subtotalCents)}</span>{o.discountCents > 0 && <span>Desconto −{brl(o.discountCents)}</span>}{o.surchargeCents > 0 && <span>Acréscimo +{brl(o.surchargeCents)}</span>}<span>{o.deliveryType === 'excursao' ? 'Frete a combinar' : `Frete ${brl(o.shippingCents)}${o.deliveryType === 'correios' ? ' (SuperFrete)' : ''}`}</span><strong>Total {brl(o.totalCents)}{o.deliveryType === 'excursao' ? ' + frete' : ''}</strong></div>
                 {!isLog && <div className="od-actions">
-                  <a className="btn btn-primary btn-sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16} /> Chamar no WhatsApp</a>
-                  <button className="btn btn-ghost btn-sm" onClick={() => setDone(o)}><Icon name="check" size={16} /> {o.status === 'novo' ? (o.paymentStatus === 'paid' ? 'Marcar como atendido' : 'Marcar como pago e atendido') : 'Voltar para novo'}</button>
+                  {o.customerPhone && <a className="btn btn-primary btn-sm" href={wa} target="_blank" rel="noopener noreferrer"><Icon name="chat" size={16} /> Chamar no WhatsApp</a>}
+                  {o.source !== 'pdv' && <button className="btn btn-ghost btn-sm" onClick={() => setDone(o)}><Icon name="check" size={16} /> {o.status === 'novo' ? (o.paymentStatus === 'paid' ? 'Marcar como atendido' : 'Marcar como pago e atendido') : 'Voltar para novo'}</button>}
                   <button className="icon-btn" onClick={() => setConfirm({ ids: [o.id] })} aria-label={`Arquivar pedido ${o.code}`} title="Arquivar"><Icon name="archive" size={17} /></button>
                 </div>}
                 {isLog && <div className="od-actions">
@@ -391,7 +427,13 @@ export default function Orders({ allow }) {
       )}
 
       {settings && <CatalogSettings onClose={() => setSettings(false)} />}
-      {customer && <CustomerModal value={customer} onClose={() => setCustomer(null)} onSave={saveCustomer} />}
+      {customer && <CustomerModal value={customer} onClose={() => setCustomer(null)} onSave={saveCustomer} onDelete={(phone) => setCustomerDelete({ phone, pin: '', pinRequired: customer.pinRequired })} />}
+      {customerForm && <CustomerCreateModal onClose={() => setCustomerForm(false)} onSave={createCustomer} />}
+      {customerDelete && <Modal title="Excluir cadastro do cliente?" onClose={() => setCustomerDelete(null)}
+        footer={<><button className="btn btn-ghost" onClick={() => setCustomerDelete(null)}>Cancelar</button><button className="btn btn-danger" onClick={deleteCustomer}>Excluir cadastro</button></>}>
+        <p>O cadastro do cliente será removido. Pedidos e relatórios históricos permanecem salvos.</p>
+        {customerDelete.pinRequired && <label className="ce-field"><span>Confirme com seu PIN</span><input className="input" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={customerDelete.pin} onChange={(event) => setCustomerDelete((current) => ({ ...current, pin: event.target.value }))} /></label>}
+      </Modal>}
       {confirm && (
         <Modal title={confirm.all ? 'Arquivar todos os pedidos?' : 'Arquivar pedido(s)?'} onClose={() => setConfirm(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirm(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => doDelete(confirm)}>Arquivar</button></>}>
@@ -402,21 +444,27 @@ export default function Orders({ allow }) {
   );
 }
 
-function CustomerModal({ value, onClose, onSave }) {
+function CustomerModal({ value, onClose, onSave, onDelete }) {
   const { customer, orders } = value;
+  const [name, setName] = useState(customer.name);
+  const [phone, setPhone] = useState(customer.phone);
   const [labels, setLabels] = useState(customer.labels.join(', '));
   const [notes, setNotes] = useState(customer.notes);
+  const [pin, setPin] = useState('');
   const [busy, setBusy] = useState(false);
   async function save() {
     setBusy(true);
-    try { await onSave({ labels: [...new Set(labels.split(',').map((x) => x.trim()).filter(Boolean))], notes }); } finally { setBusy(false); }
+    try { await onSave({ name, phone, labels: [...new Set(labels.split(',').map((x) => x.trim()).filter(Boolean))], notes, ...(value.pinRequired ? { pin } : {}) }); } finally { setBusy(false); }
   }
   return (
-    <Modal title={customer.name} onClose={onClose} wide footer={<><button className="btn btn-ghost" onClick={onClose}>Fechar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar etiquetas e anotações'}</button></>}>
+    <Modal title={customer.name} onClose={onClose} wide footer={<><button className="btn btn-ghost" onClick={onClose}>Fechar</button><button className="btn btn-danger" onClick={() => onDelete(customer.phone)}>Excluir cadastro</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar cliente'}</button></>}>
       <p className="muted">{formatStoredPhone(customer.phone)} · últimos {value.days} dias de pedidos</p>
       <div className="form">
+        <label className="ce-field"><span>Nome</span><input className="input input-sm" value={name} onChange={(e) => setName(e.target.value)} maxLength={120} /></label>
+        <label className="ce-field"><span>Telefone</span><input className="input input-sm" value={phone} onChange={(e) => setPhone(e.target.value)} maxLength={20} inputMode="tel" /></label>
         <label className="ce-field"><span>Etiquetas separadas por vírgula</span><input className="input input-sm" value={labels} onChange={(e) => setLabels(e.target.value)} maxLength={620} placeholder="VIP, recorrente, atacado" /></label>
         <label className="ce-field"><span>Anotações</span><textarea className="input input-sm" rows={3} value={notes} onChange={(e) => setNotes(e.target.value)} maxLength={2000} /></label>
+        {value.pinRequired && <label className="ce-field"><span>PIN de confirmação</span><input className="input input-sm" type="password" inputMode="numeric" autoComplete="one-time-code" maxLength={8} value={pin} onChange={(e) => setPin(e.target.value)} /></label>}
       </div>
       <h3>Pedidos recentes</h3>
       {!orders.length ? <p className="muted">Nenhum pedido no período de retenção.</p> : (
@@ -429,4 +477,15 @@ function CustomerModal({ value, onClose, onSave }) {
       )}
     </Modal>
   );
+}
+
+function CustomerCreateModal({ onClose, onSave }) {
+  const [name, setName] = useState('');
+  const [phone, setPhone] = useState('');
+  return <Modal title="Cadastrar cliente" onClose={onClose} footer={<><button className="btn btn-ghost" onClick={onClose}>Cancelar</button><button className="btn btn-primary" disabled={name.trim().length < 2 || !phone.trim()} onClick={() => onSave({ name, phone })}>Salvar cliente</button></>}>
+    <div className="form">
+      <label className="ce-field"><span>Nome</span><input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={120} autoFocus /></label>
+      <label className="ce-field"><span>Telefone</span><input className="input" value={phone} onChange={(event) => setPhone(event.target.value)} maxLength={20} inputMode="tel" /></label>
+    </div>
+  </Modal>;
 }

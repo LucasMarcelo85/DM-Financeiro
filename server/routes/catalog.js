@@ -1,4 +1,5 @@
 ﻿import { Router } from 'express';
+import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
 import { cleanCatalogConfig, defaultCatalogConfig } from '../utils/catalog.js';
@@ -10,6 +11,7 @@ import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
 import * as whatsapp from '../services/whatsapp.js';
 import { dateRange, importedDate } from '../utils/date-range.js';
+import { assertPin } from '../utils/pin.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -19,6 +21,7 @@ function orderWhere(userId, filters = {}, { archived = false, includeStatus = tr
   const where = { userId, storeId, deletedAt: archived ? { not: null } : null };
   if (includeStatus && (filters.status === 'novo' || filters.status === 'atendido')) where.status = filters.status;
   if (filters.deliveryType === 'retirada' || filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
+  if (filters.source === 'pdv' || filters.source === 'catalog') where.source = filters.source;
   const requestedDays = Number(filters.days);
   const days = [7, 30, 60, config.orderRetentionDays].includes(requestedDays) ? requestedDays : config.orderRetentionDays;
   where[archived ? 'deletedAt' : 'createdAt'] = { gte: new Date(Date.now() - days * 86400000) };
@@ -34,7 +37,7 @@ function reportDays(value) {
 
 async function customerReport(userId, storeId, scopeKey, days) {
   const cutoff = new Date(Date.now() - days * 86400000);
-  const [profiles, profileCount, purchases, paidSales] = await Promise.all([
+  const [profiles, profileCount, purchases, paidSales, overallSales] = await Promise.all([
     prisma.orderCustomerProfile.findMany({ where: { userId, scopeKey }, orderBy: { updatedAt: 'desc' } }),
     prisma.orderCustomerProfile.count({ where: { userId, scopeKey } }),
     prisma.orderStrategyRecord.groupBy({
@@ -49,6 +52,10 @@ async function customerReport(userId, storeId, scopeKey, days) {
       _sum: { totalCents: true },
       _avg: { totalCents: true },
       _count: { _all: true },
+    }),
+    prisma.orderStrategyRecord.aggregate({
+      where: { userId, storeId, paid: true, createdAt: { gte: cutoff } },
+      _sum: { totalCents: true },
     }),
   ]);
   const purchaseByPhone = new Map(purchases.map((row) => [row.customerPhone, row]));
@@ -77,6 +84,7 @@ async function customerReport(userId, storeId, scopeKey, days) {
     recurringCustomers,
     oneTimeCustomers,
     nonBuyingCustomers: Math.max(0, profileCount - buyingCustomers),
+    salesCents: overallSales._sum.totalCents || 0,
     days,
   };
 }
@@ -125,6 +133,186 @@ router.post('/settings/test-shipping', async (req, res) => {
   res.json({ options: q.options, provider: 'SuperFrete' });
 });
 
+const defaultReceipt = { enabled: false, storeName: '', document: '', address: '', phone: '', footer: '' };
+const posReceipt = (value) => {
+  const body = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  if (typeof body.enabled !== 'boolean') throw new AppError(400, 'Informe se a impressão do comprovante está habilitada.');
+  const fields = { storeName: 120, document: 40, address: 240, phone: 30, footer: 300 };
+  const receipt = { enabled: body.enabled };
+  for (const [field, max] of Object.entries(fields)) {
+    if (body[field] !== undefined && typeof body[field] !== 'string') throw new AppError(400, 'Dados do comprovante inválidos.');
+    receipt[field] = String(body[field] || '').trim().slice(0, max);
+  }
+  return receipt;
+};
+const posCents = (value, label, { allowZero = false } = {}) => {
+  const cents = Number(value);
+  if (!Number.isSafeInteger(cents) || cents < (allowZero ? 0 : 1) || cents > 1_000_000_000) throw new AppError(400, `${label} inválido.`);
+  return cents;
+};
+
+router.get('/pos/settings', async (req, res) => {
+  const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
+  const settings = await prisma.posSettings.findUnique({ where: { userId_scopeKey: { userId: req.user.id, scopeKey } } });
+  const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { name: true } }) : null;
+  const receipt = { ...defaultReceipt, ...(settings?.receipt || {}) };
+  if (!receipt.storeName) receipt.storeName = store?.name || req.user.name;
+  res.json({ receipt });
+});
+
+router.put('/pos/settings', async (req, res) => {
+  const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
+  const receipt = posReceipt(req.body?.receipt);
+  await prisma.posSettings.upsert({
+    where: { userId_scopeKey: { userId: req.user.id, scopeKey } },
+    create: { userId: req.user.id, storeId, scopeKey, receipt },
+    update: { receipt },
+  });
+  res.json({ receipt });
+});
+
+router.post('/pos/checkout', async (req, res) => {
+  const storeId = await storeScope(req);
+  const body = req.body || {};
+  if (!Array.isArray(body.items) || body.items.length < 1 || body.items.length > 60) throw new AppError(400, 'Adicione de 1 a 60 itens ao carrinho.');
+  const lines = body.items.map((line) => {
+    const productId = Number(line?.productId);
+    const qty = Number(line?.qty);
+    const imageId = line?.imageId === null || line?.imageId === undefined ? null : Number(line.imageId);
+    const priceOptionId = line?.priceOptionId === null || line?.priceOptionId === undefined ? null : Number(line.priceOptionId);
+    if (!Number.isSafeInteger(productId) || productId < 1 || !Number.isSafeInteger(qty) || qty < 1 || qty > 1000
+      || (imageId !== null && (!Number.isSafeInteger(imageId) || imageId < 1))
+      || (priceOptionId !== null && (!Number.isSafeInteger(priceOptionId) || priceOptionId < 1))) throw new AppError(400, 'Um dos itens do carrinho é inválido.');
+    return { productId, qty, imageId, priceOptionId };
+  });
+  const productIds = [...new Set(lines.map((line) => line.productId))];
+  const paymentTypes = new Set(['dinheiro', 'cartao', 'pix']);
+  const rawPayments = body.payments;
+  if (!Array.isArray(rawPayments) || rawPayments.length < 1 || rawPayments.length > 3) throw new AppError(400, 'Informe a forma de pagamento.');
+  const payments = rawPayments.map((payment) => {
+    if (!paymentTypes.has(payment?.method)) throw new AppError(400, 'Forma de pagamento inválida.');
+    const amountCents = posCents(payment.amountCents, 'Valor do pagamento');
+    const receivedCents = payment.method === 'dinheiro' ? posCents(payment.receivedCents ?? amountCents, 'Valor recebido') : amountCents;
+    if (receivedCents < amountCents) throw new AppError(400, 'O valor recebido em dinheiro não cobre o pagamento.');
+    return { method: payment.method, amountCents, receivedCents };
+  });
+  if (new Set(payments.map((payment) => payment.method)).size !== payments.length) throw new AppError(400, 'Não repita a mesma forma de pagamento; consolide o valor.');
+  const customerName = String(body.customerName || '').trim().slice(0, 120);
+  const customerPhone = body.customerPhone ? normalizePhone(body.customerPhone) : '';
+  if (body.customerPhone && !customerPhone) throw new AppError(400, 'Telefone do cliente inválido.');
+  if (customerPhone && customerName.length < 2) throw new AppError(400, 'Informe o nome do cliente.');
+  if (customerName && customerName.length < 2) throw new AppError(400, 'O nome do cliente deve ter ao menos 2 caracteres.');
+  const notes = typeof body.notes === 'string' ? body.notes.trim() : '';
+  if (notes.length > 2000) throw new AppError(400, 'As observações podem ter até 2.000 caracteres.');
+
+  const order = await prisma.$transaction(async (tx) => {
+    const products = await tx.product.findMany({
+      where: { id: { in: productIds }, userId: req.user.id, storeId, active: true },
+      include: {
+        images: { select: { id: true, isPrimary: true, label: true, size: true, color: true, priceCents: true, stockQuantity: true } },
+        priceOptions: { select: { id: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } },
+      },
+    });
+    const byId = new Map(products.map((product) => [product.id, product]));
+    if (products.length !== productIds.length) throw new AppError(409, 'Um produto não está mais disponível nesta loja.');
+    const baseLines = lines.map((line) => {
+      const product = byId.get(line.productId);
+      const variations = product.images.filter((image) => !image.isPrimary);
+      const image = line.imageId ? variations.find((row) => row.id === line.imageId) : null;
+      if (line.imageId && !image) throw new AppError(409, `A variação escolhida de ${product.name} não está mais disponível.`);
+      if (variations.length && !image) throw new AppError(400, `Escolha uma variação para ${product.name}.`);
+      const baseCents = image?.priceCents ?? product.priceCents;
+      if (!Number.isSafeInteger(baseCents) || baseCents < 1) throw new AppError(400, `${product.name} não possui preço para venda.`);
+      return { ...line, product, image, baseCents };
+    });
+    const cartQty = baseLines.reduce((sum, line) => sum + line.qty, 0);
+    const cartCents = baseLines.reduce((sum, line) => sum + line.baseCents * line.qty, 0);
+    if (!Number.isSafeInteger(cartCents) || cartCents > 1_000_000_000) throw new AppError(400, 'O total do carrinho excede o limite permitido.');
+    const productQty = new Map();
+    for (const line of baseLines) productQty.set(line.productId, (productQty.get(line.productId) || 0) + line.qty);
+    const items = baseLines.map((line) => {
+      let unitCents = line.baseCents;
+      const option = line.priceOptionId ? line.product.priceOptions.find((row) => row.id === line.priceOptionId) : null;
+      if (line.priceOptionId && (!option || option.priceCents === null)) throw new AppError(400, `A forma de preço de ${line.product.name} não está disponível.`);
+      if (option) {
+        const eligible = option.scope === 'cart_quantity'
+          ? cartQty >= option.minQuantity
+          : option.scope === 'cart_value'
+            ? cartCents >= option.minCartCents
+            : (productQty.get(line.productId) || 0) >= option.minQuantity;
+        if (!eligible) throw new AppError(400, `A condição para ${option.label} ainda não foi atingida.`);
+        unitCents = option.priceCents;
+      }
+      const variation = line.image ? [line.image.label, line.image.size, line.image.color].filter(Boolean).join(' · ') : '';
+      return {
+        productId: line.product.id,
+        ...(line.image ? { imageId: line.image.id } : {}),
+        name: line.product.name,
+        variation,
+        qty: line.qty,
+        unitCents,
+        totalCents: unitCents * line.qty,
+        stockTracked: Boolean(line.product.stockEnabled),
+      };
+    });
+    const subtotalCents = items.reduce((sum, item) => sum + item.totalCents, 0);
+    const discountCents = posCents(body.discountCents ?? 0, 'Desconto', { allowZero: true });
+    const surchargeCents = posCents(body.surchargeCents ?? 0, 'Acréscimo', { allowZero: true });
+    if (discountCents > subtotalCents) throw new AppError(400, 'O desconto não pode superar o subtotal.');
+    const totalCents = subtotalCents - discountCents + surchargeCents;
+    if (!Number.isSafeInteger(totalCents) || totalCents < 1 || totalCents > 1_000_000_000) throw new AppError(400, 'O total do pedido é inválido.');
+    if (payments.reduce((sum, payment) => sum + payment.amountCents, 0) !== totalCents) throw new AppError(400, 'A soma das formas de pagamento deve ser igual ao total do pedido.');
+    const paymentMethod = payments.length > 1 ? 'misto' : payments[0].method;
+    const code = `PDV-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
+    const displayName = customerName || 'Consumidor final';
+    const stockOrder = { userId: req.user.id, storeId, items };
+    await changeOrderStock(tx, stockOrder, 'reserve');
+    if (customerPhone) {
+      const scopeKey = customerScopeKey(storeId);
+      await tx.orderCustomerProfile.upsert({
+        where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone } },
+        create: { userId: req.user.id, scopeKey, customerPhone, customerName: displayName },
+        update: { customerName: displayName },
+      });
+    }
+    const created = await tx.order.create({
+      data: {
+        userId: req.user.id,
+        storeId,
+        code,
+        customerName: displayName,
+        customerPhone,
+        deliveryType: 'retirada',
+        delivery: { name: 'Venda no caixa', address: 'PDV' },
+        items,
+        subtotalCents,
+        shippingCents: 0,
+        totalCents,
+        discountCents,
+        surchargeCents,
+        notes,
+        status: 'atendido',
+        stockReserved: false,
+        paymentStatus: 'paid',
+        paymentProvider: 'manual',
+        paymentMethod,
+        paymentBreakdown: payments,
+        paidAt: new Date(),
+        source: 'pdv',
+      },
+    });
+    await tx.orderStrategyRecord.create({
+      data: { orderId: created.id, userId: req.user.id, storeId, customerPhone, totalCents, paid: true, createdAt: created.createdAt },
+    });
+    return created;
+  });
+  emitApiWebhook({ userId: req.user.id, storeId, event: 'order.created', data: { order: orderDTO(order), source: 'pdv' } })
+    .catch((error) => console.error(`[api-webhook] pedido PDV ${order.id}: ${error.message}`));
+  res.status(201).json({ order: orderDTO(order) });
+});
+
 // ---------- Pedidos ----------
 router.get('/orders', async (req, res) => {
   const archived = req.query.view === 'log';
@@ -156,6 +344,7 @@ router.post('/orders/import', async (req, res) => {
   const prepared = [];
   const errors = [];
   const paymentStatuses = new Set(['unpaid', 'pending', 'paid', 'failed']);
+  const paymentMethods = new Set(['dinheiro', 'cartao', 'pix', 'misto']);
   const deliveryTypes = new Set(['retirada', 'excursao', 'motoboy', 'correios']);
   const cents = (value, label) => {
     const number = Number(value);
@@ -167,9 +356,10 @@ router.post('/orders/import', async (req, res) => {
       if (!row || typeof row !== 'object' || Array.isArray(row)) throw new AppError(400, 'Registro de pedido inválido.');
       const code = String(row.code || '').trim();
       const customerName = String(row.customerName || '').trim();
-      const customerPhone = normalizePhone(row.customerPhone);
+      const source = row.source === 'pdv' ? 'pdv' : 'catalog';
+      const customerPhone = source === 'pdv' && !row.customerPhone ? '' : normalizePhone(row.customerPhone);
       if (!code || code.length > 32) throw new AppError(400, 'Código do pedido inválido.');
-      if (customerName.length < 2 || customerName.length > 120 || !customerPhone) throw new AppError(400, 'Nome ou telefone do cliente inválido.');
+      if (customerName.length < 2 || customerName.length > 120 || (!customerPhone && source !== 'pdv')) throw new AppError(400, 'Nome ou telefone do cliente inválido.');
       if (!deliveryTypes.has(row.deliveryType) || !row.delivery || typeof row.delivery !== 'object' || Array.isArray(row.delivery)) throw new AppError(400, 'Dados de entrega inválidos.');
       if (!Array.isArray(row.items) || row.items.length < 1 || row.items.length > 60) throw new AppError(400, 'O pedido deve conter de 1 a 60 itens.');
       const items = row.items.map((item) => {
@@ -187,16 +377,33 @@ router.post('/orders/import', async (req, res) => {
       const status = row.status === 'atendido' ? 'atendido' : row.status === 'novo' ? 'novo' : null;
       const paymentStatus = paymentStatuses.has(row.paymentStatus) ? row.paymentStatus : null;
       if (!status || !paymentStatus) throw new AppError(400, 'Situação do pedido ou do pagamento inválida.');
+      const paymentBreakdown = row.paymentBreakdown === undefined || row.paymentBreakdown === null
+        ? null
+        : Array.isArray(row.paymentBreakdown) && row.paymentBreakdown.length <= 3
+          ? row.paymentBreakdown.map((payment) => {
+            if (!payment || !['dinheiro', 'cartao', 'pix'].includes(payment.method)) throw new AppError(400, 'Formas de pagamento inválidas.');
+            return {
+              method: payment.method,
+              amountCents: cents(payment.amountCents, 'Valor do pagamento'),
+              receivedCents: cents(payment.receivedCents ?? payment.amountCents, 'Valor recebido'),
+            };
+          })
+          : (() => { throw new AppError(400, 'Detalhes de pagamento inválidos.'); })();
+      const paymentMethod = row.paymentMethod === undefined || row.paymentMethod === null || row.paymentMethod === ''
+        ? null
+        : paymentMethods.has(row.paymentMethod) ? row.paymentMethod : (() => { throw new AppError(400, 'Forma de pagamento inválida.'); })();
       const createdAt = importedDate(row.createdAt, 'pedido') || new Date();
       const deletedAt = importedDate(row.deletedAt, 'arquivamento');
       const paidAt = importedDate(row.paidAt, 'pagamento');
       prepared.push({
         sourceRow: index + 2,
         data: {
-          code, customerName, customerPhone, deliveryType: row.deliveryType, delivery: row.delivery, items,
+          code, customerName, customerPhone, deliveryType: row.deliveryType, delivery: row.delivery, items, source, paymentMethod, paymentBreakdown,
           subtotalCents: cents(row.subtotalCents, 'Subtotal'),
           shippingCents: cents(row.shippingCents, 'Frete'),
           totalCents: cents(row.totalCents, 'Total'),
+          discountCents: cents(row.discountCents ?? 0, 'Desconto'),
+          surchargeCents: cents(row.surchargeCents ?? 0, 'Acréscimo'),
           notes: String(row.notes || '').slice(0, 500), status, paymentStatus,
           paymentProvider: row.paymentProvider ? String(row.paymentProvider).slice(0, 40) : null,
           paymentId: row.paymentId ? String(row.paymentId).slice(0, 200) : null,
@@ -219,16 +426,20 @@ router.post('/orders/import', async (req, res) => {
         skipped += 1;
       } else {
         const order = await tx.order.create({ data: { ...data, userId: req.user.id, storeId } });
-        await tx.orderStrategyRecord.create({
-          data: { orderId: order.id, userId: req.user.id, storeId, customerPhone: order.customerPhone, totalCents: order.totalCents, paid: order.paymentStatus === 'paid', createdAt: order.createdAt },
-        });
+        if (order.customerPhone || order.source === 'pdv') {
+          await tx.orderStrategyRecord.create({
+            data: { orderId: order.id, userId: req.user.id, storeId, customerPhone: order.customerPhone, totalCents: order.totalCents, paid: order.paymentStatus === 'paid', createdAt: order.createdAt },
+          });
+        }
         created += 1;
       }
-      await tx.orderCustomerProfile.upsert({
-        where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone } },
-        create: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone, customerName: data.customerName },
-        update: { customerName: data.customerName },
-      });
+      if (data.customerPhone) {
+        await tx.orderCustomerProfile.upsert({
+          where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone } },
+          create: { userId: req.user.id, scopeKey, customerPhone: data.customerPhone, customerName: data.customerName },
+          update: { customerName: data.customerName },
+        });
+      }
     }
   });
   res.json({ created, updated, skipped: skipped + errors.length, errors });
@@ -237,7 +448,23 @@ router.post('/orders/import', async (req, res) => {
 router.get('/customers', async (req, res) => {
   const storeId = await storeScope(req);
   const result = await customerReport(req.user.id, storeId, customerScopeKey(storeId), reportDays(req.query.days));
-  res.json({ ...result, retentionDays: config.orderRetentionDays });
+  res.json({ ...result, retentionDays: config.orderRetentionDays, pinRequired: Boolean(req.user.pinHash) });
+});
+
+router.post('/customers', async (req, res) => {
+  const name = String(req.body?.name || '').trim();
+  const phone = normalizePhone(req.body?.phone);
+  if (name.length < 2 || name.length > 120 || !phone) throw new AppError(400, 'Informe um nome e telefone válidos para o cliente.');
+  const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
+  const existing = await prisma.orderCustomerProfile.findUnique({
+    where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } },
+  });
+  if (existing) throw new AppError(409, 'Já existe um cliente com este telefone.');
+  const customer = await prisma.orderCustomerProfile.create({
+    data: { userId: req.user.id, scopeKey, customerPhone: phone, customerName: name },
+  });
+  res.status(201).json({ customer: { phone: customer.customerPhone, name: customer.customerName, labels: customer.labels, notes: customer.notes } });
 });
 
 router.get('/strategy', async (req, res) => {
@@ -256,7 +483,7 @@ router.get('/strategy', async (req, res) => {
       averageCents: customer.averageCents,
       lastOrderAt: customer.lastOrderAt,
     })),
-    salesCents: customers.reduce((sum, customer) => sum + customer.totalCents, 0),
+    salesCents: result.salesCents,
   });
 });
 
@@ -289,6 +516,7 @@ router.post('/customers/import', async (req, res) => {
       if (name.length < 2 || name.length > 120 || !phone) throw new AppError(400, 'Nome ou telefone do cliente inválido.');
       if (!Array.isArray(labels) || labels.length > 30 || labels.some((label) => typeof label !== 'string' || label.length > 40)) throw new AppError(400, 'Etiquetas inválidas.');
       const existing = await prisma.orderCustomerProfile.findUnique({ where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } } });
+      if (existing && req.user.pinHash) assertPin(req.user, req.body?.pin);
       await prisma.orderCustomerProfile.upsert({
         where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } },
         create: { userId: req.user.id, scopeKey, customerPhone: phone, customerName: name, labels, notes },
@@ -318,18 +546,34 @@ router.get('/customers/:phone', async (req, res) => {
     }),
   ]);
   if (!profile) throw new AppError(404, 'Cliente não encontrado.');
-  res.json({ customer: { phone: profile.customerPhone, name: profile.customerName, labels: profile.labels, notes: profile.notes }, orders: orders.map(orderDTO), retentionDays: config.orderRetentionDays, days });
+  res.json({ customer: { phone: profile.customerPhone, name: profile.customerName, labels: profile.labels, notes: profile.notes }, orders: orders.map(orderDTO), retentionDays: config.orderRetentionDays, days, pinRequired: Boolean(req.user.pinHash) });
 });
 
 router.patch('/customers/:phone', async (req, res) => {
+  if (req.user.pinHash) assertPin(req.user, req.body?.pin);
   const phone = normalizePhone(req.params.phone);
   if (!phone) throw new AppError(400, 'Telefone inválido.');
-  const scopeKey = customerScopeKey(await storeScope(req));
+  const storeId = await storeScope(req);
+  const scopeKey = customerScopeKey(storeId);
   const profile = await prisma.orderCustomerProfile.findUnique({ where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: phone } } });
   if (!profile) throw new AppError(404, 'Cliente não encontrado.');
   const labels = req.body?.labels;
   const notes = req.body?.notes;
   const data = {};
+  const name = req.body?.name;
+  const nextPhone = req.body?.phone === undefined ? phone : normalizePhone(req.body.phone);
+  if (name !== undefined) {
+    if (typeof name !== 'string' || name.trim().length < 2 || name.trim().length > 120) throw new AppError(400, 'O nome deve ter de 2 a 120 caracteres.');
+    data.customerName = name.trim();
+  }
+  if (!nextPhone) throw new AppError(400, 'Telefone inválido.');
+  if (nextPhone !== phone) {
+    const duplicate = await prisma.orderCustomerProfile.findUnique({
+      where: { userId_scopeKey_customerPhone: { userId: req.user.id, scopeKey, customerPhone: nextPhone } },
+    });
+    if (duplicate) throw new AppError(409, 'Já existe um cliente com este telefone.');
+    data.customerPhone = nextPhone;
+  }
   if (labels !== undefined) {
     if (!Array.isArray(labels) || labels.length > 20 || labels.some((label) => typeof label !== 'string' || label.trim().length > 30)) throw new AppError(400, 'Use até 20 etiquetas, com no máximo 30 caracteres cada.');
     data.labels = [...new Set(labels.map((label) => label.trim()).filter(Boolean))];
@@ -338,7 +582,26 @@ router.patch('/customers/:phone', async (req, res) => {
     if (typeof notes !== 'string' || notes.length > 2000) throw new AppError(400, 'A anotação pode ter até 2.000 caracteres.');
     data.notes = notes.trim();
   }
-  res.json({ customer: await prisma.orderCustomerProfile.update({ where: { id: profile.id }, data }) });
+  const customer = await prisma.$transaction(async (tx) => {
+    const updated = await tx.orderCustomerProfile.update({ where: { id: profile.id }, data });
+    if (nextPhone !== phone) {
+      await tx.orderStrategyRecord.updateMany({ where: { userId: req.user.id, storeId, customerPhone: phone }, data: { customerPhone: nextPhone } });
+    }
+    return updated;
+  });
+  res.json({ customer: { phone: customer.customerPhone, name: customer.customerName, labels: customer.labels, notes: customer.notes } });
+});
+
+router.delete('/customers/:phone', async (req, res) => {
+  if (req.user.pinHash) assertPin(req.user, req.body?.pin);
+  const phone = normalizePhone(req.params.phone);
+  if (!phone) throw new AppError(400, 'Telefone inválido.');
+  const scopeKey = customerScopeKey(await storeScope(req));
+  const result = await prisma.orderCustomerProfile.deleteMany({
+    where: { userId: req.user.id, scopeKey, customerPhone: phone },
+  });
+  if (!result.count) throw new AppError(404, 'Cliente não encontrado.');
+  res.json({ deleted: true });
 });
 
 async function ownedOrder(req) {
@@ -351,6 +614,7 @@ async function ownedOrder(req) {
 router.patch('/orders/:id', async (req, res) => {
   const o = await ownedOrder(req);
   if (o.deletedAt) throw new AppError(409, 'Pedidos arquivados não podem ser alterados.');
+  if (o.source === 'pdv') throw new AppError(409, 'Vendas finalizadas no PDV não podem ter o pagamento alterado.');
   const status = req.body?.status;
   if (status !== 'novo' && status !== 'atendido') throw new AppError(400, 'Situação inválida.');
   const data = { status };
