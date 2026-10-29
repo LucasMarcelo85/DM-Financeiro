@@ -6,7 +6,7 @@ import { useToast } from './Toast.jsx';
 
 // Escolhe a loja do painel (principal ou uma loja extra) e, com `manage`, cria e exclui lojas.
 export default function StoreBar({ manage = false }) {
-  const { user } = useAuth();
+  const { user } = useAuth() || {};
   const toast = useToast();
   const [data, setData] = useState(null);
   const [name, setName] = useState('');
