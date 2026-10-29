@@ -196,9 +196,17 @@ export async function createOrder(userSlug, body = {}) {
         const existing = await tx.contact.findUnique({ where: { userId_phone: { userId: owner.id, phone } } });
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });
-        return tx.order.create({
+        const createdOrder = await tx.order.create({
           data: { userId: owner.id, storeId: store?.id ?? null, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
         });
+        await tx.orderStrategyRecord.create({
+          data: {
+            orderId: createdOrder.id, userId: owner.id, storeId: store?.id ?? null,
+            customerPhone: createdOrder.customerPhone, totalCents: createdOrder.totalCents,
+            paid: createdOrder.paymentStatus === 'paid', createdAt: createdOrder.createdAt,
+          },
+        });
+        return createdOrder;
       });
       break;
     } catch (e) {

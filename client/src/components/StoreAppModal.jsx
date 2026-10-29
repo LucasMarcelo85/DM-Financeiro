@@ -9,6 +9,7 @@ const PERM_LABELS = [
   ['pedidos', 'Pedidos'],
   ['clientes', 'Clientes'],
   ['arquivados', 'Arquivados'],
+  ['estrategia', 'Estratégia de vendas e regiões'],
   ['api', 'API e webhooks da loja'],
   ['entregas', 'Entregas, frete e WhatsApp'],
   ['auditoria', 'Auditoria e conversas WhatsApp'],

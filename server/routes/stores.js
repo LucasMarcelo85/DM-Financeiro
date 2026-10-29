@@ -159,13 +159,13 @@ router.post('/:id/domain/check', async (req, res) => {
 });
 
 // ---------- Aplicativo do lojista ----------
-const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados', 'api', 'entregas', 'auditoria'];
+const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'api', 'entregas', 'auditoria'];
 const availablePerms = (user) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
   return APP_PERMS.filter((perm) => {
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
-    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados') return tabs.includes('pedidos');
+    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     return tabs.includes('auditoria') && limits.auditInstances > 0;

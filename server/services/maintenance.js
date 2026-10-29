@@ -5,11 +5,12 @@ import { loadAddons } from '../addons.js';
 import * as evo from './evolution.js';
 import { DAY } from '../utils/helpers.js';
 import { recountUnread, retentionCutoff } from './audit.js';
+import { changeOrderStock } from './order-stock.js';
 
 // Faxina periódica do banco:
 //  - mensagens da auditoria com mais de 60 dias são apagadas (junto com as fotos/áudios delas), para o banco não encher;
 //  - conversas que ficaram vazias (sem mensagens, sem anotação e sem etiqueta) também saem;
-//  - pedidos arquivados há mais de 20 dias são apagados;
+//  - pedidos ativos com mais de 90 dias são arquivados; os arquivados há mais de 20 dias são apagados;
 //  - códigos de confirmação vencidos são removidos;
 //  - os planos são relidos do banco (caso outra instância do sistema tenha alterado).
 const EVERY_MS = 60 * 60 * 1000; // a cada hora
@@ -43,9 +44,36 @@ export async function purgeOldAuditMessages(now = Date.now()) {
   return removed;
 }
 
-// Pedidos do catálogo, inclusive os arquivados, saem do banco após 20 dias.
-export async function purgeOldOrders(now = Date.now()) {
+// Pedidos ativos são arquivados aos 90 dias e liberam o estoque reservado.
+export async function archiveOldOrders(now = Date.now()) {
   const cutoff = new Date(now - config.orderRetentionDays * DAY);
+  let archived = 0;
+  for (;;) {
+    const rows = await prisma.order.findMany({
+      where: { deletedAt: null, createdAt: { lt: cutoff } },
+      select: { id: true, userId: true, storeId: true, items: true, stockReserved: true },
+      take: BATCH,
+    });
+    if (!rows.length) break;
+    await prisma.$transaction(async (tx) => {
+      for (const order of rows) {
+        const claimed = await tx.order.updateMany({
+          where: { id: order.id, deletedAt: null, createdAt: { lt: cutoff } },
+          data: { deletedAt: new Date(now), stockReserved: false },
+        });
+        if (claimed.count !== 1) continue;
+        if (order.stockReserved) await changeOrderStock(tx, order, 'restore');
+        archived += 1;
+      }
+    });
+    if (rows.length < BATCH) break;
+  }
+  return archived;
+}
+
+// Pedidos já arquivados saem do banco após 20 dias; os resumos estratégicos e clientes permanecem.
+export async function purgeOldOrders(now = Date.now()) {
+  const cutoff = new Date(now - config.archivedOrderRetentionDays * DAY);
   const r = await prisma.order.deleteMany({ where: { deletedAt: { lt: cutoff } } });
   return r.count;
 }
@@ -73,8 +101,10 @@ export async function runMaintenance() {
   try {
     const removed = await purgeOldAuditMessages();
     if (removed) console.log(`[manutenção] ${removed} mensagens da auditoria com mais de ${config.auditRetentionDays} dias foram apagadas.`);
+    const archived = await archiveOldOrders();
+    if (archived) console.log(`[manutenção] ${archived} pedidos com mais de ${config.orderRetentionDays} dias foram arquivados.`);
     const orders = await purgeOldOrders();
-    if (orders) console.log(`[manutenção] ${orders} pedidos arquivados há mais de ${config.orderRetentionDays} dias foram apagados.`);
+    if (orders) console.log(`[manutenção] ${orders} pedidos arquivados há mais de ${config.archivedOrderRetentionDays} dias foram apagados.`);
     await prisma.verificationCode.deleteMany({ where: { expiresAt: { lt: new Date() } } });
     await prisma.userAddon.deleteMany({ where: { paidUntil: { lt: new Date(Date.now() - 30 * DAY) } } }); // limite extra vencido há mais de 30 dias é perdido
     await loadPlans();

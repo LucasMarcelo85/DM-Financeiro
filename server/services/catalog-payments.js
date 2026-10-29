@@ -84,6 +84,7 @@ async function markPaid(order, { paymentId, proofUrl }) {
       paidAt: new Date(),
     },
   });
+  if (updated.count) await prisma.orderStrategyRecord.updateMany({ where: { orderId: order.id }, data: { paid: true } });
   if (updated.count && order.paymentStatus !== 'paid') {
     const paidOrder = { ...order, paymentStatus: 'paid', paymentProvider: 'infinitepay', paymentId: String(paymentId || order.paymentId || '') };
     notifyCatalogOrder(paidOrder, 'paid').catch((e) => console.error(`[catálogo] falha na notificação de pagamento do pedido ${order.id}: ${e.message}`));

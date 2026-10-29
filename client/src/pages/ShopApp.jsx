@@ -17,8 +17,19 @@ const TABS = [
   ['auditoria', 'Auditoria'],
 ];
 const firstTab = (perms) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) : key === 'pedidos'
-  ? ['pedidos', 'clientes', 'arquivados'].some((perm) => perms.includes(perm))
+  ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
   : perms.includes(key))?.[0] || '';
+const foregroundFor = (color) => {
+  const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
+  const channel = (offset) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = channel(0) * 0.2126 + channel(2) * 0.7152 + channel(4) * 0.0722;
+  const darkContrast = (luminance + 0.05) / 0.017;
+  const lightContrast = 1.05 / (luminance + 0.05);
+  return darkContrast >= lightContrast ? '#14202E' : '#FFFFFF';
+};
 
 // Aplicativo do lojista, instalável no celular: o nome e a cor vêm da configuração da loja e o endereço é o do próprio site da loja.
 export default function ShopApp() {
@@ -86,7 +97,9 @@ export default function ShopApp() {
   if (missing) return <main style={{ padding: 32, textAlign: 'center' }}><h1>Aplicativo indisponível</h1><p className="muted">Confira o endereço com a loja.</p></main>;
   if (!info) return <main style={{ padding: 32 }}><p className="muted">Carregando...</p></main>;
 
-  const bar = { background: info.color, color: '#0F2238', padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
+  const color = info.color || '#F2A33A';
+  const foreground = foregroundFor(color);
+  const bar = { background: color, color: foreground, '--shop-app-bg': color, '--shop-app-fg': foreground, padding: '12px 16px', display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' };
 
   if (!authed) {
     return (
@@ -105,12 +118,12 @@ export default function ShopApp() {
   const tabs = TABS.filter(([key]) => key === 'produtos'
     ? perms?.includes('produtos')
     : key === 'pedidos'
-      ? ['pedidos', 'clientes', 'arquivados'].some((p) => perms?.includes(p))
+      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((p) => perms?.includes(p))
       : perms?.includes(key));
 
   return (
     <>
-      <header style={bar}>
+      <header className="shop-app-bar" style={bar}>
         <strong style={{ fontSize: 18 }}>{info.name}</strong>
         <nav style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
           {tabs.length > 1 && tabs.map(([key, label]) => (

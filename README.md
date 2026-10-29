@@ -79,6 +79,7 @@ Para cadastrar domínios personalizados automaticamente, configure também `EASY
   - Imagens são reduzidas no navegador e ficam dentro do contrato (limite de ~9 MB por contrato). O servidor valida e limpa o documento (`server/utils/contract.js`) e limita a quantidade de modelos por plano.
   - As fontes vêm do Google Fonts (`client/index.html`); se mudar a lista, atualize também `FONTS` em `client/src/lib/contract/model.js` e `FONT_KEYS` em `server/utils/contract.js`.
 - **Produtos e serviços:** as imagens são reduzidas no navegador e aceitam PNG, JPG, WebP, GIF e HEIC/HEIF. Em *Produtos e serviços > Organizar categorias e opções*, cada usuário salva categorias, tipos de variação e nomes de preço para reutilizar. Cada variação descreve uma característica (como cor ou tamanho), sem preço próprio; o valor opcional é informado na forma de preço, cujo nome é personalizável.
+- **Pedidos do catálogo:** pedidos ficam ativos por até 90 dias e depois são arquivados automaticamente por 20 dias antes da remoção. Os perfis de clientes são mantidos; a aba *Estratégia* preserva os resumos de vendas e permite filtrar até 90 dias, comparar clientes e visualizar regiões aproximadas pelo DDD. No aplicativo da loja, o administrador escolhe individualmente se cada acesso pode ver a Estratégia.
 - Usa o formato da Evolution API v2. Se a sua for a v1, ajuste os corpos das requisições em `server/services/evolution.js`.
 
 ## Auditoria de conversas

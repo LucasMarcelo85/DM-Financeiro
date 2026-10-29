@@ -85,8 +85,9 @@ export const config = {
   },
   // Limite geral de requisições por IP por minuto (a API inteira). Só mude se precisar.
   rateLimitPerMinute: Math.max(60, Number(env.RATE_LIMIT_PER_MINUTE ?? 600)),
-  // Pedidos e logs do catálogo são removidos depois de 20 dias.
-  orderRetentionDays: 20,
+  // Pedidos ativos são arquivados aos 90 dias; os arquivados são removidos após 20 dias.
+  orderRetentionDays: 90,
+  archivedOrderRetentionDays: 20,
   // Mensagens da auditoria com mais de 60 dias são apagadas sozinhas (para não encher o banco).
   // A tela oferece os filtros de 7, 30 e 60 dias.
   auditRetentionDays: 60,

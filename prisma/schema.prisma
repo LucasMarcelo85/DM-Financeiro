@@ -101,6 +101,7 @@ model User {
   products        Product[]
   orders          Order[]
   orderCustomerProfiles OrderCustomerProfile[]
+  orderStrategyRecords OrderStrategyRecord[]
   catalogSettings CatalogSettings?
   catalogPaymentConnections CatalogPaymentConnection[]
   productPreferences ProductPreferences?
@@ -706,6 +707,7 @@ model Store {
   appColor               String?   @map("app_color")
   appUserLimit           Int       @default(10) @map("app_user_limit")
   appUsers               StoreUser[]
+  strategyRecords        OrderStrategyRecord[]
   instances              Instance[]
   createdAt              DateTime  @default(now()) @map("created_at")
 
@@ -723,7 +725,7 @@ model StoreUser {
   login        String
   passwordHash String   @map("password_hash")
   active       Boolean  @default(true)
-  perms        String   @default("produtos,pedidos,clientes,arquivados,api,entregas,auditoria")
+  perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,api,entregas,auditoria")
   createdAt    DateTime @default(now()) @map("created_at")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
@@ -802,4 +804,22 @@ model OrderCustomerProfile {
   @@unique([userId, scopeKey, customerPhone])
   @@index([userId, scopeKey, updatedAt])
   @@map("order_customer_profiles")
+}
+
+model OrderStrategyRecord {
+  id            Int      @id @default(autoincrement())
+  orderId       Int      @unique @map("order_id")
+  userId        Int      @map("user_id")
+  storeId       Int?     @map("store_id")
+  customerPhone String   @map("customer_phone")
+  totalCents    Int      @map("total_cents")
+  paid          Boolean  @default(false)
+  createdAt     DateTime @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([userId, storeId, createdAt])
+  @@index([userId, storeId, customerPhone, createdAt], map: "order_strategy_customer_recent_idx")
+  @@map("order_strategy_records")
 }

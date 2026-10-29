@@ -20,12 +20,23 @@ const DUMMY_HASH = bcrypt.hashSync('dm-shop-app', 10);
 
 const appName = (store) => store.appName || store.name;
 const appColor = (store) => store.appColor || '#F2A33A';
+const appForeground = (store) => {
+  const hex = /^#([0-9a-f]{6})$/i.exec(appColor(store))?.[1] || 'F2A33A';
+  const channel = (offset) => {
+    const value = parseInt(hex.slice(offset, offset + 2), 16) / 255;
+    return value <= 0.04045 ? value / 12.92 : ((value + 0.055) / 1.055) ** 2.4;
+  };
+  const luminance = channel(0) * 0.2126 + channel(2) * 0.7152 + channel(4) * 0.0722;
+  const darkContrast = (luminance + 0.05) / 0.017;
+  const lightContrast = 1.05 / (luminance + 0.05);
+  return darkContrast >= lightContrast ? '#14202E' : '#FFFFFF';
+};
 const allowedPerms = (user, permissions) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
   return permissions.filter((perm) => {
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
-    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados') return tabs.includes('pedidos');
+    if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'auditoria') return tabs.includes('auditoria') && limits.auditInstances > 0;
@@ -59,7 +70,7 @@ router.get('/icon', async (req, res) => {
   const store = await storeFor(req);
   const letter = appName(store).trim().charAt(0).toUpperCase().replace(/[<>&"']/g, '') || 'L';
   res.type('image/svg+xml').set('Cache-Control', 'public, max-age=3600').send(
-    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${appColor(store)}"/><text x="256" y="350" font-size="280" font-weight="700" text-anchor="middle" fill="#0F2238" font-family="sans-serif">${letter}</text></svg>`,
+    `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${appColor(store)}"/><text x="256" y="350" font-size="280" font-weight="700" text-anchor="middle" fill="${appForeground(store)}" font-family="sans-serif">${letter}</text></svg>`,
   );
 });
 
@@ -134,16 +145,18 @@ router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   }
   const isCustomers = /^\/customers(?:\/|$)/.test(req.path);
   const isOrders = /^\/orders(?:\/|$)/.test(req.path);
+  const isStrategy = req.path === '/strategy';
   const isCustomerTransfer = /^\/customers\/(?:export|import)$/.test(req.path);
   const isOrderTransfer = /^\/orders\/(?:export|import)$/.test(req.path);
   const isRestore = req.method === 'POST' && /^\/orders\/\d+\/restore$/.test(req.path);
   const isArchive = req.method === 'POST' && req.path === '/orders/bulk-delete';
   const allowed = (isCustomers && (req.method === 'GET' || req.method === 'PATCH' || isCustomerTransfer && (req.method === 'GET' || req.method === 'POST')))
     || (isOrders && (req.method === 'GET' || (req.method === 'PATCH' && /^\/orders\/\d+$/.test(req.path)) || isOrderTransfer && (req.method === 'GET' || req.method === 'POST')))
+    || (isStrategy && req.method === 'GET')
     || isRestore || isArchive;
   if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
   const archivedArea = isRestore || (req.path === '/orders' && req.query.view === 'log');
-  const area = isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
+  const area = isStrategy ? 'estrategia' : isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
   needPerm(area)(req, _res, next);
 }, catalogRoutes);
 

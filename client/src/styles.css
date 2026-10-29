@@ -1584,7 +1584,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .od-tabs button { display: inline-flex; align-items: center; gap: 0.4rem; padding: 0.7rem 0.9rem; border: 0; border-bottom: 2px solid transparent; background: transparent; color: var(--muted); font: inherit; font-weight: 650; cursor: pointer; }
 .od-tabs button.is-on { color: var(--primary); border-bottom-color: var(--primary); }
 .od-tabs button span { font-size: 0.75rem; color: var(--muted); }
-.od-stats { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
+.od-stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); gap: 0.75rem; margin-bottom: 1rem; }
 .od-stats article { display: grid; gap: 0.25rem; padding: 0.9rem 1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }
 .od-stats article span, .od-customer > span > small { color: var(--muted); font-size: 0.82rem; }
 .od-stats article strong { font-size: 1.35rem; }
@@ -1607,6 +1607,38 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .od-customer-orders li { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: center; gap: 0.7rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .od-customer-orders details { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }
 .od-customer-orders details p { margin: 0.4rem 0 0; }
+.shop-app-bar .btn-ghost { color: inherit; border-color: currentColor; }
+.shop-app-bar .btn-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--shop-app-fg) 12%, transparent); border-color: currentColor; }
+.shop-app-bar .btn-primary { background: var(--shop-app-fg); color: var(--shop-app-bg); border-color: var(--shop-app-fg); }
+.od-strategy { display: grid; gap: 1rem; }
+.od-strategy-heading, .od-strategy-subhead { display: flex; justify-content: space-between; gap: 0.8rem; align-items: flex-start; }
+.od-strategy-heading h2, .od-strategy-subhead h3 { margin: 0; }
+.od-strategy-heading p, .od-strategy-subhead p { margin: 0.25rem 0 0; }
+.od-strategy-note { border-radius: 999px; padding: 0.35rem 0.65rem; background: var(--primary-soft, #eef2ff); color: var(--primary); font-size: 0.78rem; font-weight: 700; }
+.od-strategy-stats { grid-template-columns: repeat(auto-fit, minmax(9.5rem, 1fr)); }
+.od-strategy-grid { display: grid; grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr); gap: 1rem; align-items: start; }
+.od-strategy-map-card, .od-strategy-customers { min-width: 0; padding: 1rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--r-md); }
+.od-brazil-map { display: grid; place-items: center; padding: 0.25rem; }
+.od-brazil-map svg { width: min(100%, 22rem); max-height: 23rem; overflow: visible; }
+.od-map-outline { fill: #f2f5f9; stroke: #9aa8b8; stroke-width: 2; stroke-linejoin: round; }
+.od-map-regions { opacity: 0.48; }
+.od-map-count { fill: #fff; font: 800 0.72rem/1 system-ui, sans-serif; }
+.od-region-ranking { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.6rem; }
+.od-region-ranking article { display: grid; gap: 0.15rem; padding: 0.7rem 0.8rem; border-radius: var(--r-sm); background: #edf8f2; }
+.od-region-ranking article.is-low { background: #fff5eb; }
+.od-region-ranking span, .od-region-list li > span:not(.od-region-dot) { color: var(--muted); font-size: 0.8rem; }
+.od-region-ranking b { font-size: 0.9rem; }
+.od-region-list, .od-strategy-customer-list { display: grid; gap: 0.45rem; list-style: none; padding: 0; margin: 0.8rem 0 0; }
+.od-region-list li { display: grid; grid-template-columns: 0.6rem minmax(5rem, 0.7fr) minmax(8rem, 1.2fr) auto; align-items: center; gap: 0.5rem; padding: 0.5rem 0; border-top: 1px solid var(--line); }
+.od-region-dot { width: 0.55rem; height: 0.55rem; border-radius: 50%; }
+.od-strategy-filters { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0.55rem; margin-top: 0.8rem; }
+.od-strategy-customer-list { max-height: 42rem; overflow: auto; }
+.od-strategy-customer { display: grid; grid-template-columns: minmax(9rem, 1.5fr) repeat(3, minmax(5.5rem, 1fr)); gap: 0.65rem; align-items: center; width: 100%; padding: 0.7rem 0; border: 0; border-top: 1px solid var(--line); background: transparent; color: inherit; text-align: left; cursor: pointer; }
+.od-strategy-customer:not(button) { cursor: default; }
+.od-strategy-customer > span { display: grid; gap: 0.15rem; min-width: 0; }
+.od-strategy-customer small { color: var(--muted); font-size: 0.76rem; }
+.od-strategy-customer-main strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.od-customer-stats { margin-bottom: 0.9rem; grid-template-columns: repeat(auto-fit, minmax(9rem, 1fr)); }
 .cat-cart.is-compact .cat-form { gap: 0.75rem; }
 .cat-cart.is-compact .cat-lines li { padding-block: 0.55rem; }
 .cat-cart.is-compact .cat-lines { gap: 0.4rem; }
@@ -1618,6 +1650,21 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 @media (max-width: 50rem) {
   .od-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .od-customer { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .od-strategy-grid { grid-template-columns: 1fr; }
+  .od-strategy-customer { grid-template-columns: minmax(0, 1.4fr) repeat(2, minmax(5rem, 1fr)); }
+  .od-strategy-customer > span:last-child { grid-column: 2 / -1; }
   .cat-cart.is-split .cat-form { grid-template-columns: 1fr; }
   .cat-cart.is-split .cat-form > :not(.cat-lines), .cat-cart.is-split .cat-lines { grid-column: 1; grid-row: auto; }
+}
+@media (max-width: 34rem) {
+  .od-strategy-heading { flex-direction: column; }
+  .od-strategy-map-card, .od-strategy-customers { padding: 0.75rem; }
+  .od-strategy-stats { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .od-region-list li { grid-template-columns: 0.6rem minmax(4rem, 0.7fr) minmax(0, 1.2fr); }
+  .od-region-list li b { grid-column: 2 / -1; }
+  .od-strategy-customer { grid-template-columns: minmax(0, 1fr) auto; }
+  .od-strategy-customer > span:nth-child(3), .od-strategy-customer > span:last-child { grid-column: auto; }
+  .od-strategy-customer > span:nth-child(2) { grid-row: 2; }
+  .od-strategy-customer > span:nth-child(3) { grid-row: 2; grid-column: 2; }
+  .od-strategy-customer > span:last-child { grid-column: 1 / -1; }
 }

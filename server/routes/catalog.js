@@ -19,11 +19,66 @@ function orderWhere(userId, filters = {}, { archived = false, includeStatus = tr
   const where = { userId, storeId, deletedAt: archived ? { not: null } : null };
   if (includeStatus && (filters.status === 'novo' || filters.status === 'atendido')) where.status = filters.status;
   if (filters.deliveryType === 'retirada' || filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
-  const days = Number(filters.days);
-  if (days === 7 || days === config.orderRetentionDays) where[archived ? 'deletedAt' : 'createdAt'] = { gte: new Date(Date.now() - days * 86400000) };
+  const requestedDays = Number(filters.days);
+  const days = [7, 30, 60, config.orderRetentionDays].includes(requestedDays) ? requestedDays : config.orderRetentionDays;
+  where[archived ? 'deletedAt' : 'createdAt'] = { gte: new Date(Date.now() - days * 86400000) };
   const q = includeText ? String(filters.q || '').trim() : '';
   if (q) where.OR = [{ customerName: { contains: q, mode: 'insensitive' } }, { customerPhone: { contains: q.replace(/\D/g, '') || '§' } }, { code: { contains: q.toUpperCase() } }];
   return where;
+}
+
+function reportDays(value) {
+  const days = Number(value);
+  return [7, 30, 60, config.orderRetentionDays].includes(days) ? days : 30;
+}
+
+async function customerReport(userId, storeId, scopeKey, days) {
+  const cutoff = new Date(Date.now() - days * 86400000);
+  const [profiles, profileCount, purchases, paidSales] = await Promise.all([
+    prisma.orderCustomerProfile.findMany({ where: { userId, scopeKey }, orderBy: { updatedAt: 'desc' } }),
+    prisma.orderCustomerProfile.count({ where: { userId, scopeKey } }),
+    prisma.orderStrategyRecord.groupBy({
+      by: ['customerPhone'],
+      where: { userId, storeId, createdAt: { gte: cutoff } },
+      _count: { _all: true },
+      _max: { createdAt: true },
+    }),
+    prisma.orderStrategyRecord.groupBy({
+      by: ['customerPhone'],
+      where: { userId, storeId, paid: true, createdAt: { gte: cutoff } },
+      _sum: { totalCents: true },
+      _avg: { totalCents: true },
+      _count: { _all: true },
+    }),
+  ]);
+  const purchaseByPhone = new Map(purchases.map((row) => [row.customerPhone, row]));
+  const salesByPhone = new Map(paidSales.map((row) => [row.customerPhone, row]));
+  const customers = profiles.map((profile) => {
+    const purchase = purchaseByPhone.get(profile.customerPhone);
+    const sales = salesByPhone.get(profile.customerPhone);
+    return {
+      phone: profile.customerPhone,
+      name: profile.customerName,
+      labels: profile.labels,
+      notes: profile.notes,
+      orders: purchase?._count._all || 0,
+      totalCents: sales?._sum.totalCents || 0,
+      averageCents: Math.round(sales?._avg.totalCents || 0),
+      lastOrderAt: purchase?._max.createdAt?.getTime() || null,
+    };
+  });
+  const buyingCustomers = customers.filter((customer) => customer.orders > 0).length;
+  const recurringCustomers = customers.filter((customer) => customer.orders > 1).length;
+  const oneTimeCustomers = customers.filter((customer) => customer.orders === 1).length;
+  return {
+    customers,
+    totalCustomers: profileCount,
+    buyingCustomers,
+    recurringCustomers,
+    oneTimeCustomers,
+    nonBuyingCustomers: Math.max(0, profileCount - buyingCustomers),
+    days,
+  };
 }
 
 async function loadSettings(userId, storeId = null) {
@@ -76,14 +131,15 @@ router.get('/orders', async (req, res) => {
   const storeId = await storeScope(req);
   const where = orderWhere(req.user.id, req.query, { archived, storeId });
   const statsWhere = orderWhere(req.user.id, req.query, { includeStatus: false, includeText: false, storeId });
-  const [rows, total, fresh, archivedCount, stats] = await Promise.all([
+  const [rows, total, fresh, archivedCount, stats, customerCount] = await Promise.all([
     prisma.order.findMany({ where, orderBy: { createdAt: 'desc' }, take: 300 }),
     prisma.order.count({ where }),
     prisma.order.count({ where: { ...statsWhere, status: 'novo' } }),
     prisma.order.count({ where: { userId: req.user.id, storeId, deletedAt: { not: null } } }),
     prisma.order.aggregate({ where: { ...statsWhere, paymentStatus: 'paid' }, _sum: { totalCents: true }, _avg: { totalCents: true }, _count: { _all: true } }),
+    prisma.orderCustomerProfile.count({ where: { userId: req.user.id, scopeKey: customerScopeKey(storeId) } }),
   ]);
-  res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays });
+  res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, customerCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays, archivedRetentionDays: config.archivedOrderRetentionDays });
 });
 
 router.get('/orders/export', async (req, res) => {
@@ -162,7 +218,10 @@ router.post('/orders/import', async (req, res) => {
       if (current) {
         skipped += 1;
       } else {
-        await tx.order.create({ data: { ...data, userId: req.user.id, storeId } });
+        const order = await tx.order.create({ data: { ...data, userId: req.user.id, storeId } });
+        await tx.orderStrategyRecord.create({
+          data: { orderId: order.id, userId: req.user.id, storeId, customerPhone: order.customerPhone, totalCents: order.totalCents, paid: order.paymentStatus === 'paid', createdAt: order.createdAt },
+        });
         created += 1;
       }
       await tx.orderCustomerProfile.upsert({
@@ -176,33 +235,28 @@ router.post('/orders/import', async (req, res) => {
 });
 
 router.get('/customers', async (req, res) => {
-  const requestedDays = Number(req.query.days);
-  const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
-  const cutoff = new Date(Date.now() - days * 86400000);
   const storeId = await storeScope(req);
-  const scopeKey = customerScopeKey(storeId);
-  const [profiles, aggregates] = await Promise.all([
-    prisma.orderCustomerProfile.findMany({ where: { userId: req.user.id, scopeKey }, orderBy: { updatedAt: 'desc' }, take: 1000 }),
-    prisma.order.groupBy({
-      by: ['customerPhone'],
-      where: { userId: req.user.id, storeId, deletedAt: null, paymentStatus: 'paid', createdAt: { gte: cutoff } },
-      _sum: { totalCents: true },
-      _avg: { totalCents: true },
-      _count: { _all: true },
-      _max: { createdAt: true },
-    }),
-  ]);
-  const stats = new Map(aggregates.map((row) => [row.customerPhone, row]));
+  const result = await customerReport(req.user.id, storeId, customerScopeKey(storeId), reportDays(req.query.days));
+  res.json({ ...result, retentionDays: config.orderRetentionDays });
+});
+
+router.get('/strategy', async (req, res) => {
+  const storeId = await storeScope(req);
+  const days = reportDays(req.query.days);
+  const result = await customerReport(req.user.id, storeId, customerScopeKey(storeId), days);
+  const { customers, ...summary } = result;
   res.json({
-    customers: profiles.map((profile) => {
-      const aggregate = stats.get(profile.customerPhone);
-      return {
-        phone: profile.customerPhone, name: profile.customerName, labels: profile.labels, notes: profile.notes,
-        orders: aggregate?._count._all || 0, totalCents: aggregate?._sum.totalCents || 0,
-        averageCents: Math.round(aggregate?._avg.totalCents || 0), lastOrderAt: aggregate?._max.createdAt?.getTime() || null,
-      };
-    }),
-    retentionDays: config.orderRetentionDays, days,
+    ...summary,
+    customers: customers.map((customer) => ({
+      phone: customer.phone,
+      name: customer.name,
+      labels: customer.labels,
+      orders: customer.orders,
+      totalCents: customer.totalCents,
+      averageCents: customer.averageCents,
+      lastOrderAt: customer.lastOrderAt,
+    })),
+    salesCents: customers.reduce((sum, customer) => sum + customer.totalCents, 0),
   });
 });
 
@@ -253,8 +307,7 @@ router.post('/customers/import', async (req, res) => {
 router.get('/customers/:phone', async (req, res) => {
   const phone = normalizePhone(req.params.phone);
   if (!phone) throw new AppError(400, 'Telefone inválido.');
-  const requestedDays = Number(req.query.days);
-  const days = requestedDays === 7 ? 7 : config.orderRetentionDays;
+  const days = reportDays(req.query.days);
   const storeId = await storeScope(req);
   const scopeKey = customerScopeKey(storeId);
   const [profile, orders] = await Promise.all([
@@ -312,6 +365,10 @@ router.patch('/orders/:id', async (req, res) => {
   });
   if (updated.count !== 1) throw new AppError(409, 'O pedido foi alterado em outra tela. Atualize e tente novamente.');
   const saved = await prisma.order.findUnique({ where: { id: o.id } });
+  await prisma.orderStrategyRecord.updateMany({
+    where: { orderId: saved.id },
+    data: { paid: saved.paymentStatus === 'paid', totalCents: saved.totalCents },
+  });
   emitApiWebhook({ userId: req.user.id, storeId: saved.storeId, event: 'order.updated', data: orderDTO(saved) })
     .catch((error) => console.error(`[api-webhook] pedido ${saved.id}: ${error.message}`));
   if (saved.paymentStatus === 'paid' && o.paymentStatus !== 'paid') {
