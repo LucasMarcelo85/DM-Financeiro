@@ -659,7 +659,7 @@ model CatalogPaymentConnection {
   @@map("catalog_payment_connections")
 }
 
-// Pedido feito no catálogo. Exclusões ficam no log até a limpeza automática após 20 dias.
+// Pedido do catálogo. Pedidos ativos são arquivados após 90 dias; os arquivados são removidos após 20 dias.
 model Order {
   id            Int      @id @default(autoincrement())
   userId        Int      @map("user_id")
