@@ -1,6 +1,7 @@
 import { cloneElement, isValidElement, memo, useEffect, useRef, useState } from 'react';
+import { createPortal } from 'react-dom';
 import './pv.css';
-import { DESIGN_W, autoHeight, boxOf, pageHeight, setCatalogContext } from '../../lib/portfolio/doc.js';
+import { DESIGN_W, autoHeight, boxOf, layoutBoxes, pageHeight, setCatalogContext } from '../../lib/portfolio/doc.js';
 import { CatalogScope, CatGridView, CatSearchView } from './Catalog.jsx';
 import { ICON_COMPONENTS, ICONS } from '../../lib/portfolio/icons.js';
 import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
@@ -341,8 +342,8 @@ function ProductsView({ el, device, products, mode }) {
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
 const FULL_BLEED = 3000; // elementos de largura total passam das bordas do desenho; a página corta o excesso
-function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, cartCount, replay = 0 }) {
-  const box = boxOf(el, device);
+function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle }) {
+  const box = layoutBox || boxOf(el, device);
   const ref = useRef(null);
   const a = el.anim;
   const hasEnter = animate && a.enter !== 'none';
@@ -363,7 +364,7 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   else if (el.t === 'image') { content = <ImageView el={el} mode={mode} />; linked = el.link; }
   else if (el.t === 'icon') {
     content = <IconView el={el} box={box} cartCount={cartCount} />;
-    if (mode === 'public' && onCart && ['cart', 'bag'].includes(el.name)) {
+    if (mode === 'public' && onCart && el.scrollAction === 'none' && ['cart', 'bag'].includes(el.name)) {
       content = <button type="button" className="pv-icon-cart-action" onClick={() => onCart()} aria-label="Abrir carrinho">{content}</button>;
     } else linked = el.link;
   }
@@ -385,13 +386,18 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   if (content == null) return null;
 
   const href = linked && mode === 'public' ? linkHref(linked) : '';
-  if (href) content = <a className="pv-link" href={href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{content}</a>;
+  if (mode === 'public' && el.scrollAction && el.scrollAction !== 'none') {
+    const top = el.scrollAction === 'top';
+    content = <button type="button" className="pv-scroll-action" aria-label={top ? 'Voltar ao topo' : 'Ir para o fim da página'} onClick={() => window.scrollTo({ top: top ? 0 : document.documentElement.scrollHeight, behavior: 'smooth' })}>{content}</button>;
+  } else if (href) content = <a className="pv-link" href={href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{content}</a>;
 
   const bleed = el.full && (el.t === 'shape' || el.t === 'spacer') && (el.shape || 'rect') === 'rect';
-  const style = bleed
+  const style = fixedStyle
+    ? { ...fixedStyle, width: box.w, height: box.h, zIndex: z + 1000 }
+    : bleed
     ? { left: -FULL_BLEED, top: box.y, width: DESIGN_W[device] + FULL_BLEED * 2, height: box.h, zIndex: z }
     : { left: box.x, top: box.y, width: box.w, height: el.t === 'products' ? 'auto' : box.h, zIndex: z, transform: box.r ? `rotate(${box.r}deg)` : undefined };
-  return (
+  const element = (
     <div ref={ref} className={`pv-el pv-t-${el.t}${box.hide ? ' is-ghost' : ''}`} data-el={el.id} style={style}>
       <div className={`pv-enter${hasEnter ? ` has-enter e-${a.enter}${seen ? ' is-in' : ''}` : ''}`} style={{ '--dur': `${a.duration}ms`, '--delay': `${a.delay}ms` }}>
         <div className={`pv-loop${animate && a.loop !== 'none' ? ` l-${a.loop}` : ''}`}>
@@ -402,6 +408,7 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
       </div>
     </div>
   );
+  return fixedStyle ? createPortal(element, document.body, `fixed-${el.id}`) : element;
 }
 
 export const ElementView = memo(ElementViewBase);
@@ -425,16 +432,38 @@ export function PageCredit({ theme }) {
 }
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
-export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight }) {
+export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight, viewportFixed = true }) {
   setCatalogContext(products, doc.catalog);
   const W = DESIGN_W[device];
-  const H = Math.max(minHeight || 0, pageHeight(doc, device));
+  const H = Math.max(minHeight || 0, pageHeight(doc, device, products, doc.catalog));
+  const boxes = layoutBoxes(doc, device, products, doc.catalog);
+  const offsetX = typeof window === 'undefined' ? 0 : Math.max(0, (window.innerWidth - W * scale) / 2);
+  const themeStyle = {
+    '--bg': doc.theme.bg, '--tx': doc.theme.text, '--p': doc.theme.primary, '--on-p': readableOn(doc.theme.primary),
+    '--bf': fontCss(doc.theme.bodyFont), '--hf': fontCss(doc.theme.headingFont),
+  };
   const body = (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
       <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
-        {doc.elements.map((el, i) => (
-          <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1} onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} />
-        ))}
+        {doc.elements.map((el, i) => {
+          const box = boxes.get(el.id) || boxOf(el, device, products, doc.catalog);
+          const fixed = mode === 'public' && viewportFixed && el.fixed && !box.hide;
+          const anchor = el.fixedAnchor || 'bottom-right';
+          const fixedStyle = fixed ? {
+            position: 'fixed',
+            left: anchor.endsWith('left') ? offsetX + box.x * scale : undefined,
+            right: anchor.endsWith('right') ? offsetX + box.x * scale : undefined,
+            top: anchor.startsWith('top') ? box.y * scale : undefined,
+            bottom: anchor.startsWith('bottom') ? box.y * scale : undefined,
+            transform: `scale(${scale})${box.r ? ` rotate(${box.r}deg)` : ''}`,
+            transformOrigin: `${anchor.startsWith('top') ? 'top' : 'bottom'} ${anchor.endsWith('left') ? 'left' : 'right'}`,
+            ...themeStyle,
+          } : null;
+          return (
+            <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1}
+              onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} layoutBox={box} fixedStyle={fixedStyle} />
+          );
+        })}
         {children}
       </div>
     </div>

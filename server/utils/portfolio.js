@@ -278,7 +278,7 @@ const VALIGN = new Set(['top', 'middle', 'bottom']);
 const WEIGHTS = new Set([300, 400, 500, 600, 700, 800, 900]);
 const BORDER_STYLE = new Set(['solid', 'dashed', 'dotted']);
 const ICON_BG = new Set(['none', 'circle', 'rounded', 'square']);
-const CAT_DISPLAY = new Set(['category', 'mixed', 'only']);
+const CAT_DISPLAY = new Set(['category', 'mixed', 'only', 'selected']);
 const CARD_STYLE = new Set(['soft', 'flat', 'outline']);
 const ICON_NAME = /^[a-z0-9-]{1,30}$/;
 const META_ID = /^\d{8,20}$/;
@@ -353,7 +353,9 @@ function cleanElement(raw) {
       Object.assign(el, {
         name: typeof raw.name === 'string' && ICON_NAME.test(raw.name) ? raw.name : 'star', color: color(raw.color, '#14202e'),
         bg: pick(raw.bg, ICON_BG, 'none'), bgColor: color(raw.bgColor, '#f2a33a'), borderW: num(raw.borderW, 0, 20, 0), borderColor: color(raw.borderColor, '#14202e'),
-        shadow: pick(raw.shadow, SHADOWS, 'none'), link: cleanLink(raw.link),
+        shadow: pick(raw.shadow, SHADOWS, 'none'), fixed: bool(raw.fixed, false),
+        fixedAnchor: pick(raw.fixedAnchor, new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right']), 'bottom-right'),
+        scrollAction: pick(raw.scrollAction, new Set(['none', 'top', 'bottom']), 'none'), link: cleanLink(raw.link),
       });
       break;
     case 'button':
@@ -368,7 +370,10 @@ function cleanElement(raw) {
       Object.assign(el, {
         shape: pick(raw.shape, SHAPES, 'rect'), fill: cleanFill(raw.fill, FILL_DEFAULT), borderW: num(raw.borderW, 0, 40, 0),
         borderColor: color(raw.borderColor, '#14202e'), borderStyle: pick(raw.borderStyle, BORDER_STYLE, 'solid'), shadow: pick(raw.shadow, SHADOWS, 'none'),
-        radius: num(raw.radius, 0, 500, 0), opacity: num(raw.opacity, 5, 100, 100), full: bool(raw.full, false), link: cleanLink(raw.link),
+        radius: num(raw.radius, 0, 500, 0), opacity: num(raw.opacity, 5, 100, 100), full: bool(raw.full, false),
+        fixed: bool(raw.fixed, false),
+        fixedAnchor: pick(raw.fixedAnchor, new Set(['top-left', 'top-right', 'bottom-left', 'bottom-right']), 'bottom-right'),
+        scrollAction: pick(raw.scrollAction, new Set(['none', 'top', 'bottom']), 'none'), link: cleanLink(raw.link),
       });
       break;
     case 'spacer':
@@ -458,6 +463,7 @@ function cleanDocV2(raw, kindHint) {
     const cols = isObj(c.columns) ? c.columns : {};
     doc.catalog = {
       display: pick(c.display, CAT_DISPLAY, 'category'), onlyCategory: line(c.onlyCategory, 60),
+      selectedProductIds: [...new Set((Array.isArray(c.selectedProductIds) ? c.selectedProductIds : []).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 1000),
       card: (() => {
         const k = isObj(c.card) ? c.card : {};
         const optColor = (v) => (typeof v === 'string' && /^#[0-9a-f]{6}$/i.test(v) ? v.toLowerCase() : '');

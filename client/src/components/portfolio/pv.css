@@ -11,6 +11,7 @@
 .pv-enter, .pv-loop, .pv-hover, .pv-body { width: 100%; height: 100%; box-sizing: border-box; }
 .pv-hover { transition: transform .25s ease, filter .25s ease; }
 .pv-link { display: block; width: 100%; height: 100%; color: inherit; text-decoration: none; }
+.pv-scroll-action { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; color: inherit; font: inherit; cursor: pointer; }
 
 /* ---------- entrada (aparece quando entra na tela) ---------- */
 .pv-enter.has-enter:not(.is-in) { opacity: 0; }

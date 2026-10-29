@@ -5,7 +5,7 @@ import IconPicker from './IconPicker.jsx';
 import { fillBackground } from './Canvas.jsx';
 import {
   BTN_STYLES, CARD_STYLES, CATALOG_DISPLAY, DESIGN_W, ELEMENT_LABELS, ENTER_OPTIONS, FILL_ANIM_OPTIONS, HOVER_OPTIONS, LOOP_OPTIONS, SHADOW_OPTIONS,
-  TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, autoHeight, boxOf,
+  TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, autoHeight,
 } from '../../lib/portfolio/doc.js';
 import { FONTS, FONT_GROUPS, THEME_PRESETS, pageUrl, parseVideo } from '../../lib/portfolio/model.js';
 import { MASK_LIST, SHAPE_LIST, SHAPE_PATHS } from '../../lib/portfolio/shapes.js';
@@ -17,6 +17,8 @@ const VALIGN = [['top', 'Topo'], ['middle', 'Meio'], ['bottom', 'Base']];
 const FIT = [['cover', 'Preencher'], ['contain', 'Caber'], ['fill', 'Esticar']];
 const BORDER_STYLE = [['solid', 'Contínua'], ['dashed', 'Tracejada'], ['dotted', 'Pontilhada']];
 const ICON_BG = [['none', 'Sem fundo'], ['circle', 'Círculo'], ['rounded', 'Arredondado'], ['square', 'Quadrado']];
+const FIXED_ANCHORS = [['top-left', 'Superior esquerdo'], ['top-right', 'Superior direito'], ['bottom-left', 'Inferior esquerdo'], ['bottom-right', 'Inferior direito']];
+const SCROLL_ACTIONS = [['none', 'Nenhuma'], ['top', 'Rolar para o topo'], ['bottom', 'Rolar para o fim da página']];
 const TEXT_COLOR_STYLES = new Set(['solid', 'gradient', 'flow', 'glass', 'threed', 'lift', 'retro', 'shine']);
 const TWO_COLOR_STYLES = new Set(['gradient', 'flow']);
 const META_ID = /^\d{8,20}$/;
@@ -80,8 +82,8 @@ function FillFields({ fill, onChange, label = 'Preenchimento', allowAnimate = tr
 }
 
 // ---------------------------------------------------------------- elementos
-function PositionSection({ el, device, api }) {
-  const b = boxOf(el, device);
+function PositionSection({ el, device, api, layoutBox }) {
+  const b = layoutBox;
   const W = DESIGN_W[device];
   const set = (k) => (v) => api.box({ [k]: Math.round(v) }, `box:${k}`);
   const hasFont = el.t === 'text' || el.t === 'button';
@@ -203,6 +205,9 @@ function IconSection({ el, api }) {
           <Select label="Sombra" value={el.shadow} options={SHADOW_OPTIONS} onChange={f('shadow')} />
         </>
       )}
+      <Check label="Manter fixo na tela durante a rolagem" checked={el.fixed} onChange={f('fixed')} />
+      {el.fixed && <Select label="Canto da tela" value={el.fixedAnchor} options={FIXED_ANCHORS} onChange={f('fixedAnchor')} />}
+      <Select label="Ação ao clicar" value={el.scrollAction} options={SCROLL_ACTIONS} onChange={f('scrollAction')} />
     </Section>
   );
 }
@@ -249,7 +254,7 @@ function SpacerSection({ el, device, api }) {
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
   return (
     <Section title="Espaçador / faixa de fundo">
-      <p className="muted small">Divide o fundo da página em faixas com cores diferentes. Posicione atrás dos outros elementos (ele já é criado no fundo) para montar navbar, rodapé e seções.</p>
+      <p className="muted small">Reserva um espaço na página. Se uma lista de produtos acima crescer, o conteúdo abaixo é deslocado para preservar esse espaço. A faixa começa transparente; aumente a opacidade se também quiser colorir o fundo.</p>
       <FullWidthToggle el={el} device={device} api={api} />
       <FillFields fill={el.fill} onChange={(fill) => api.patch({ fill }, 'el:fill')} />
       <RangeField label="Opacidade" value={el.opacity} min={0} max={100} suffix="%" onChange={f('opacity')} id="sp-op" />
@@ -289,6 +294,9 @@ function ShapeSection({ el, device, api }) {
       {el.shape === 'ring' && <RangeField label="Espessura do anel" value={el.radius || 20} min={2} max={200} suffix="px" onChange={f('radius')} id="sh-ring" />}
       <Select label="Sombra" value={el.shadow} options={SHADOW_OPTIONS} onChange={f('shadow')} />
       <RangeField label="Opacidade" value={el.opacity} min={5} max={100} suffix="%" onChange={f('opacity')} id="sh-op" />
+      <Check label="Manter fixa na tela durante a rolagem" checked={el.fixed} onChange={f('fixed')} />
+      {el.fixed && <Select label="Canto da tela" value={el.fixedAnchor} options={FIXED_ANCHORS} onChange={f('fixedAnchor')} />}
+      <Select label="Ação ao clicar" value={el.scrollAction} options={SCROLL_ACTIONS} onChange={f('scrollAction')} />
       <div className="pe-fillprev" style={{ background: fillBackground(el.fill) }} aria-hidden="true" />
     </Section>
   );
@@ -465,8 +473,8 @@ function LayerSection({ el, api }) {
   );
 }
 
-export function ElementInspector({ el, device, api, products }) {
-  const linkable = ['text', 'image', 'icon', 'button', 'shape'].includes(el.t);
+export function ElementInspector({ el, device, api, products, layoutBox }) {
+  const linkable = ['text', 'image', 'icon', 'button', 'shape'].includes(el.t) && el.scrollAction === 'none';
   return (
     <div className="ce-insp">
       <h3 className="pe-insp-title">{ELEMENT_LABELS[el.t]}{el.name ? ` · ${el.name}` : ''}</h3>
@@ -488,7 +496,7 @@ export function ElementInspector({ el, device, api, products }) {
           {el.t !== 'button' && <p className="muted small">Deixe em branco se não quiser que {{ text: 'o texto', image: 'a imagem', icon: 'o ícone', shape: 'a forma' }[el.t]} abra nada.</p>}
         </Section>
       )}
-      <PositionSection el={el} device={device} api={api} />
+      <PositionSection el={el} device={device} api={api} layoutBox={layoutBox} />
       <AnimationSection el={el} api={api} />
       <LayerSection el={el} api={api} />
     </div>
@@ -603,6 +611,9 @@ function CardDesigner({ doc, api }) {
 function CatalogSection({ doc, api, categories, meta, products = [] }) {
   const c = doc.catalog;
   const set = (k) => (v) => api.patchCatalog({ [k]: v }, `cat:${k}`);
+  const selectedIds = c.selectedProductIds || [];
+  const orderedProducts = [...products].sort((a, b) => a.category.localeCompare(b.category, 'pt-BR') || a.name.localeCompare(b.name, 'pt-BR'));
+  const toggleProduct = (id) => api.patchCatalog({ selectedProductIds: selectedIds.includes(id) ? selectedIds.filter((value) => value !== id) : [...selectedIds, id] }, 'cat:selected-products');
   return (
     <Section title="Catálogo digital">
       <p className="muted small">Os produtos vêm da aba <strong>Produtos/Serviços</strong>. Os pedidos chegam na aba <strong>Pedidos</strong>.</p>
@@ -617,6 +628,25 @@ function CatalogSection({ doc, api, categories, meta, products = [] }) {
             {categories.map((x) => <option key={x} value={x}>{x}</option>)}
           </select>
         </label>
+      )}
+      {c.display === 'selected' && (
+        <div className="ce-field">
+          <span>Produtos que serão exibidos individualmente</span>
+          {!orderedProducts.length
+            ? <p className="muted small">Cadastre produtos na aba Produtos/Serviços para selecioná-los.</p>
+            : (
+              <div className="pe-prodlist">
+                {orderedProducts.map((product) => (
+                  <label key={product.id} className="pe-check pe-prod">
+                    <input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggleProduct(product.id)} />
+                    {(product.mainImage || product.images[0]) && <img src={(product.mainImage || product.images[0]).url} alt="" />}
+                    <span>{product.name}<small>{product.category}</small></span>
+                  </label>
+                ))}
+              </div>
+            )}
+          <small className="muted">{selectedIds.length} produto(s) selecionado(s).</small>
+        </div>
       )}
       <RangeField label="Colunas no computador" value={c.columns.desktop} min={1} max={6} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, desktop: v } }, 'cat:cols')} id="cc-d" />
       <RangeField label="Colunas no tablet" value={c.columns.tablet} min={1} max={6} onChange={(v) => api.patchCatalog({ columns: { ...c.columns, tablet: v } }, 'cat:cols')} id="cc-t" />

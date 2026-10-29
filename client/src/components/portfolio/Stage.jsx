@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import PortfolioCanvas, { ClipDefs } from './Canvas.jsx';
-import { DESIGN_W, autoHeight, boxOf, pageHeight } from '../../lib/portfolio/doc.js';
+import { DESIGN_W, autoHeight, boxOf, layoutBoxes, pageHeight } from '../../lib/portfolio/doc.js';
 import { HANDLES, angleTo, resizeBox, snapMove } from '../../lib/portfolio/geometry.js';
 
 // Palco do editor livre: arrastar, redimensionar (8 alças), girar, ajuste magnético às guias, soltar elementos e imagens.
@@ -18,9 +18,10 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
   latest.current = { doc, device, zoom, onBox, onInteract };
 
   const W = DESIGN_W[device];
-  const H = pageHeight(doc, device);
+  const H = pageHeight(doc, device, products, doc.catalog);
+  const boxes = layoutBoxes(doc, device, products, doc.catalog);
   const selected = selectedId ? doc.elements.find((e) => e.id === selectedId) : null;
-  const sbox = selected ? boxOf(selected, device) : null;
+  const sbox = selected ? boxes.get(selected.id) : null;
   const interactive = selected && !selected.locked && !sbox?.hide;
 
   // posição do ponteiro em pixels do projeto
@@ -51,8 +52,9 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
     if (!d.moved && Math.hypot(dx, dy) * z < 3) return; // pequeno tremor do dedo/mouse não conta como arrastar
     d.moved = true;
     const Wd = DESIGN_W[dv];
-    const Hd = pageHeight(dc, dv);
-    const others = dc.elements.filter((x) => x.id !== d.id && !boxOf(x, dv).hide).map((x) => boxOf(x, dv));
+    const Hd = pageHeight(dc, dv, products, dc.catalog);
+    const currentBoxes = layoutBoxes(dc, dv, products, dc.catalog);
+    const others = dc.elements.filter((x) => x.id !== d.id && !currentBoxes.get(x.id).hide).map((x) => currentBoxes.get(x.id));
     let patch;
     if (d.kind === 'move') {
       let nx = d.box.x + dx;
@@ -83,7 +85,7 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
     if (e.button !== undefined && e.button !== 0) return;
     e.stopPropagation();
     if (kind !== 'move') e.preventDefault();
-    const box = { ...boxOf(el, device) };
+    const box = { ...(boxes.get(el.id) || boxOf(el, device, products, doc.catalog)) };
     drag.current = { kind, id: el.id, el, box, handle, start: toDesign(e), moved: false, ratio: el.t === 'image' && handle && handle.length === 2 };
     onInteract?.(true);
     window.addEventListener('pointermove', move);

@@ -12,7 +12,7 @@ import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
   DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc, pageHeight,
-  patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, markManual, syncDevices,
+  layoutBoxes, patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, markManual, syncDevices,
 } from '../lib/portfolio/doc.js';
 import { pageUrl } from '../lib/portfolio/model.js';
 import { copyText } from '../lib/portfolio/share.js';
@@ -274,7 +274,7 @@ export default function PortfolioEditor() {
     const d = docRef.current;
     if (d.elements.length + 3 > MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return; }
     const boxes = Object.fromEntries(DEVICES.map(({ id, w }) => {
-      const y = pageHeight(d, id) + 24;
+      const y = pageHeight(d, id, products, d.catalog) + 24;
       return [id, { x: 0, y, w, h: 144, r: 0, hide: false }];
     }));
     const bg = newElement('shape', d.theme, { name: 'Fundo do rodapé', shape: 'rect', full: true, fill: { type: 'solid', c1: '#0f2238', c2: '#0f2238', angle: 135, animate: 'none' }, box: boxes });
@@ -313,8 +313,15 @@ export default function PortfolioEditor() {
   }, [commit]);
 
   const setBox = useCallback((elId, patch, key) => {
-    commit(markManual(patchBox(docRef.current, elId, deviceRef.current, patch), deviceRef.current), `${elId}:${deviceRef.current}:${key || Object.keys(patch).join(',')}`);
-  }, [commit]);
+    const current = docRef.current;
+    const device = deviceRef.current;
+    const element = findElement(current, elId);
+    const effective = layoutBoxes(current, device, products, current.catalog).get(elId);
+    const normalized = patch.y !== undefined && element && effective
+      ? { ...patch, y: patch.y - (effective.y - element.box[device].y) }
+      : patch;
+    commit(markManual(patchBox(current, elId, device, normalized), device), `${elId}:${device}:${key || Object.keys(patch).join(',')}`);
+  }, [commit, products]);
 
   function act(action) {
     const sel = selectedRef.current;
@@ -465,7 +472,7 @@ export default function PortfolioEditor() {
             {preview ? (
               <>
                 <ClipDefs />
-                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} />
+                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} viewportFixed={false} />
               </>
             ) : (
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
@@ -491,7 +498,7 @@ export default function PortfolioEditor() {
             {panelOpen ? 'Fechar propriedades' : selected ? `Propriedades: ${ELEMENT_LABELS[selected.t]}` : 'Propriedades da página'}
           </button>
           {selected
-            ? <ElementInspector el={selected} device={device} api={inspectorApi} products={products} />
+            ? <ElementInspector el={selected} device={device} api={inspectorApi} products={products} layoutBox={layoutBoxes(doc, device, products, doc.catalog).get(selected.id)} />
             : <PageInspector doc={doc} device={device} meta={meta} api={inspectorApi} categories={categories} products={products} />}
         </aside>
       </div>

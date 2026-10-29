@@ -189,7 +189,9 @@ export function CatalogScope({ doc, products, shop, mode, children }) {
 
 export function CatSearchView({ el, mode }) {
   const ctx = useContext(CatCtx);
-  const products = ctx?.products;
+  const products = ctx?.catalog?.display === 'selected'
+    ? ctx.products.filter((p) => ctx.catalog.selectedProductIds.includes(p.id))
+    : ctx?.products;
   const categories = useMemo(() => [...new Set((products || []).map((p) => p.category))].sort(sortBR), [products]);
   if (!ctx) return null;
   const { catalog, q, setQ, cat, setCat } = ctx;
@@ -218,8 +220,9 @@ export function CatGridView({ el, device, mode }) {
   const edit = mode === 'edit';
   const m = catgridMetrics(el, device, products, cfg);
   const only = cfg.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
+  const selected = cfg.display === 'selected' ? new Set(cfg.selectedProductIds || []) : null;
   const t = q.trim().toLowerCase();
-  const shown = products.filter((p) => (!only || p.category === only) && (!cat || p.category === cat) && (!t || p.name.toLowerCase().includes(t) || p.category.toLowerCase().includes(t)));
+  const shown = products.filter((p) => (!only || p.category === only) && (!selected || selected.has(p.id)) && (!cat || p.category === cat) && (!t || p.name.toLowerCase().includes(t) || p.category.toLowerCase().includes(t)));
   const groups = cfg.display !== 'category'
     ? [{ title: '', list: [...shown].sort((a, b) => sortBR(a.name, b.name)) }]
     : [...shown.reduce((map, p) => map.set(p.category, [...(map.get(p.category) || []), p]), new Map()).entries()].sort((a, b) => sortBR(a[0], b[0])).map(([title, list]) => ({ title, list }));

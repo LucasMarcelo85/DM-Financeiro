@@ -35,7 +35,7 @@ export const SHADOW_OPTIONS = [['none', 'Sem sombra'], ['soft', 'Suave'], ['medi
 export const TEXT_SHADOW_OPTIONS = [['none', 'Sem sombra'], ['soft', 'Suave'], ['hard', 'Recortada'], ['neon', 'Neon']];
 export const WEIGHT_OPTIONS = [[400, 'Normal'], [700, 'Negrito']]; // as fontes carregadas têm os pesos 400 e 700
 export const CARD_STYLES = [['soft', 'Suave'], ['flat', 'Reto'], ['outline', 'Contorno']];
-export const CATALOG_DISPLAY = [['category', 'Em ordem de categorias'], ['mixed', 'Misturados'], ['only', 'Somente uma categoria']];
+export const CATALOG_DISPLAY = [['category', 'Em ordem de categorias'], ['mixed', 'Misturados'], ['only', 'Somente uma categoria'], ['selected', 'Produtos escolhidos']];
 
 export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e9eef5', bgAngle: 135, bgAnimate: 'none' };
 export const CARD_DEFAULTS = () => ({
@@ -46,7 +46,7 @@ export const CARD_DEFAULTS = () => ({
 });
 export const CATALOG_DEFAULTS = () => ({
   card: CARD_DEFAULTS(),
-  display: 'category', onlyCategory: '', columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
+  display: 'category', onlyCategory: '', selectedProductIds: [], columns: { desktop: 4, tablet: 3, mobile: 2 }, showSearch: true, showCategories: true, cardStyle: 'soft',
   orderMode: 'cart', addLabel: 'Adicionar', cartTitle: 'Seu carrinho', checkoutNote: '', cartLayout: 'standard', cartLink: 'carrinho',
   cartButtonLabel: '', cartButtonUrl: '', elementized: false,
 });
@@ -59,10 +59,10 @@ const FILTERS0 = () => ({ brightness: 100, contrast: 100, saturate: 100, graysca
 const TYPE_DEFAULTS = {
   text: (th) => ({ text: 'Clique duas vezes para editar este texto', font: th.bodyFont, weight: 400, italic: false, underline: false, upper: false, align: 'left', valign: 'top', color: th.text, lineHeight: 1.3, spacing: 0, fill: FILL0(), useFill: false, shadow: 'none', shadowColor: '#000000', link: emptyLink() }),
   image: () => ({ src: '', alt: '', fit: 'cover', zoom: 1, px: 50, py: 50, flipX: false, flipY: false, radius: 0, mask: 'none', borderW: 0, borderColor: '#ffffff', shadow: 'none', opacity: 100, filters: FILTERS0(), link: emptyLink() }),
-  icon: (th) => ({ name: 'star', color: th.text, bg: 'none', bgColor: th.primary, borderW: 0, borderColor: th.text, shadow: 'none', link: emptyLink() }),
+  icon: (th) => ({ name: 'star', color: th.text, bg: 'none', bgColor: th.primary, borderW: 0, borderColor: th.text, shadow: 'none', fixed: false, fixedAnchor: 'bottom-right', scrollAction: 'none', link: emptyLink() }),
   button: (th) => ({ label: 'Fale conosco', style: 'solid', color: th.primary, color2: '#d6336c', textColor: readableOn(th.primary), font: th.bodyFont, weight: 700, radius: 12, icon: '', iconPos: 'left', link: { ...emptyLink(), kind: 'whatsapp' } }),
-  shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, full: false, link: emptyLink() }),
-  spacer: (th) => ({ fill: FILL0({ c1: th.primary }), full: true, opacity: 100, borderW: 0, borderColor: '#14202e', shadow: 'none' }),
+  shape: (th) => ({ shape: 'rect', fill: FILL0({ c1: th.primary }), borderW: 0, borderColor: '#14202e', borderStyle: 'solid', shadow: 'none', radius: 0, opacity: 100, full: false, fixed: false, fixedAnchor: 'bottom-right', scrollAction: 'none', link: emptyLink() }),
+  spacer: (th) => ({ fill: FILL0({ c1: th.primary }), full: true, opacity: 0, borderW: 0, borderColor: '#14202e', shadow: 'none' }),
   video: () => ({ url: '', radius: 12 }),
   carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
   menu: (th) => ({ items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
@@ -168,7 +168,7 @@ function normalizeBase(raw, kindHint = 'site') {
     // Páginas salvas antes deste recurso não trazem o campo: mantêm o que já foi desenhado.
     manual: isObj(src.manual) ? { tablet: Boolean(src.manual.tablet), mobile: Boolean(src.manual.mobile) } : { tablet: true, mobile: true },
     elements: (Array.isArray(src.elements) ? src.elements : []).slice(0, MAX_ELEMENTS).map((e) => fixElement(e, theme)).filter(Boolean),
-    ...(kind === 'catalog' ? { catalog: { ...CATALOG_DEFAULTS(), ...(isObj(src.catalog) ? src.catalog : {}), card: { ...CARD_DEFAULTS(), ...(isObj(src.catalog?.card) ? src.catalog.card : {}) }, columns: { ...CATALOG_DEFAULTS().columns, ...(isObj(src.catalog?.columns) ? src.catalog.columns : {}) } } } : {}),
+    ...(kind === 'catalog' ? { catalog: { ...CATALOG_DEFAULTS(), ...(isObj(src.catalog) ? src.catalog : {}), selectedProductIds: [...new Set((Array.isArray(src.catalog?.selectedProductIds) ? src.catalog.selectedProductIds : []).filter((id) => Number.isInteger(id) && id > 0))].slice(0, 1000), card: { ...CARD_DEFAULTS(), ...(isObj(src.catalog?.card) ? src.catalog.card : {}) }, columns: { ...CATALOG_DEFAULTS().columns, ...(isObj(src.catalog?.columns) ? src.catalog.columns : {}) } } } : {}),
   };
 }
 
@@ -213,7 +213,8 @@ export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.ca
     ? Math.max(k.showImage ? (k.ratio === 'custom' ? imgH : Math.max(112, cardW * 0.42 * ratio)) : 0, body)
     : (k.showImage ? imgH : 0) + body);
   const only = cfg?.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
-  const list = products.filter((p) => !only || p.category === only);
+  const selected = cfg?.display === 'selected' ? new Set(cfg.selectedProductIds || []) : null;
+  const list = products.filter((p) => (!only || p.category === only) && (!selected || selected.has(p.id)));
   const counts = cfg?.display === 'category'
     ? Object.values(list.reduce((m, p) => ({ ...m, [p.category]: (m[p.category] || 0) + 1 }), {}))
     : [list.length];
@@ -224,8 +225,38 @@ export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.ca
   return { cols, gap, titleH, groupGap, cardH, height: Math.max(80, Math.round(height)) };
 }
 
-export const boxOf = (el, device) => (el.t === 'products' ? { ...el.box[device], h: productsHeight(el, device) } : el.t === 'catgrid' ? { ...el.box[device], h: catgridMetrics(el, device).height } : el.box[device]);
-export const pageHeight = (doc, device) => Math.max(doc.heights[device] || 700, bottomOf(doc.elements.map((e) => boxOf(e, device))) + 24);
+export const boxOf = (el, device, products = CAT.products, catalog = CAT.catalog) => (el.t === 'products'
+  ? { ...el.box[device], h: productsHeight(el, device) }
+  : el.t === 'catgrid'
+    ? { ...el.box[device], h: Math.max(el.box[device].h, catgridMetrics(el, device, products, catalog).height) }
+    : el.box[device]);
+
+export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) {
+  const base = new Map(doc.elements.map((el) => [el.id, boxOf(el, device, products, catalog)]));
+  const expansions = [];
+  const grids = doc.elements
+    .filter((el) => el.t === 'catgrid' && !el.box[device].hide)
+    .sort((a, b) => a.box[device].y - b.box[device].y);
+
+  for (const el of grids) {
+    const original = el.box[device];
+    const shift = expansions.reduce((sum, item) => sum + (original.y >= item.bottom ? item.delta : 0), 0);
+    const naturalHeight = Math.max(original.h, catgridMetrics(el, device, products, catalog).height);
+    const delta = naturalHeight - original.h;
+    base.set(el.id, { ...base.get(el.id), y: original.y + shift, h: naturalHeight });
+    if (delta > 0) expansions.push({ bottom: original.y + original.h, delta });
+  }
+
+  for (const el of doc.elements) {
+    if (el.t === 'catgrid' || el.box[device].hide) continue;
+    const original = el.box[device];
+    const shift = expansions.reduce((sum, item) => sum + (original.y >= item.bottom ? item.delta : 0), 0);
+    if (shift) base.set(el.id, { ...base.get(el.id), y: original.y + shift });
+  }
+  return base;
+}
+
+export const pageHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) => Math.max(doc.heights[device] || 700, bottomOf([...layoutBoxes(doc, device, products, catalog).values()]) + 24);
 
 // Estimativa da altura de um texto (usada ao empilhar para o celular).
 export function estimateTextHeight(text, fs, width, lineHeight = 1.3) {
