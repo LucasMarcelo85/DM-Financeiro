@@ -65,6 +65,8 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 3. Em **Ambiente**, preencha as variáveis do `.env.example` (sem aspas). As obrigatórias: `DATABASE_URL`, `APP_URL` (https), `JWT_SECRET`, `ADMIN_EMAIL`, `ADMIN_PASSWORD`, `EVOLUTION_API_URL`, `EVOLUTION_API_KEY`, `INFINITEPAY_HANDLE`. Para habilitar a cotação dos Correios no catálogo, configure também `SUPERFRETE_TOKEN` e `SUPERFRETE_USER_AGENT` no ambiente do servidor; os usuários não precisam cadastrar tokens individuais.
 4. Faça o deploy. Ao iniciar, o container roda `prisma migrate deploy` (cria as tabelas) e depois liga o sistema. Não precisa de volume: tudo fica no PostgreSQL.
 
+Para criar os dados de demonstração do administrador ID 1, faça um novo build/redeploy da imagem e, no terminal do container, execute `npm run seed:admin-demo -- --confirm-admin-demo-seed`. O script está incluído na imagem e usa a `DATABASE_URL` do serviço; ele não roda automaticamente na inicialização.
+
 Se o PostgreSQL estiver no mesmo EasyPanel, use o nome interno do serviço no host da `DATABASE_URL`.
 
 Para cadastrar domínios personalizados automaticamente, configure também `EASYPANEL_API_URL`, `EASYPANEL_API_KEY`, `EASYPANEL_PROJECT_NAME` e `EASYPANEL_SERVICE_NAME`. Use a URL base do painel (com ou sem `/api`), um token da API e os nomes exatos do projeto e do serviço App que escuta na porta `3001`; não deixe os nomes de exemplo do `.env.example`. Ao salvar ou verificar um domínio, o sistema o registra no EasyPanel e habilita HTTPS; ao removê-lo, também o remove do painel.

@@ -5,7 +5,8 @@ client/dist
 .env
 .env.*
 !.env.example
-scripts
+scripts/*
+!scripts/seed-admin-demo.mjs
 *.log
 .DS_Store
 Dockerfile

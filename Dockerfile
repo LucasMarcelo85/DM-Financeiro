@@ -48,6 +48,7 @@ COPY --from=build /app/client/dist ./client/dist
 COPY package.json ./
 COPY prisma ./prisma
 COPY server ./server
+COPY scripts ./scripts
 COPY docker-start.sh /usr/local/bin/docker-start.sh
 
 # "sed" tira quebras de linha do Windows (CRLF), que impedem o script de rodar no Linux.
