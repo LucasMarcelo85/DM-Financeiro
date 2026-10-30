@@ -530,7 +530,8 @@ function LayerSection({ el, api }) {
 }
 
 export function ElementInspector({ el, device, api, products, layoutBox }) {
-  const linkable = ['text', 'image', 'icon', 'button', 'shape'].includes(el.t) && el.scrollAction === 'none';
+  const linkable = ['text', 'image', 'button'].includes(el.t)
+    || (['icon', 'shape'].includes(el.t) && el.scrollAction === 'none');
   return (
     <div className="ce-insp">
       <h3 className="pe-insp-title">{ELEMENT_LABELS[el.t]}{el.name ? ` · ${el.name}` : ''}</h3>

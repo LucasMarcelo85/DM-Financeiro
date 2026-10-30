@@ -156,7 +156,7 @@ export function GalleryField({ items, max, onAdd, onRemove, onError }) {
 }
 
 // Para onde o botão leva: site, WhatsApp, telefone ou e-mail.
-const KINDS = [['link', 'Site ou link'], ['whatsapp', 'WhatsApp'], ['tel', 'Ligação'], ['email', 'E-mail']];
+const KINDS = [['link', 'Site, Instagram ou outro link'], ['whatsapp', 'WhatsApp'], ['tel', 'Ligação'], ['email', 'E-mail']];
 
 export function LinkFields({ link, onChange, id }) {
   const set = (patch, key) => onChange({ ...link, ...patch }, key || `link:${id}`);
@@ -169,7 +169,7 @@ export function LinkFields({ link, onChange, id }) {
           {KINDS.map(([v, l]) => <option key={v} value={v}>{l}</option>)}
         </select>
       </label>
-      {link.kind === 'link' && <TextField label="Endereço (link)" value={link.url} placeholder="https://instagram.com/seuperfil" maxLength={2000} id={`${id}-url`} onChange={(v, k) => set({ url: v }, k)} />}
+      {link.kind === 'link' && <TextField label="Endereço do site ou perfil" value={link.url} placeholder="https://instagram.com/seuperfil" maxLength={2000} id={`${id}-url`} onChange={(v, k) => set({ url: v }, k)} />}
       {(link.kind === 'whatsapp' || link.kind === 'tel') && (
         <label className="ce-field">
           <span>{link.kind === 'whatsapp' ? 'Número do WhatsApp' : 'Telefone'}</span>
