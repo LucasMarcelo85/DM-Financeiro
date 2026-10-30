@@ -67,7 +67,11 @@ const TYPE_DEFAULTS = {
   carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
   menu: (th) => ({ items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
   products: () => ({ ids: [], cols: { desktop: 4, tablet: 3, mobile: 2 }, whatsapp: '', buttonLabel: 'Pedir no WhatsApp', showPrice: true, cardStyle: 'soft' }),
-  modal: () => ({ trigger: 'Saiba mais', title: 'Mais informações', steps: [{ id: 'step1', title: 'Etapa 1', content: 'Adicione aqui os detalhes.' }], actionLabel: '', actionUrl: '' }),
+  modal: () => ({
+    trigger: 'Saiba mais', title: 'Mais informações',
+    steps: [{ id: 'step1', title: 'Etapa 1', content: 'Adicione aqui os detalhes.', image: '', questions: [] }],
+    actionType: 'whatsapp', actionLabel: 'Enviar respostas', actionUrl: '', actionPhone: '', actionProductId: null,
+  }),
   custom: () => ({ code: '<section style="padding: 24px; text-align: center;"><h2>Seu conteúdo personalizado</h2><p>Edite este bloco com HTML, CSS e JavaScript.</p></section>' }),
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),

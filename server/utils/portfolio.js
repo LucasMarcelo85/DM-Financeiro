@@ -423,17 +423,28 @@ function cleanElement(raw) {
           id: typeof step?.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step${index + 1}`,
           title: line(step?.title, 80) || `Etapa ${index + 1}`,
           content: str(step?.content, 3000),
+          image: image(step?.image),
+          questions: (Array.isArray(step?.questions) ? step.questions : []).slice(0, 12).map((question, questionIndex) => ({
+            id: typeof question?.id === 'string' && /^[\w-]{1,40}$/.test(question.id) ? question.id : `q${index + 1}-${questionIndex + 1}`,
+            label: line(question?.label, 160),
+            type: pick(question?.type, new Set(['text', 'textarea', 'select', 'multiselect']), 'text'),
+            required: bool(question?.required, false),
+            options: (Array.isArray(question?.options) ? question.options : []).map((option) => line(option, 100)).filter(Boolean).slice(0, 30),
+          })),
         })),
+        actionType: pick(raw.actionType, new Set(['none', 'cart', 'whatsapp', 'link']), 'whatsapp'),
         actionLabel: line(raw.actionLabel, 40),
+        actionPhone: normalizePhone(raw.actionPhone) || '',
+        actionProductId: Number.isInteger(raw.actionProductId) && raw.actionProductId > 0 ? raw.actionProductId : null,
         actionUrl: (() => {
           const value = str(raw.actionUrl, 500).trim();
           return /^https?:\/\/[^\s]+$/i.test(value) ? value : '';
         })(),
       });
-      if (!el.steps.length) el.steps.push({ id: 'step1', title: 'Etapa 1', content: '' });
+      if (!el.steps.length) el.steps.push({ id: 'step1', title: 'Etapa 1', content: '', image: '', questions: [] });
       break;
     case 'custom':
-      el.code = str(raw.code, 12000);
+      el.code = str(raw.code, 100000);
       break;
     case 'catsearch':
       Object.assign(el, { showSearch: bool(raw.showSearch, true), showCategories: bool(raw.showCategories, true), placeholder: line(raw.placeholder, 60) || 'Buscar produtos' });

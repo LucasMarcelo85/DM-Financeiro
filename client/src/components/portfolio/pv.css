@@ -25,6 +25,16 @@
 .pv-modal-primary { background: var(--p, #f2a33a); color: var(--on-p, #14202e); }
 .pv-modal-secondary { background: #e2e8f0; color: #14202e; }
 .pv-custom-frame { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
+.pv-modal-image { display: block; max-width: 100%; max-height: 260px; margin: 16px auto; border-radius: 12px; object-fit: contain; }
+.pv-modal-questions { display: grid; gap: 16px; margin-top: 20px; }
+.pv-modal-question { display: grid; gap: 7px; color: #334155; font-size: .95rem; font-weight: 600; }
+.pv-modal-question input:not([type="checkbox"]), .pv-modal-question textarea, .pv-modal-question select { width: 100%; min-height: 42px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 11px; background: #fff; color: #14202e; font: inherit; }
+.pv-modal-question textarea { min-height: 100px; resize: vertical; }
+.pv-modal-options { display: grid; gap: 8px; }
+.pv-modal-options label { display: flex; align-items: center; gap: 8px; font-weight: 400; }
+.pv-modal-options input { accent-color: var(--p, #f2a33a); }
+.pv-modal-error { margin: 14px 0 0; color: #b91c1c; }
+.pv-modal-result { white-space: pre-wrap; line-height: 1.6; }
 
 /* ---------- entrada (aparece quando entra na tela) ---------- */
 .pv-enter.has-enter:not(.is-in) { opacity: 0; }

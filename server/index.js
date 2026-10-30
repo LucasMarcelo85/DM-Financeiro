@@ -112,7 +112,7 @@ app.use(
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'blob:'],
         // Vídeos do portfólio: YouTube/Vimeo (embutidos) ou arquivo direto por https.
-        'frame-src': ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+        'frame-src': ['https://www.youtube-nocookie.com', 'https://player.vimeo.com', 'data:'],
         'media-src': ["'self'", 'https:'],
         'connect-src': ["'self'"],
         'frame-ancestors': ["'none'"],

@@ -1,4 +1,4 @@
-import { cloneElement, isValidElement, memo, useEffect, useRef, useState } from 'react';
+import { cloneElement, isValidElement, memo, useEffect, useMemo, useRef, useState } from 'react';
 import { createPortal } from 'react-dom';
 import './pv.css';
 import { DESIGN_W, autoHeight, boxOf, layoutBoxes, pageHeight, setCatalogContext } from '../../lib/portfolio/doc.js';
@@ -247,37 +247,124 @@ function MenuView({ el, device, mode }) {
   );
 }
 
-function ModalToolView({ el, mode }) {
+function ModalToolView({ el, mode, shop, onCart }) {
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
+  const [answers, setAnswers] = useState({});
+  const [error, setError] = useState('');
+  const [result, setResult] = useState('');
   const steps = el.steps?.length ? el.steps : [{ title: 'Etapa 1', content: '' }];
   const step = steps[stepIndex] || steps[0];
+  const answerText = useMemo(() => steps.flatMap((item) => (item.questions || []).map((question) => {
+    const value = answers[question.id];
+    const answer = Array.isArray(value) ? value.join(', ') : value;
+    return answer ? `${question.label}: ${answer}` : '';
+  })).filter(Boolean).join('\n'), [answers, steps]);
   useEffect(() => {
     if (!open) return undefined;
     const onKey = (event) => { if (event.key === 'Escape') setOpen(false); };
     document.addEventListener('keydown', onKey);
     return () => document.removeEventListener('keydown', onKey);
   }, [open]);
+  function continueStep() {
+    if (!validateStep()) return;
+    setError('');
+    if (stepIndex < steps.length - 1) setStepIndex((index) => index + 1);
+    else {
+      if (el.actionType === 'cart') {
+        if (!shop?.cart || !el.actionProductId || !onCart) {
+          setError('O carrinho não está disponível nesta página. Verifique o produto e o tipo de catálogo.');
+          return;
+        }
+        shop.cart.add(el.actionProductId, null, null, 1);
+        try { localStorage.setItem(`dm:modal-result:${shop.slug}`, answerText); } catch { /* O resultado continua visível neste modal. */ }
+        onCart();
+        setResult('Produto adicionado ao carrinho. Suas respostas serão incluídas nas observações do pedido.');
+      } else setResult(answerText || 'Concluído.');
+    }
+  }
+  function validateStep() {
+    const missing = (step.questions || []).find((question) => question.required
+      && !(Array.isArray(answers[question.id]) ? answers[question.id].length : String(answers[question.id] || '').trim()));
+    if (!missing) return true;
+    setError(`Responda: ${missing.label || 'a pergunta obrigatória'}.`);
+    return false;
+  }
+  function start() {
+    setStepIndex(0);
+    setAnswers({});
+    setError('');
+    setResult('');
+    setOpen(true);
+  }
+  const whatsappPhone = String(el.actionPhone || shop?.whatsapp || '').replace(/\D/g, '');
+  const normalizedPhone = whatsappPhone.length === 10 || whatsappPhone.length === 11 ? `55${whatsappPhone}` : whatsappPhone;
+  const whatsappUrl = /^55\d{10,11}$/.test(normalizedPhone)
+    ? `https://wa.me/${normalizedPhone}?text=${encodeURIComponent(`${el.title}\n${answerText}`)}`
+    : '';
+  const linkUrl = (() => {
+    if (el.actionType !== 'link' || !el.actionUrl) return '';
+    try {
+      const target = new URL(el.actionUrl);
+      target.searchParams.set('result', answerText);
+      return target.toString();
+    } catch { return ''; }
+  })();
+  function setAnswer(question, value) {
+    setAnswers((current) => ({ ...current, [question.id]: value }));
+  }
   return (
     <>
-      <button type="button" className="pv-modal-trigger" onClick={mode === 'public' ? () => { setStepIndex(0); setOpen(true); } : undefined}>{el.trigger}</button>
+      <button type="button" className="pv-modal-trigger" onClick={mode === 'public' ? start : undefined}>{el.trigger}</button>
       {open && createPortal(
         <div className="pv-modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
           <section className="pv-modal" role="dialog" aria-modal="true" aria-labelledby={`pv-modal-title-${el.id}`}>
             <button type="button" className="pv-modal-close" onClick={() => setOpen(false)} aria-label="Fechar">×</button>
             <h2 id={`pv-modal-title-${el.id}`}>{el.title}</h2>
-            <div className="pv-modal-progress" aria-label={`Etapa ${stepIndex + 1} de ${steps.length}`}>Etapa {stepIndex + 1} de {steps.length}</div>
-            <h3>{step.title}</h3>
-            <p className="pv-modal-content">{step.content}</p>
-            <div className="pv-modal-actions">
-              {stepIndex > 0 && <button type="button" className="pv-modal-secondary" onClick={() => setStepIndex((index) => index - 1)}>Voltar</button>}
-              {stepIndex < steps.length - 1
-                ? <button type="button" className="pv-modal-primary" onClick={() => setStepIndex((index) => index + 1)}>Continuar</button>
-                : <>
-                  {el.actionLabel && el.actionUrl && <a className="pv-modal-primary" href={el.actionUrl} target="_blank" rel="noopener noreferrer">{el.actionLabel}</a>}
-                  <button type="button" className="pv-modal-secondary" onClick={() => setOpen(false)}>Concluir</button>
-                </>}
-            </div>
+            {result ? (
+              <>
+                <p className="pv-modal-result">{result}</p>
+                {answerText && <pre className="pv-modal-content">{answerText}</pre>}
+                <button type="button" className="pv-modal-primary" onClick={() => setOpen(false)}>Concluir</button>
+              </>
+            ) : <>
+              <div className="pv-modal-progress" aria-label={`Etapa ${stepIndex + 1} de ${steps.length}`}>Etapa {stepIndex + 1} de {steps.length}</div>
+              <h3>{step.title}</h3>
+              {step.image && <img className="pv-modal-image" src={step.image} alt="" />}
+              {step.content && <p className="pv-modal-content">{step.content}</p>}
+              <div className="pv-modal-questions">
+                {(step.questions || []).map((question) => {
+                  const value = answers[question.id] ?? (question.type === 'multiselect' ? [] : '');
+                  return (
+                    <div className="pv-modal-question" key={question.id}>
+                      <span>{question.label}{question.required ? ' *' : ''}</span>
+                      {question.type === 'textarea'
+                        ? <textarea value={value} onChange={(event) => setAnswer(question, event.target.value)} />
+                        : question.type === 'select'
+                          ? <select value={value} onChange={(event) => setAnswer(question, event.target.value)}>
+                            <option value="">Selecione...</option>{(question.options || []).map((option) => <option key={option} value={option}>{option}</option>)}
+                          </select>
+                          : question.type === 'multiselect'
+                            ? <span className="pv-modal-options">{(question.options || []).map((option) => (
+                              <label key={option}><input type="checkbox" checked={value.includes(option)} onChange={(event) => setAnswer(question, event.target.checked ? [...value, option] : value.filter((item) => item !== option))} />{option}</label>
+                            ))}</span>
+                            : <input value={value} onChange={(event) => setAnswer(question, event.target.value)} />}
+                    </div>
+                  );
+                })}
+              </div>
+              {error && <p className="pv-modal-error" role="alert">{error}</p>}
+              <div className="pv-modal-actions">
+                {stepIndex > 0 && <button type="button" className="pv-modal-secondary" onClick={() => { setError(''); setStepIndex((index) => index - 1); }}>Voltar</button>}
+                {stepIndex < steps.length - 1
+                  ? <button type="button" className="pv-modal-primary" onClick={continueStep}>Continuar</button>
+                  : el.actionType === 'whatsapp'
+                    ? <a className="pv-modal-primary" href={whatsappUrl || undefined} target="_blank" rel="noopener noreferrer" onClick={(event) => { if (!validateStep()) event.preventDefault(); else if (!whatsappUrl) { event.preventDefault(); setError('Informe um WhatsApp válido para enviar as respostas.'); } }}>{el.actionLabel || 'Enviar respostas'}</a>
+                    : el.actionType === 'link'
+                    ? <a className="pv-modal-primary" href={linkUrl || undefined} target="_blank" rel="noopener noreferrer" onClick={(event) => { if (!validateStep()) event.preventDefault(); else if (!linkUrl) { event.preventDefault(); setError('Informe um link http(s) para enviar as respostas.'); } }}>{el.actionLabel || 'Continuar'}</a>
+                      : <button type="button" className="pv-modal-primary" onClick={continueStep}>{el.actionType === 'cart' ? el.actionLabel || 'Adicionar ao carrinho' : 'Concluir'}</button>}
+              </div>
+            </>}
           </section>
         </div>,
         document.body,
@@ -288,8 +375,14 @@ function ModalToolView({ el, mode }) {
 }
 
 function CustomCodeView({ el, mode }) {
-  const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'"><style>html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{overflow:auto}</style></head><body>${el.code || ''}</body></html>`;
-  return <iframe className="pv-custom-frame" title="Conteúdo personalizado" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={mode === 'edit' ? { pointerEvents: 'none' } : undefined} />;
+  const src = useMemo(() => {
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{overflow:auto}</style></head><body>${el.code || ''}</body></html>`;
+    const bytes = new TextEncoder().encode(html);
+    let binary = '';
+    for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
+    return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
+  }, [el.code]);
+  return <iframe className="pv-custom-frame" title="Conteúdo personalizado" sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} style={mode === 'edit' ? { pointerEvents: 'none' } : undefined} />;
 }
 
 function VideoView({ el, mode }) {
@@ -387,7 +480,7 @@ function ProductsView({ el, device, products, mode }) {
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
 const FULL_BLEED = 3000; // elementos de largura total passam das bordas do desenho; a página corta o excesso
-function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle }) {
+function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle }) {
   const box = layoutBox || boxOf(el, device);
   const ref = useRef(null);
   const a = el.anim;
@@ -419,7 +512,7 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   else if (el.t === 'carousel') content = <CarouselView el={el} mode={mode} />;
   else if (el.t === 'menu') content = <MenuView el={el} device={device} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
-  else if (el.t === 'modal') content = <ModalToolView el={el} mode={mode} />;
+  else if (el.t === 'modal') content = <ModalToolView el={el} mode={mode} shop={shop} onCart={onCart} />;
   else if (el.t === 'custom') content = <CustomCodeView el={el} mode={mode} />;
   else if (el.t === 'catsearch') content = <CatSearchView el={el} mode={mode} />;
   else if (el.t === 'catgrid') content = <CatGridView el={el} device={device} mode={mode} />;
@@ -507,7 +600,7 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
             ...themeStyle,
           } : null;
           return (
-            <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} z={i + 1}
+            <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} shop={shop} z={i + 1}
               onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} layoutBox={box} fixedStyle={fixedStyle} />
           );
         })}

@@ -303,7 +303,14 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   const [serviceId, setServiceId] = useState('');
   const [quoting, setQuoting] = useState(false);
   const [quoteErr, setQuoteErr] = useState('');
-  const [notes, setNotes] = useState('');
+  const [notes, setNotes] = useState(() => {
+    try {
+      const key = `dm:modal-result:${slug}`;
+      const result = localStorage.getItem(key) || '';
+      if (result) localStorage.removeItem(key);
+      return result;
+    } catch { return ''; }
+  });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [done, setDone] = useState(null);

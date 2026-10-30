@@ -439,10 +439,18 @@ function ProductsSection({ el, api, products }) {
   );
 }
 
-function ModalSection({ el, api }) {
+function ModalSection({ el, api, products = [] }) {
   const set = (key) => (value) => api.patch({ [key]: value }, `modal:${key}`);
-  const patchStep = (id, patch) => api.patch({ steps: el.steps.map((step) => (step.id === id ? { ...step, ...patch } : step)) }, `modal:step:${id}`);
   const steps = el.steps || [];
+  const patchStep = (id, patch) => api.patch({ steps: steps.map((step) => (step.id === id ? { ...step, ...patch } : step)) }, `modal:step:${id}`);
+  const patchQuestion = (stepId, questionId, patch) => api.patch({
+    steps: steps.map((step) => step.id === stepId
+      ? { ...step, questions: (step.questions || []).map((question) => question.id === questionId ? { ...question, ...patch } : question) }
+      : step),
+  }, `modal:question:${questionId}`);
+  const addQuestion = (step) => patchStep(step.id, {
+    questions: [...(step.questions || []), { id: sid(), label: 'Sua pergunta', type: 'text', options: [], required: false }],
+  });
   return (
     <>
       <Section title="Abertura do modal">
@@ -454,15 +462,30 @@ function ModalSection({ el, api }) {
           <details key={step.id} className="pe-sub" open={index === 0}>
             <summary>{step.title || `Etapa ${index + 1}`}</summary>
             <TextField label="Nome da etapa" value={step.title} onChange={(value) => patchStep(step.id, { title: value })} maxLength={80} id={`modal-step-title-${step.id}`} />
-            <TextField label="Conteúdo" value={step.content} onChange={(value) => patchStep(step.id, { content: value })} multiline rows={5} maxLength={3000} id={`modal-step-content-${step.id}`} />
+            <TextField label="Texto de apoio" value={step.content} onChange={(value) => patchStep(step.id, { content: value })} multiline rows={3} maxLength={3000} id={`modal-step-content-${step.id}`} />
+            <ImageField label="Imagem da etapa (opcional)" value={step.image || ''} onChange={(image) => patchStep(step.id, { image })} onError={api.error} />
+            {(step.questions || []).map((question, questionIndex) => (
+              <div className="pe-sub" key={question.id}>
+                <strong>Pergunta {questionIndex + 1}</strong>
+                <TextField label="Pergunta ou instrução" value={question.label} onChange={(label) => patchQuestion(step.id, question.id, { label })} maxLength={160} id={`modal-question-${question.id}`} />
+                <Select label="Tipo de resposta" value={question.type} options={[['text', 'Texto curto'], ['textarea', 'Texto longo'], ['select', 'Escolha uma opção'], ['multiselect', 'Escolha várias opções']]} onChange={(type) => patchQuestion(step.id, question.id, { type })} id={`modal-question-type-${question.id}`} />
+                {['select', 'multiselect'].includes(question.type) && <TextField label="Opções (uma por linha)" value={(question.options || []).join('\n')} onChange={(value) => patchQuestion(step.id, question.id, { options: value.split(/\r?\n/).map((option) => option.trim()).filter(Boolean).slice(0, 30) })} multiline rows={4} maxLength={3000} id={`modal-question-options-${question.id}`} />}
+                <Check label="Resposta obrigatória" checked={question.required} onChange={(required) => patchQuestion(step.id, question.id, { required })} />
+                <button type="button" className="link-btn" onClick={() => patchStep(step.id, { questions: (step.questions || []).filter((item) => item.id !== question.id) })}>Remover pergunta</button>
+              </div>
+            ))}
+            {(step.questions || []).length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => addQuestion(step)}><EIcon name="plus" size={16} /> Adicionar pergunta</button>}
             {steps.length > 1 && <button type="button" className="link-btn" onClick={() => api.patch({ steps: steps.filter((item) => item.id !== step.id) })}>Remover etapa</button>}
           </details>
         ))}
-        {steps.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ steps: [...steps, { id: sid(), title: `Etapa ${steps.length + 1}`, content: '' }] })}><EIcon name="plus" size={16} /> Adicionar etapa</button>}
+        {steps.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ steps: [...steps, { id: sid(), title: `Etapa ${steps.length + 1}`, content: '', image: '', questions: [] }] })}><EIcon name="plus" size={16} /> Adicionar etapa</button>}
       </Section>
-      <Section title="Ação final (opcional)">
-        <TextField label="Texto do botão final" value={el.actionLabel} onChange={set('actionLabel')} maxLength={40} id={`modal-action-label-${el.id}`} />
-        <TextField label="Link http(s)" value={el.actionUrl} onChange={set('actionUrl')} maxLength={500} placeholder="https://..." id={`modal-action-url-${el.id}`} />
+      <Section title="Enviar resultado ao concluir">
+        <Select label="Destino das respostas" value={el.actionType || 'whatsapp'} options={[['none', 'Somente exibir resultado'], ['cart', 'Adicionar produto ao carrinho'], ['whatsapp', 'Enviar pelo WhatsApp'], ['link', 'Abrir link com respostas']]} onChange={set('actionType')} id={`modal-action-${el.id}`} />
+        {el.actionType === 'cart' && <Select label="Produto adicionado ao carrinho" value={el.actionProductId || ''} options={[['', 'Selecione um produto'], ...products.map((product) => [String(product.id), product.name])]} onChange={(value) => set('actionProductId')(value ? Number(value) : null)} id={`modal-product-${el.id}`} />}
+        {el.actionType === 'whatsapp' && <TextField label="WhatsApp de destino (opcional)" value={el.actionPhone ? maskPhone(el.actionPhone) : ''} onChange={(value) => set('actionPhone')(value.replace(/\D/g, ''))} maxLength={20} placeholder="Usa o WhatsApp da loja se vazio" id={`modal-phone-${el.id}`} />}
+        {el.actionType === 'link' && <TextField label="Link http(s)" value={el.actionUrl} onChange={set('actionUrl')} maxLength={500} placeholder="https://..." id={`modal-action-url-${el.id}`} />}
+        {el.actionType !== 'none' && <TextField label="Texto do botão final" value={el.actionLabel} onChange={set('actionLabel')} maxLength={40} id={`modal-action-label-${el.id}`} />}
       </Section>
     </>
   );
@@ -471,7 +494,7 @@ function ModalSection({ el, api }) {
 function CustomCodeSection({ el, api }) {
   return (
     <Section title="HTML, CSS e JavaScript">
-      <TextField label="Código (máximo de 12.000 caracteres)" value={el.code} onChange={(code) => api.patch({ code }, 'custom:code')} multiline rows={14} maxLength={12000} id={`custom-code-${el.id}`} />
+      <TextField label="Código (máximo de 100.000 caracteres)" value={el.code} onChange={(code) => api.patch({ code }, 'custom:code')} multiline rows={14} maxLength={100000} id={`custom-code-${el.id}`} />
       <p className="muted small">O código é executado em um quadro isolado: não acessa a página, dados da loja, cookies ou serviços externos. Para imagens, use arquivos incorporados em data URL.</p>
     </Section>
   );
@@ -530,7 +553,7 @@ export function ElementInspector({ el, device, api, products, layoutBox }) {
       {el.t === 'carousel' && <CarouselSection el={el} api={api} />}
       {el.t === 'menu' && <MenuSection el={el} api={api} />}
       {el.t === 'products' && <ProductsSection key={el.id} el={el} api={api} products={products} />}
-      {el.t === 'modal' && <ModalSection el={el} api={api} />}
+      {el.t === 'modal' && <ModalSection el={el} api={api} products={products} />}
       {el.t === 'custom' && <CustomCodeSection el={el} api={api} />}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}

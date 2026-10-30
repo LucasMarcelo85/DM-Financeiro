@@ -69,7 +69,7 @@ function PublicPage({ page, products, store, slug, credit }) {
       <ClipDefs />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
-          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />
+          <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />
         </main>
       )}
       {isCatalog && !directOrder && !showCart && <CartBar products={products} cart={cart} onOpenCart={() => goCart(true)} />}
