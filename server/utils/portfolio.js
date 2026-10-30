@@ -12,7 +12,7 @@ import { FONT_KEYS } from './contract.js';
 
 export const MAX_BLOCKS = 80;
 export const MAX_GALLERY = 12;
-export const MAX_DOC_BYTES = 8 * 1024 * 1024;
+export const MAX_DOC_BYTES = 20 * 1024 * 1024;
 const MAX_IMAGE_CHARS = 2_500_000;
 
 const TYPES = new Set(['banner', 'logo', 'heading', 'text', 'image', 'gallery', 'video', 'button', 'divider', 'spacer']);
@@ -419,17 +419,17 @@ function cleanElement(raw) {
       Object.assign(el, {
         trigger: line(raw.trigger, 60) || 'Saiba mais',
         title: line(raw.title, 100) || 'Mais informações',
-        steps: (Array.isArray(raw.steps) ? raw.steps : []).slice(0, 8).map((step, index) => ({
+        steps: (Array.isArray(raw.steps) ? raw.steps : []).slice(0, 20).map((step, index) => ({
           id: typeof step?.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step${index + 1}`,
           title: line(step?.title, 80) || `Etapa ${index + 1}`,
           content: str(step?.content, 3000),
           image: image(step?.image),
-          questions: (Array.isArray(step?.questions) ? step.questions : []).slice(0, 12).map((question, questionIndex) => ({
+          questions: (Array.isArray(step?.questions) ? step.questions : []).slice(0, 30).map((question, questionIndex) => ({
             id: typeof question?.id === 'string' && /^[\w-]{1,40}$/.test(question.id) ? question.id : `q${index + 1}-${questionIndex + 1}`,
             label: line(question?.label, 160),
             type: pick(question?.type, new Set(['text', 'textarea', 'select', 'multiselect']), 'text'),
             required: bool(question?.required, false),
-            options: (Array.isArray(question?.options) ? question.options : []).map((option) => line(option, 100)).filter(Boolean).slice(0, 30),
+            options: (Array.isArray(question?.options) ? question.options : []).map((option) => line(option, 100)).filter(Boolean).slice(0, 50),
           })),
         })),
         actionType: pick(raw.actionType, new Set(['none', 'cart', 'whatsapp', 'link']), 'whatsapp'),

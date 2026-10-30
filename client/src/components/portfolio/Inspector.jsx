@@ -474,11 +474,11 @@ function ModalSection({ el, api, products = [] }) {
                 <button type="button" className="link-btn" onClick={() => patchStep(step.id, { questions: (step.questions || []).filter((item) => item.id !== question.id) })}>Remover pergunta</button>
               </div>
             ))}
-            {(step.questions || []).length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => addQuestion(step)}><EIcon name="plus" size={16} /> Adicionar pergunta</button>}
+            {(step.questions || []).length < 30 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => addQuestion(step)}><EIcon name="plus" size={16} /> Adicionar pergunta ({(step.questions || []).length}/30)</button>}
             {steps.length > 1 && <button type="button" className="link-btn" onClick={() => api.patch({ steps: steps.filter((item) => item.id !== step.id) })}>Remover etapa</button>}
           </details>
         ))}
-        {steps.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ steps: [...steps, { id: sid(), title: `Etapa ${steps.length + 1}`, content: '', image: '', questions: [] }] })}><EIcon name="plus" size={16} /> Adicionar etapa</button>}
+        {steps.length < 20 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ steps: [...steps, { id: sid(), title: `Etapa ${steps.length + 1}`, content: '', image: '', questions: [] }] })}><EIcon name="plus" size={16} /> Adicionar etapa ({steps.length}/20)</button>}
       </Section>
       <Section title="Enviar resultado ao concluir">
         <Select label="Destino das respostas" value={el.actionType || 'whatsapp'} options={[['none', 'Somente exibir resultado'], ['cart', 'Adicionar produto ao carrinho'], ['whatsapp', 'Enviar pelo WhatsApp'], ['link', 'Abrir link com respostas']]} onChange={set('actionType')} id={`modal-action-${el.id}`} />
@@ -495,7 +495,7 @@ function CustomCodeSection({ el, api }) {
   return (
     <Section title="HTML, CSS e JavaScript">
       <TextField label="Código (máximo de 100.000 caracteres)" value={el.code} onChange={(code) => api.patch({ code }, 'custom:code')} multiline rows={14} maxLength={100000} id={`custom-code-${el.id}`} />
-      <p className="muted small">O código é executado em um quadro isolado: não acessa a página, dados da loja, cookies ou serviços externos. Para imagens, use arquivos incorporados em data URL.</p>
+      <p className="muted small">O código é executado em um quadro isolado com JavaScript, alertas e janelas permitidos. Ele não acessa a página principal, dados da loja, cookies ou serviços de rede. Modais com tela cheia podem ser limitados ao tamanho deste bloco; use o elemento “Modal por etapas” para cobrir a página inteira.</p>
     </Section>
   );
 }

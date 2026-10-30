@@ -376,13 +376,14 @@ function ModalToolView({ el, mode, shop, onCart }) {
 
 function CustomCodeView({ el, mode }) {
   const src = useMemo(() => {
-    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{overflow:auto}</style></head><body>${el.code || ''}</body></html>`;
+    const code = (el.code || '').replace(/\snonce\s*=\s*(?:"[^"]*"|'[^']*'|[^\s>]+)/gi, '');
+    const html = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; script-src-attr 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'"><style>html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{overflow:auto}</style></head><body>${code}</body></html>`;
     const bytes = new TextEncoder().encode(html);
     let binary = '';
     for (let offset = 0; offset < bytes.length; offset += 0x8000) binary += String.fromCharCode(...bytes.subarray(offset, offset + 0x8000));
     return `data:text/html;charset=utf-8;base64,${btoa(binary)}`;
   }, [el.code]);
-  return <iframe className="pv-custom-frame" title="Conteúdo personalizado" sandbox="allow-scripts" referrerPolicy="no-referrer" src={src} style={mode === 'edit' ? { pointerEvents: 'none' } : undefined} />;
+  return <iframe className="pv-custom-frame" title="Conteúdo personalizado" sandbox="allow-scripts allow-modals allow-popups allow-popups-to-escape-sandbox" referrerPolicy="no-referrer" src={src} style={mode === 'edit' ? { pointerEvents: 'none' } : undefined} />;
 }
 
 function VideoView({ el, mode }) {

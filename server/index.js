@@ -169,7 +169,7 @@ app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
-app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '12mb' }), portfolioRoutes);
+app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '24mb' }), portfolioRoutes);
 app.use('/api/stores', auth, requireAccess, pinGuard('portfolio'), storeRoutes);
 app.use('/api/tokens', auth, requireAccess, pinGuard('api'), tokenRoutes);
 app.use('/api/shop-app/login', limiter(30, 15 * 60 * 1000));
