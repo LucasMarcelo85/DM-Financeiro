@@ -7,14 +7,19 @@ import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/eas
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
 import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { isReservedSlug, isValidSlug, slugify } from '../utils/slug.js';
+import { ensureDefaultStockFlow } from '../services/inventory.js';
 
 // Lojas extras da conta. Cada loja tem site, produtos, pedidos e domínio próprios.
 const router = Router();
+const MAX_APP_PRODUCTS = 2_147_483_647;
 
 const dto = (s) => ({
   id: s.id, name: s.name, slug: s.slug, path: `/${s.slug}`,
   domain: { name: s.customDomain || '', verified: !!s.customDomainVerifiedAt },
-  app: { enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '', userLimit: s.appUserLimit },
+  app: {
+    enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '',
+    userLimit: s.appUserLimit, productLimit: s.appProductLimit, auditEnabled: s.appAuditEnabled,
+  },
   createdAt: s.createdAt,
 });
 
@@ -56,8 +61,15 @@ router.post('/', async (req, res) => {
   const slug = slugify(String(req.body?.slug || name));
   await assertSlugFree(slug);
   try {
-    const store = await prisma.store.create({
-      data: { userId: req.user.id, name, slug, appUserLimit: Math.max(1, Math.min(10, planLimits.appUsers)) },
+    const store = await prisma.$transaction(async (tx) => {
+      const created = await tx.store.create({
+        data: {
+          userId: req.user.id, name, slug, appUserLimit: Math.max(1, Math.min(10, planLimits.appUsers)),
+          appProductLimit: Math.min(planLimits.catalogProducts, MAX_APP_PRODUCTS),
+        },
+      });
+      await ensureDefaultStockFlow(tx, req.user.id, created.id);
+      return created;
     });
     res.status(201).json({ store: dto(store) });
   } catch (e) {
@@ -159,7 +171,7 @@ router.post('/:id/domain/check', async (req, res) => {
 });
 
 // ---------- Aplicativo do lojista ----------
-const APP_PERMS = ['produtos', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'auditoria'];
+const APP_PERMS = ['produtos', 'estoque', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'auditoria'];
 const availablePerms = (user) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
@@ -169,20 +181,28 @@ const availablePerms = (user) => {
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
+    if (perm === 'estoque') return tabs.includes('produtos') && limits.catalogProducts > 0;
     return tabs.includes('auditoria') && limits.auditInstances > 0;
   });
 };
-const cleanPerms = (v, user) => {
+const cleanPerms = (v, user, store) => {
   const list = Array.isArray(v) ? v : [];
   const available = availablePerms(user);
   if (list.some((p) => APP_PERMS.includes(p) && !available.includes(p))) {
     throw new AppError(403, 'Uma ou mais áreas selecionadas não estão disponíveis no plano desta loja.', 'TAB_NOT_IN_PLAN');
   }
-  const out = available.filter((p) => list.includes(p));
+  if (list.includes('auditoria') && !store.appAuditEnabled) {
+    throw new AppError(403, 'Ative a auditoria nas configurações do app antes de liberar esse acesso.', 'LIMIT_REACHED');
+  }
+  const out = available.filter((p) => list.includes(p) && (p !== 'auditoria' || store.appAuditEnabled));
   if (!out.length) throw new AppError(400, 'Escolha pelo menos uma área que o lojista poderá usar.');
   return out.join(',');
 };
-const userDTO = (u) => ({ id: u.id, name: u.name, login: u.login, active: u.active, perms: u.perms.split(',').filter(Boolean), createdAt: u.createdAt });
+const userDTO = (u) => ({
+  id: u.id, name: u.name, login: u.login, active: u.active,
+  isPrimary: u.isPrimary, stockFlowIds: u.stockFlowIds,
+  perms: u.perms.split(',').filter(Boolean), createdAt: u.createdAt,
+});
 const cleanPassword = (v) => {
   const p = String(v ?? '');
   if (p.length < 6 || p.length > 72) throw new AppError(400, 'A senha precisa ter de 6 a 72 caracteres.');
@@ -195,11 +215,22 @@ router.get('/:id/app', async (req, res) => {
     prisma.storeUser.findMany({ where: { storeId: store.id }, orderBy: { createdAt: 'asc' } }),
     Promise.resolve(limitsFor(req.user)),
   ]);
+  await ensureDefaultStockFlow(prisma, req.user.id, store.id);
+  const flows = await prisma.stockFlow.findMany({
+    where: { userId: req.user.id, storeId: store.id },
+    select: { id: true, name: true, isDefault: true },
+    orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+  });
   res.json({
-    store: dto(store),
+    store: {
+      ...dto(store),
+      app: { ...dto(store).app, productLimit: store.appProductLimit ?? Math.min(limits.catalogProducts, MAX_APP_PRODUCTS) },
+    },
     users: users.map(userDTO),
     availablePerms: availablePerms(req.user),
+    flows,
     maxAppUsers: limits.appUsers,
+    maxAppProducts: Math.min(limits.catalogProducts, MAX_APP_PRODUCTS),
     appAvailable: limits.stores > 0 && limits.appUsers > 0 && availablePerms(req.user).length > 0,
   });
 });
@@ -217,6 +248,15 @@ router.put('/:id/app', async (req, res) => {
   if (!Number.isInteger(userLimit) || userLimit < 1 || (userLimit > limits.appUsers && !unchangedOverPlanLimit)) {
     throw new AppError(400, `A quantidade de acessos precisa ser um número entre 1 e ${limits.appUsers}.`);
   }
+  const productLimit = Number(req.body?.productLimit);
+  const maxProducts = Math.min(limits.catalogProducts, MAX_APP_PRODUCTS);
+  if (!Number.isInteger(productLimit) || productLimit < 0 || productLimit > maxProducts) {
+    throw new AppError(400, `O limite de produtos do app precisa ficar entre 0 e ${maxProducts}.`);
+  }
+  const auditEnabled = Boolean(req.body?.auditEnabled);
+  if (auditEnabled && !availablePerms(req.user).includes('auditoria')) {
+    throw new AppError(403, 'A auditoria não está disponível no plano ou nos adicionais desta conta.', 'LIMIT_REACHED');
+  }
   let saved;
   try {
     saved = await prisma.$transaction(async (tx) => {
@@ -226,7 +266,10 @@ router.put('/:id/app', async (req, res) => {
       }
       return tx.store.update({
         where: { id: store.id },
-        data: { appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null, appColor: color || null, appUserLimit: userLimit },
+        data: {
+          appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null,
+          appColor: color || null, appUserLimit: userLimit, appProductLimit: productLimit, appAuditEnabled: auditEnabled,
+        },
       });
     }, { isolationLevel: 'Serializable' });
   } catch (e) {
@@ -244,13 +287,26 @@ router.post('/:id/app/users', async (req, res) => {
   const limits = limitsFor(req.user);
   if (limits.appUsers < 1 || limits.stores < 1) throw new AppError(403, 'O plano atual não inclui acessos ao aplicativo da loja.', 'LIMIT_REACHED');
   const maxUsers = Math.min(store.appUserLimit, limits.appUsers);
-  const perms = cleanPerms(req.body?.perms ?? availablePerms(req.user), req.user);
+  const perms = cleanPerms(req.body?.perms ?? availablePerms(req.user), req.user, store);
+  const flows = await prisma.stockFlow.findMany({ where: { userId: req.user.id, storeId: store.id }, select: { id: true } });
+  const availableFlowIds = flows.map((flow) => flow.id);
+  const requestedFlowIds = req.body?.stockFlowIds === undefined ? availableFlowIds : req.body.stockFlowIds;
+  if (!Array.isArray(requestedFlowIds) || requestedFlowIds.some((id) => !Number.isSafeInteger(Number(id)) || !availableFlowIds.includes(Number(id)))) {
+    throw new AppError(400, 'Um ou mais fluxos de estoque não pertencem a esta loja.');
+  }
   const passwordHash = await bcrypt.hash(cleanPassword(req.body?.password), 10);
   try {
     const u = await prisma.$transaction(async (tx) => {
       const userCount = await tx.storeUser.count({ where: { storeId: store.id } });
       if (userCount >= maxUsers) throw new AppError(403, `Esta loja atingiu o limite de ${maxUsers} acessos.`, 'LIMIT_REACHED');
-      return tx.storeUser.create({ data: { storeId: store.id, name, login, passwordHash, perms } });
+      if (req.body?.isPrimary) await tx.storeUser.updateMany({ where: { storeId: store.id, isPrimary: true }, data: { isPrimary: false } });
+      return tx.storeUser.create({
+        data: {
+          storeId: store.id, name, login, passwordHash, perms,
+          stockFlowIds: [...new Set(requestedFlowIds.map(Number))],
+          isPrimary: Boolean(req.body?.isPrimary),
+        },
+      });
     }, { isolationLevel: 'Serializable' });
     res.status(201).json({ user: userDTO(u) });
   } catch (e) {
@@ -262,13 +318,28 @@ router.post('/:id/app/users', async (req, res) => {
 
 router.patch('/:id/app/users/:uid', async (req, res) => {
   const store = await owned(req);
+  const id = Number(req.params.uid) || 0;
+  const current = await prisma.storeUser.findFirst({ where: { id, storeId: store.id } });
+  if (!current) throw new AppError(404, 'Acesso não encontrado.');
   const data = {};
   if (req.body?.name !== undefined) data.name = String(req.body.name).trim().slice(0, 80) || undefined;
   if (typeof req.body?.active === 'boolean') data.active = req.body.active;
-  if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms, req.user);
+  if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms, req.user, store);
+  if (typeof req.body?.isPrimary === 'boolean') data.isPrimary = req.body.isPrimary;
+  if (req.body?.stockFlowIds !== undefined) {
+    const flows = await prisma.stockFlow.findMany({ where: { userId: req.user.id, storeId: store.id }, select: { id: true } });
+    const flowIds = flows.map((flow) => flow.id);
+    if (!Array.isArray(req.body.stockFlowIds) || req.body.stockFlowIds.some((flowId) =>
+      !Number.isSafeInteger(Number(flowId)) || !flowIds.includes(Number(flowId)))) {
+      throw new AppError(400, 'Um ou mais fluxos de estoque não pertencem a esta loja.');
+    }
+    data.stockFlowIds = [...new Set(req.body.stockFlowIds.map(Number))];
+  }
   if (req.body?.password) data.passwordHash = await bcrypt.hash(cleanPassword(req.body.password), 10);
-  const r = await prisma.storeUser.updateMany({ where: { id: Number(req.params.uid) || 0, storeId: store.id }, data });
-  if (!r.count) throw new AppError(404, 'Acesso não encontrado.');
+  await prisma.$transaction(async (tx) => {
+    if (data.isPrimary) await tx.storeUser.updateMany({ where: { storeId: store.id, isPrimary: true }, data: { isPrimary: false } });
+    await tx.storeUser.update({ where: { id }, data });
+  });
   res.json({ ok: true });
 });
 

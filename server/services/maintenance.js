@@ -51,7 +51,7 @@ export async function archiveOldOrders(now = Date.now()) {
   for (;;) {
     const rows = await prisma.order.findMany({
       where: { deletedAt: null, createdAt: { lt: cutoff } },
-      select: { id: true, userId: true, storeId: true, items: true, stockReserved: true },
+      select: { id: true, userId: true, storeId: true, items: true, stockReserved: true, stockFlowId: true },
       take: BATCH,
     });
     if (!rows.length) break;

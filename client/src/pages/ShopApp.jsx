@@ -11,13 +11,14 @@ import InstanceManager from '../components/InstanceManager.jsx';
 
 const TABS = [
   ['produtos', 'Produtos'],
+  ['equipe', 'Gerenciar acessos'],
   ['pedidos', 'Pedidos e clientes'],
   ['pdv', 'Frente de caixa'],
   ['entregas', 'Entregas e WhatsApp'],
   ['api', 'API e webhooks'],
   ['auditoria', 'Auditoria'],
 ];
-const firstTab = (perms) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) : key === 'pedidos'
+const firstTab = (perms, isPrimary) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) || perms.includes('estoque') : key === 'equipe' ? isPrimary : key === 'pedidos'
   ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
   : perms.includes(key))?.[0] || '';
 const foregroundFor = (color) => {
@@ -41,6 +42,7 @@ export default function ShopApp() {
   const [missing, setMissing] = useState(false);
   const [authed, setAuthed] = useState(Boolean(getShopToken()));
   const [perms, setPerms] = useState(null);
+  const [isPrimary, setIsPrimary] = useState(false);
   const [tab, setTab] = useState('');
   const [auditCanSend, setAuditCanSend] = useState(false);
   const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
@@ -51,7 +53,8 @@ export default function ShopApp() {
     if (!authed) { setPerms(null); return; }
     api.get('/shop-app/me').then((r) => {
       setPerms(r.user.perms);
-      setTab(firstTab(r.user.perms));
+      setIsPrimary(Boolean(r.user.isPrimary));
+      setTab(firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
     }).catch((e) => toast(e.message, 'error'));
   }, [authed]);
@@ -86,7 +89,8 @@ export default function ShopApp() {
       const r = await api.post('/shop-app/login', { u: slug, login: form.login, password: form.password });
       setShopToken(r.token);
       setPerms(r.user.perms);
-      setTab(firstTab(r.user.perms));
+      setIsPrimary(Boolean(r.user.isPrimary));
+      setTab(firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
       setAuthed(true);
     } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
@@ -113,8 +117,97 @@ export default function ShopApp() {
     );
   }
 
+  const TEAM_PERMS = [
+    ['produtos', 'Produtos'],
+    ['estoque', 'Estoque'],
+    ['pedidos', 'Pedidos'],
+    ['clientes', 'Clientes'],
+    ['arquivados', 'Arquivados'],
+    ['estrategia', 'Estratégia'],
+    ['pdv', 'Frente de caixa'],
+    ['entregas', 'Entregas e WhatsApp'],
+    ['api', 'API e webhooks'],
+    ['auditoria', 'Auditoria'],
+  ];
+
+  function TeamManagement() {
+    const toast = useToast();
+    const [data, setData] = useState(null);
+    const [drafts, setDrafts] = useState({});
+    const [busy, setBusy] = useState(false);
+
+    async function load() {
+      const result = await api.get('/team');
+      setData(result);
+      setDrafts(Object.fromEntries(result.users.map((user) => [user.id, {
+        perms: user.perms,
+        stockFlowIds: user.stockFlowIds,
+        active: user.active,
+      }])));
+    }
+
+    useEffect(() => {
+      load().catch((error) => toast(error.message, 'error'));
+    }, []);
+
+    async function save(userId) {
+      setBusy(true);
+      try {
+        await api.patch(`/team/users/${userId}`, drafts[userId]);
+        await load();
+        toast('Acesso atualizado.');
+      } catch (error) {
+        toast(error.message, 'error');
+      } finally {
+        setBusy(false);
+      }
+    }
+
+    if (!data) return <p className="muted">Carregando acessos...</p>;
+    return (
+      <section className="card shop-team">
+        <header><div><h1>Gerenciar acessos</h1><p className="muted">Você só pode compartilhar as áreas e os fluxos de estoque liberados no seu próprio acesso.</p></div></header>
+        {!data.users.length && <p className="muted">O criador ainda não cadastrou outros usuários.</p>}
+        {data.users.map((user) => {
+          const draft = drafts[user.id] || { perms: [], stockFlowIds: [], active: user.active };
+          const availablePerms = TEAM_PERMS.filter(([key]) => data.availablePerms.includes(key));
+          return (
+            <article className="shop-team-user" key={user.id}>
+              <div className="shop-team-user-head">
+                <strong>{user.name}</strong><code>{user.login}</code>
+                <label className="small"><input type="checkbox" checked={draft.active} onChange={(event) => setDrafts((rows) => ({ ...rows, [user.id]: { ...draft, active: event.target.checked } }))} /> Ativo</label>
+              </div>
+              <strong className="small">Áreas liberadas</strong>
+              <div className="shop-team-options">
+                {availablePerms.map(([key, label]) => <label key={key} className="small">
+                  <input type="checkbox" checked={draft.perms.includes(key)} onChange={(event) => setDrafts((rows) => ({
+                    ...rows,
+                    [user.id]: { ...draft, perms: event.target.checked ? [...draft.perms, key] : draft.perms.filter((perm) => perm !== key) },
+                  }))} /> {label}
+                </label>)}
+              </div>
+              {draft.perms.includes('estoque') && <><strong className="small">Fluxos de estoque</strong>
+                <div className="shop-team-options">
+                  {data.flows.map((flow) => <label key={flow.id} className="small">
+                    <input type="checkbox" checked={draft.stockFlowIds.includes(flow.id)} onChange={(event) => setDrafts((rows) => ({
+                      ...rows,
+                      [user.id]: { ...draft, stockFlowIds: event.target.checked ? [...draft.stockFlowIds, flow.id] : draft.stockFlowIds.filter((id) => id !== flow.id) },
+                    }))} /> {flow.name}{flow.isDefault ? ' (padrão)' : ''}
+                  </label>)}
+                </div>
+              </>}
+              <button type="button" className="btn btn-primary btn-sm" disabled={busy || !draft.perms.length} onClick={() => save(user.id)}>Salvar acesso</button>
+            </article>
+          );
+        })}
+      </section>
+    );
+  }
+
   const tabs = TABS.filter(([key]) => key === 'produtos'
-    ? perms?.includes('produtos')
+    ? perms?.includes('produtos') || perms?.includes('estoque')
+    : key === 'equipe'
+      ? isPrimary
     : key === 'pedidos'
       ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((p) => perms?.includes(p))
       : perms?.includes(key));
@@ -134,7 +227,8 @@ export default function ShopApp() {
       <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
           : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
-            : tab === 'produtos' ? <Products />
+            : tab === 'produtos' ? <Products allow={perms} />
+              : tab === 'equipe' ? <TeamManagement />
               : tab === 'pedidos' ? <Orders allow={perms} />
                 : tab === 'pdv' ? <Orders allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
                 : tab === 'api' ? <Api />

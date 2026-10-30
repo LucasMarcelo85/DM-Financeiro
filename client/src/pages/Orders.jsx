@@ -316,6 +316,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
   if (tab === 'pos') return <PointOfSale
     onClose={onClosePOS || (can('pedidos') ? () => setTab('orders') : can('clientes') ? () => setTab('customers') : can('estrategia') ? () => setTab('strategy') : null)}
     allowCustomers={can('clientes')}
+    canSelectStockFlow={!allow || allow.includes('estoque')}
   />;
 
   return (

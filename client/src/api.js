@@ -14,7 +14,7 @@ export const setPinToken = (t) => { pinToken = t || null; };
 const STORE_KEY = 'dm:store';
 export const getActiveStore = () => localStorage.getItem(STORE_KEY) || null;
 export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
-const SCOPED = /^\/(products|catalog|portfolios)(\/|\?|$)/;
+const SCOPED = /^\/(products|catalog|inventory|portfolios)(\/|\?|$)/;
 const AUDIT_SCOPE_KEY = 'dm:audit-scope';
 export const getActiveAuditScope = () => {
   const scope = sessionStorage.getItem(AUDIT_SCOPE_KEY) || 'main';
@@ -38,7 +38,7 @@ const SHOP_KEY = 'dm:shop-token';
 export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
 export const getShopToken = () => localStorage.getItem(SHOP_KEY);
 export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
-const SHOP_ROUTES = /^\/(products|catalog|instances|tokens|audit)(\/|\?|$)/;
+const SHOP_ROUTES = /^\/(products|catalog|inventory|instances|tokens|audit|team)(\/|\?|$)/;
 
 async function request(method, url, body) {
   let res;

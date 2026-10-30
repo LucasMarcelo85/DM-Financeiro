@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { api } from '../api.js';
 import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
@@ -6,6 +6,7 @@ import { copyText } from '../lib/portfolio/share.js';
 
 const PERM_LABELS = [
   ['produtos', 'Produtos (cadastrar, editar e desativar)'],
+  ['estoque', 'Estoque e movimentações'],
   ['pedidos', 'Pedidos'],
   ['clientes', 'Clientes'],
   ['arquivados', 'Arquivados'],
@@ -34,14 +35,24 @@ function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10 });
-  const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS });
+  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false });
+  const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS, stockFlowIds: [], isPrimary: false });
   const [busy, setBusy] = useState(false);
-  const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key));
+  const initializedFlowsStoreId = useRef(null);
+  const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
+    && (key !== 'auditoria' || cfg.auditEnabled));
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
     setData(r);
-    setCfg({ enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A', userLimit: r.store.app.userLimit });
+    setCfg({
+      enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
+      userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
+      auditEnabled: r.store.app.auditEnabled,
+    });
+    if (initializedFlowsStoreId.current !== storeId) {
+      initializedFlowsStoreId.current = storeId;
+      setNu((current) => ({ ...current, stockFlowIds: r.flows.map((flow) => flow.id) }));
+    }
   }).catch((e) => toast(e.message, 'error')), [storeId, toast]);
   useEffect(() => { load(); }, [load]);
 
@@ -81,6 +92,16 @@ export default function StoreAppModal({ storeId, onClose }) {
               onChange={(e) => setCfg({ ...cfg, userLimit: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Quantidade de acessos permitidos nesta loja" />
             <small className="muted">Seu plano permite até {data.maxAppUsers} acessos por aplicativo. Acessos desativados também ocupam uma vaga.</small>
           </label>
+          <label style={{ display: 'grid', gap: 4 }}>
+            <span>Limite de produtos deste app</span>
+            <input className="input" type="number" min="0" max={data.maxAppProducts} step="1" value={cfg.productLimit}
+              onChange={(e) => setCfg({ ...cfg, productLimit: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Limite de produtos do app" />
+            <small className="muted">Até {data.maxAppProducts} produtos, respeitando o limite global do seu plano e adicionais.</small>
+          </label>
+          {data.availablePerms.includes('auditoria') && <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+            <input type="checkbox" checked={cfg.auditEnabled} onChange={(e) => setCfg({ ...cfg, auditEnabled: e.target.checked })} />
+            Liberar auditoria neste aplicativo
+          </label>}
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
@@ -102,6 +123,7 @@ export default function StoreAppModal({ storeId, onClose }) {
               <li key={u.id} style={{ display: 'grid', gap: 6, padding: '8px 0', borderBottom: '1px solid var(--line)' }}>
                 <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
                   <strong>{u.name}</strong> <code>{u.login}</code>
+                  {u.isPrimary && <span className="pill pill-sent">Principal</span>}
                   <span className={`pill ${u.active ? 'pill-sent' : 'pill-failed'}`}>{u.active ? 'Ativo' : 'Desativado'}</span>
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { active: !u.active }))}>{u.active ? 'Desativar' : 'Ativar'}</button>
@@ -109,7 +131,21 @@ export default function StoreAppModal({ storeId, onClose }) {
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
-                <PermChecks labels={permissionLabels} value={u.perms} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
+                <PermChecks labels={permissionLabels} value={u.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
+                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
+                  <strong className="small">Fluxos de estoque</strong>
+                  {data.flows.map((flow) => <label key={flow.id} className="small">
+                    <input type="checkbox" checked={u.stockFlowIds.includes(flow.id)} disabled={busy}
+                      onChange={(e) => {
+                        const stockFlowIds = e.target.checked ? [...u.stockFlowIds, flow.id] : u.stockFlowIds.filter((id) => id !== flow.id);
+                        run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { stockFlowIds }), 'Fluxos atualizados.');
+                      }} /> {flow.name}{flow.isDefault ? ' (padrão)' : ''}
+                  </label>)}
+                </div>
+                <button className="btn btn-ghost btn-sm" disabled={busy}
+                  onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { isPrimary: !u.isPrimary }), u.isPrimary ? 'Usuário principal removido.' : 'Usuário principal atualizado.')}>
+                  {u.isPrimary ? 'Remover principal' : 'Definir como principal'}
+                </button>
               </li>
             ))}
           </ul>
@@ -120,11 +156,23 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="Senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Senha" />
             <strong className="small">O que este acesso pode usar:</strong>
             <PermChecks labels={permissionLabels} value={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} onChange={(perms) => setNu({ ...nu, perms })} />
+            <strong className="small">Fluxos de estoque permitidos:</strong>
+            <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
+              {data.flows.map((flow) => <label key={flow.id} className="small">
+                <input type="checkbox" checked={nu.stockFlowIds.includes(flow.id)}
+                  onChange={(e) => setNu({ ...nu, stockFlowIds: e.target.checked ? [...nu.stockFlowIds, flow.id] : nu.stockFlowIds.filter((id) => id !== flow.id) })} />
+                {' '}{flow.name}{flow.isDefault ? ' (padrão)' : ''}
+              </label>)}
+            </div>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" checked={nu.isPrimary} onChange={(e) => setNu({ ...nu, isPrimary: e.target.checked })} />
+              Este será o usuário principal e poderá delegar apenas os acessos que recebeu
+            </label>
             <button className="btn btn-primary" disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers) || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
               onClick={() => run(async () => {
                 const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
                 await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
-                setNu({ name: '', login: '', password: '', perms: data.availablePerms });
+                setNu({ name: '', login: '', password: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
               }, 'Acesso criado.')}>Criar acesso</button>
           </div>
         </div>

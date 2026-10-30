@@ -11,6 +11,7 @@ import { useToast } from '../components/Toast.jsx';
 import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { brl, centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
+import InventoryManager from '../components/InventoryManager.jsx';
 
 // Cadastro de produtos e serviços: usados no catálogo digital e nos cartões de produtos do portfólio.
 const MAX_IMAGES = 12;
@@ -35,8 +36,10 @@ function productPriceLabel(product) {
   return 'Sob consulta';
 }
 
-export default function Products() {
+export default function Products({ allow = [] }) {
   const shop = isShopMode();
+  const canManageProducts = !shop || allow.includes('produtos');
+  const canManageStock = !shop || allow.includes('estoque');
   const toast = useToast();
   const [data, setData] = useState(null);
   const [q, setQ] = useState('');
@@ -45,6 +48,7 @@ export default function Products() {
   const [editing, setEditing] = useState(null); // null | 'new' | produto
   const [confirmDel, setConfirmDel] = useState(null);
   const [managePreferences, setManagePreferences] = useState(false);
+  const [manageInventory, setManageInventory] = useState(false);
   const [batchDrafts, setBatchDrafts] = useState([]);
   const [cardView, setCardView] = useState(() => {
     try {
@@ -106,7 +110,7 @@ export default function Products() {
           </p>
         </div>
         <div className="btn-group">
-          <CsvTransfer
+          {canManageProducts && <CsvTransfer
             resource="products" title="produtos" filename="produtos.csv" exportUrl="/products/export"
             columns={PRODUCT_CSV_COLUMNS}
             description="Exporte produtos e serviços com descrições, preços, estoque, faixas de preço, variações e imagens."
@@ -115,8 +119,9 @@ export default function Products() {
               load();
               return result;
             }}
-          />
-          <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>
+          />}
+          {canManageStock && <button className="btn btn-ghost shadow-sm" onClick={() => setManageInventory(true)}><Icon name="box" size={18} /> Estoques</button>}
+          {canManageProducts && <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>}
         </div>
       </header>
       <StoreBar />
@@ -134,7 +139,7 @@ export default function Products() {
       )}
       {full && !blocked && (
         <div className="banner banner-amber">
-          <div><strong>Você usou todos os itens do seu plano.</strong><span>Exclua algum, adquira limite extra ou mude de plano para cadastrar mais.</span></div>
+          <div><strong>{shop ? 'Você atingiu o limite de produtos liberado para este app.' : 'Você usou todos os itens do seu plano.'}</strong><span>{shop ? 'Peça ao criador do aplicativo para ajustar o limite.' : 'Exclua algum, adquira limite extra ou mude de plano para cadastrar mais.'}</span></div>
           {!shop && <BuyMore resource="catalogProducts" />}
           {!shop && <Link className="btn btn-ghost btn-sm" to="/plano">Ver planos</Link>}
         </div>
@@ -160,13 +165,13 @@ export default function Products() {
           <span className="action-icon action-icon-lg"><Icon name="box" size={32} /></span>
           <h2>{data.count ? 'Nada encontrado' : 'Cadastre o primeiro produto ou serviço'}</h2>
           <p>{data.count ? 'Tente outra busca ou outro filtro.' : 'Cadastre nome e categoria; fotos, variações e faixas de preço são opcionais.'}</p>
-          {!data.count && !blocked && <button className="btn btn-primary" onClick={() => setEditing('new')}>Cadastrar</button>}
+          {!data.count && !blocked && canManageProducts && <button className="btn btn-primary" onClick={() => setEditing('new')}>Cadastrar</button>}
         </section>
       ) : (
         <ul className="pr-grid gap-4" style={{ '--pr-card-width': `${cardView.cardWidth}px`, '--pr-image-height': `${cardView.imageHeight}px` }}>
           {data.products.map((p) => (
             <li key={p.id} className={`pr-card rounded-xl border-slate-200 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg ${p.active ? '' : 'is-off'}`}>
-              <button type="button" className="pr-img transition duration-200 hover:brightness-95" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`}>
+              <button type="button" className="pr-img transition duration-200 hover:brightness-95" onClick={() => canManageProducts && setEditing(p)} disabled={!canManageProducts} aria-label={`Editar ${p.name}`}>
                 {(p.mainImage || p.images[0]) ? <img src={(p.mainImage || p.images[0]).url} alt="" loading="lazy" /> : <Icon name="box" size={28} />}
                 {p.images.length > 0 && <span className="pr-var">{p.images.length} {plural(p.images.length, 'variação', 'variações')}</span>}
               </button>
@@ -178,11 +183,13 @@ export default function Products() {
                 {p.stockEnabled && <small className="muted">Estoque: {p.images.length ? p.images.reduce((sum, image) => sum + image.stockQuantity, 0) : p.stockQuantity}</small>}
               </div>
               <div className="pr-actions">
-                <label className="pr-switch" title={p.active ? 'Visível no catálogo' : 'Escondido do catálogo'}>
-                  <input type="checkbox" checked={p.active} onChange={() => toggle(p)} /><span>{p.active ? 'Ativo' : 'Inativo'}</span>
-                </label>
-                <button type="button" className="icon-btn pr-card-action" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`} title="Editar"><Icon name="edit" size={17} /><span>Editar</span></button>
-                {!shop && <button type="button" className="icon-btn icon-btn-danger pr-card-action" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /><span>Excluir</span></button>}
+                {canManageProducts && <>
+                  <label className="pr-switch" title={p.active ? 'Visível no catálogo' : 'Escondido do catálogo'}>
+                    <input type="checkbox" checked={p.active} onChange={() => toggle(p)} /><span>{p.active ? 'Ativo' : 'Inativo'}</span>
+                  </label>
+                  <button type="button" className="icon-btn pr-card-action" onClick={() => setEditing(p)} aria-label={`Editar ${p.name}`} title="Editar"><Icon name="edit" size={17} /><span>Editar</span></button>
+                  {!shop && <button type="button" className="icon-btn icon-btn-danger pr-card-action" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={17} /><span>Excluir</span></button>}
+                </>}
               </div>
             </li>
           ))}
@@ -195,6 +202,7 @@ export default function Products() {
         toast('Opções salvas.');
         load();
       }} />}
+      {manageInventory && <InventoryManager onClose={() => { setManageInventory(false); load(); }} />}
       {confirmDel && (
         <Modal title="Excluir este item?" onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>

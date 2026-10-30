@@ -118,7 +118,7 @@ export default function ScheduleForm({ kind }) {
   );
 
   return (
-    <>
+    <main className={`schedule-form-page kind-${kind}`}>
       <header className="page-head">
         <Link to={cfg.route} className="back-link"><Icon name="left" size={16} /> {cfg.title}</Link>
         <h1>{editing ? `Editar ${cfg.singular}` : cfg.newLabel}</h1>
@@ -136,7 +136,7 @@ export default function ScheduleForm({ kind }) {
         </div>
       )}
 
-      <div className="split">
+      <div className="split schedule-form-layout">
         <form className="stack" onSubmit={submit} noValidate>
           <section className="card step">
             <h2><span className="step-n">1</span> Cliente</h2>
@@ -228,6 +228,6 @@ export default function ScheduleForm({ kind }) {
           <Preview text={text} extra={extra} name={client?.name} amountCents={kind === 'cobranca' ? money : null} dueISO={dueDate} />
         </div>
       </div>
-    </>
+    </main>
   );
 }

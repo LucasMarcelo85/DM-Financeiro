@@ -108,6 +108,7 @@ model User {
   productPreferences ProductPreferences?
   addons             UserAddon[]
   stores             Store[]
+  stockFlows         StockFlow[]
   apiTokens          ApiToken[]
   webhookEndpoints   ApiWebhookEndpoint[]
 
@@ -576,6 +577,7 @@ model Product {
   user   User           @relation(fields: [userId], references: [id], onDelete: Cascade)
   images ProductImage[]
   priceOptions ProductPriceOption[]
+  stockLevels StockLevel[]
 
   @@index([userId, category])
   @@index([storeId])
@@ -601,6 +603,38 @@ model ProductImage {
 
   @@index([productId, position])
   @@map("product_images")
+}
+
+model StockFlow {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  storeId   Int?     @map("store_id")
+  name      String
+  isDefault Boolean  @default(false) @map("is_default")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user   User         @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store  Store?       @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  levels StockLevel[]
+  orders Order[]
+
+  @@index([userId, storeId])
+  @@map("stock_flows")
+}
+
+model StockLevel {
+  id          Int    @id @default(autoincrement())
+  flowId      Int    @map("flow_id")
+  productId   Int    @map("product_id")
+  variantKey  String @default("product") @map("variant_key")
+  quantity    Int    @default(0)
+
+  flow    StockFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
+  product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)
+
+  @@unique([flowId, productId, variantKey])
+  @@index([productId, flowId])
+  @@map("stock_levels")
 }
 
 model ProductPriceOption {
@@ -677,6 +711,7 @@ model Order {
   notes         String   @default("")
   status        String   @default("novo") // 'novo' | 'atendido'
   stockReserved Boolean  @default(true) @map("stock_reserved")
+  stockFlowId   Int?     @map("stock_flow_id")
   paymentStatus String   @default("unpaid") @map("payment_status")
   paymentProvider String? @map("payment_provider")
   source        String   @default("catalog")
@@ -691,6 +726,7 @@ model Order {
   deletedAt     DateTime? @map("deleted_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  stockFlow StockFlow? @relation(fields: [stockFlowId], references: [id], onDelete: SetNull)
 
   @@index([userId, createdAt])
   @@index([createdAt])
@@ -713,7 +749,10 @@ model Store {
   appColor               String?   @map("app_color")
   appWhatsapp            String?   @map("app_whatsapp")
   appUserLimit           Int       @default(10) @map("app_user_limit")
+  appProductLimit        Int       @default(0) @map("app_product_limit")
+  appAuditEnabled        Boolean   @default(false) @map("app_audit_enabled")
   appUsers               StoreUser[]
+  stockFlows             StockFlow[]
   strategyRecords        OrderStrategyRecord[]
   posSettings            PosSettings[]
   instances              Instance[]
@@ -734,6 +773,8 @@ model StoreUser {
   passwordHash String   @map("password_hash")
   active       Boolean  @default(true)
   perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,pdv,api,entregas,auditoria")
+  isPrimary    Boolean  @default(false) @map("is_primary")
+  stockFlowIds Int[]    @default([]) @map("stock_flow_ids")
   createdAt    DateTime @default(now()) @map("created_at")
 
   store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)

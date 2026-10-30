@@ -197,7 +197,7 @@ export default function Schedules({ kind }) {
   );
 
   return (
-    <>
+    <main className={`schedules-page kind-${kind}`}>
       <header className="page-head head-row">
         <div>
           <h1>{cfg.title}</h1>
@@ -272,6 +272,6 @@ export default function Schedules({ kind }) {
           <p>Os envios de <strong>{confirmDel.contact.name}</strong> deixam de acontecer. O histórico do que já foi enviado é mantido.{kind === 'cobranca' ? ' Os pagamentos já marcados continuam no faturamento.' : ''}</p>
         </Modal>
       )}
-    </>
+    </main>
   );
 }

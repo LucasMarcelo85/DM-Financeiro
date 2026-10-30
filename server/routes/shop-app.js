@@ -12,6 +12,7 @@ import { catalogPaymentsRouter } from './catalog-payments.js';
 import productRoutes from './products.js';
 import catalogRoutes from './catalog.js';
 import auditRoutes from './audit.js';
+import inventoryRoutes from './inventory.js';
 
 // Aplicativo do lojista: permissões e dados ficam restritos à loja/site associado ao acesso.
 const router = Router();
@@ -31,7 +32,7 @@ const appForeground = (store) => {
   const lightContrast = 1.05 / (luminance + 0.05);
   return darkContrast >= lightContrast ? '#14202E' : '#FFFFFF';
 };
-const allowedPerms = (user, permissions) => {
+const allowedPerms = (user, permissions, store) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
   return permissions.filter((perm) => {
@@ -40,7 +41,8 @@ const allowedPerms = (user, permissions) => {
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
-    if (perm === 'auditoria') return tabs.includes('auditoria') && limits.auditInstances > 0;
+    if (perm === 'estoque') return tabs.includes('produtos') && limits.catalogProducts > 0;
+    if (perm === 'auditoria') return Boolean(store?.appAuditEnabled) && tabs.includes('auditoria') && limits.auditInstances > 0;
     return false;
   });
 };
@@ -103,7 +105,7 @@ async function shopAuth(req, _res, next) {
   req.forcedStore = su.store.id;
   req.forcedAuditScope = `store:${su.store.id}`;
   req.shopUser = su;
-  req.shopPerms = su.perms.split(',').filter(Boolean);
+  req.shopPerms = allowedPerms(su.store.user, su.perms.split(',').filter(Boolean), su.store);
   next();
 }
 
@@ -118,11 +120,11 @@ const needTab = (tab) => (req, _res, next) => {
 };
 
 const meDTO = (su, store) => ({
-  user: { name: su.name, perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean)) },
+  user: { name: su.name, perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean), store), isPrimary: su.isPrimary },
   app: {
     name: appName(store), color: appColor(store),
     whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
-    auditSend: Boolean(limitsFor(store.user).auditSend),
+    auditSend: Boolean(store.appAuditEnabled && limitsFor(store.user).auditSend),
   },
 });
 
@@ -130,11 +132,66 @@ router.get('/me', shopAuth, (req, res) => {
   res.json(meDTO(req.shopUser, req.shopUser.store));
 });
 
+const needPrimary = (req, _res, next) => {
+  if (!req.shopUser.isPrimary) throw new AppError(403, 'Somente o usuário principal pode administrar os acessos do aplicativo.', 'FORBIDDEN');
+  next();
+};
+
+router.get('/team', shopAuth, needPrimary, async (req, res) => {
+  const [users, flows] = await Promise.all([
+    prisma.storeUser.findMany({ where: { storeId: req.forcedStore, isPrimary: false }, orderBy: { createdAt: 'asc' } }),
+    prisma.stockFlow.findMany({ where: { userId: req.user.id, storeId: req.forcedStore }, select: { id: true, name: true, isDefault: true } }),
+  ]);
+  const permittedFlows = req.shopUser.stockFlowIds;
+  const visibleFlows = flows.filter((flow) => permittedFlows.includes(flow.id));
+  res.json({
+    users: users.map((user) => ({
+      id: user.id, name: user.name, login: user.login, active: user.active,
+      perms: allowedPerms(req.user, user.perms.split(',').filter(Boolean), req.shopUser.store),
+      stockFlowIds: user.stockFlowIds,
+    })),
+    availablePerms: req.shopPerms,
+    flows: visibleFlows,
+    permittedFlowIds: permittedFlows,
+  });
+});
+
+router.patch('/team/users/:uid', shopAuth, needPrimary, async (req, res) => {
+  const id = Number(req.params.uid);
+  const user = Number.isSafeInteger(id)
+    ? await prisma.storeUser.findFirst({ where: { id, storeId: req.forcedStore, isPrimary: false } })
+    : null;
+  if (!user) throw new AppError(404, 'Acesso não encontrado.');
+
+  const data = {};
+  if (req.body?.perms !== undefined) {
+    if (!Array.isArray(req.body.perms) || !req.body.perms.length
+      || req.body.perms.some((perm) => !req.shopPerms.includes(perm))) {
+      throw new AppError(403, 'Você só pode liberar áreas que também estão disponíveis no seu acesso.', 'FORBIDDEN');
+    }
+    data.perms = [...new Set(req.body.perms)].join(',');
+  }
+  if (req.body?.stockFlowIds !== undefined) {
+    const allowedFlowIds = req.shopUser.stockFlowIds;
+    if (!Array.isArray(req.body.stockFlowIds) || req.body.stockFlowIds.some((flowId) =>
+      !Number.isSafeInteger(Number(flowId)) || !allowedFlowIds.includes(Number(flowId)))) {
+      throw new AppError(403, 'Você só pode liberar fluxos de estoque que estão no seu próprio acesso.', 'FORBIDDEN');
+    }
+    data.stockFlowIds = [...new Set(req.body.stockFlowIds.map(Number))];
+  }
+  if (typeof req.body?.active === 'boolean') data.active = req.body.active;
+  if (!Object.keys(data).length) throw new AppError(400, 'Nada para atualizar.');
+  await prisma.storeUser.update({ where: { id }, data });
+  res.json({ ok: true });
+});
+
+router.use('/inventory', shopAuth, needPerm('estoque'), inventoryRoutes);
+
 // Lojista cadastra, edita e desativa produtos, mas não exclui nem muda preferências da conta.
-router.use('/products', shopAuth, needPerm('produtos', 'pdv'), (req, _res, next) => {
+router.use('/products', shopAuth, needPerm('produtos', 'pdv', 'estoque'), (req, _res, next) => {
   if (!req.shopPerms.includes('produtos')) {
     if (req.method !== 'GET' || req.path !== '/') throw new AppError(403, 'Seu acesso só libera a consulta de produtos para o PDV.', 'FORBIDDEN');
-    return needTab('pedidos')(req, _res, next);
+    return needTab(req.shopPerms.includes('estoque') ? 'produtos' : 'pedidos')(req, _res, next);
   }
   return needTab('produtos')(req, _res, next);
 }, (req, _res, next) => {

@@ -13,7 +13,7 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
   const lastPaid = isBill ? s.payments?.[0] : null; // pagamento do vencimento mais recente
 
   return (
-    <li className={`sched ${s.status === 'pausada' ? 'is-paused' : ''}`}>
+    <li className={`sched kind-${s.kind} ${s.status === 'pausada' ? 'is-paused' : ''}`}>
       <span className="avatar">{initials(s.contact?.name)}</span>
       <div className="sched-main">
         <div className="sched-title">

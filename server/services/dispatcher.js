@@ -11,6 +11,7 @@ const MAX_LATE_MS = 6 * 60 * 60 * 1000; // passou de 6h do horário: não envia 
 const RETRY_MS = 15 * 60 * 1000;
 const MAX_ATTEMPTS = 4;
 const LEASE_MS = 10 * 60 * 1000;
+const deliveryQueues = new Map();
 
 // Escolhe o primeiro WhatsApp conectado (o preferido do agendamento vem primeiro).
 export async function pickOpenInstance(candidates) {
@@ -33,15 +34,33 @@ export const instanceCandidates = (schedule, userInstances) => {
 // Envia o texto e, se houver, o link/Pix em uma segunda mensagem.
 // Lança erro se o texto falhar; devolve 'partial' se só o link/Pix falhar.
 export async function deliver(instance, number, text, extra) {
-  await wa.sendText(instance, number, text);
-  if (!extra) return { status: 'sent', error: null };
-  try {
-    await sleep(config.evolution.messageDelayMs);
-    await wa.sendText(instance, number, extra);
-    return { status: 'sent', error: null };
-  } catch (e) {
-    return { status: 'partial', error: `O texto foi enviado, mas o link/Pix não: ${e.message}` };
-  }
+  const key = String(instance.id || instance.name);
+  const queue = deliveryQueues.get(key) || { tail: Promise.resolve(), lastSentAt: 0 };
+  const current = queue.tail.then(async () => {
+    const textWait = queue.lastSentAt + config.evolution.messageDelayMs - Date.now();
+    if (textWait > 0) await sleep(textWait);
+    try {
+      await wa.sendText(instance, number, text);
+    } finally {
+      queue.lastSentAt = Date.now();
+    }
+    if (!extra) return { status: 'sent', error: null };
+    try {
+      const extraWait = queue.lastSentAt + config.evolution.messageDelayMs - Date.now();
+      if (extraWait > 0) await sleep(extraWait);
+      try {
+        await wa.sendText(instance, number, extra);
+      } finally {
+        queue.lastSentAt = Date.now();
+      }
+      return { status: 'sent', error: null };
+    } catch (e) {
+      return { status: 'partial', error: `O texto foi enviado, mas o link/Pix não: ${e.message}` };
+    }
+  })();
+  queue.tail = current.then(() => undefined, () => undefined);
+  deliveryQueues.set(key, queue);
+  return current;
 }
 
 const TRIAL_NOTICE = 'Mensagem de teste DM Digital.\nAdquira um plano para remover esta mensagem automática.';

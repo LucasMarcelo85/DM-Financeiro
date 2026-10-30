@@ -39,9 +39,11 @@ function receiptMarkup(receipt, order) {
   <table>${lines}</table><p>Subtotal: ${esc(brl(order.subtotalCents))}</p>${order.discountCents ? `<p>Desconto: −${esc(brl(order.discountCents))}</p>` : ''}${order.surchargeCents ? `<p>Acréscimo: +${esc(brl(order.surchargeCents))}</p>` : ''}<p class="total">Total: ${esc(brl(order.totalCents))}</p>${payments}${order.notes ? `<p class="muted">Observações: ${esc(order.notes)}</p>` : ''}${receipt.footer ? `<p>${esc(receipt.footer)}</p>` : ''}<p class="muted">Obrigado pela preferência!</p></body></html>`;
 }
 
-export default function PointOfSale({ onClose, allowCustomers = true }) {
+export default function PointOfSale({ onClose, allowCustomers = true, canSelectStockFlow = true }) {
   const toast = useToast();
   const [products, setProducts] = useState([]);
+  const [stockFlows, setStockFlows] = useState([]);
+  const [stockFlowId, setStockFlowId] = useState('');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
   const [selection, setSelection] = useState(null);
@@ -64,12 +66,25 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
   const loadProducts = useCallback(() => api.get('/products').then((result) => {
     setProducts((result.products || []).filter((product) => product.active));
   }).catch((error) => toast(error.message, 'error')), [toast]);
+  const loadStockFlows = useCallback(() => api.get('/inventory/flows').then((result) => {
+    setStockFlows(result.flows || []);
+    setStockFlowId((current) => current || String(result.flows.find((flow) => flow.isDefault)?.id || result.flows[0]?.id || ''));
+  }).catch((error) => toast(error.message, 'error')), [toast]);
   useEffect(() => {
     loadProducts();
     api.get('/catalog/pos/settings').then((result) => setReceipt(result.receipt)).catch((error) => toast(error.message, 'error'));
-  }, [loadProducts, toast]);
+    if (canSelectStockFlow) loadStockFlows();
+  }, [loadProducts, loadStockFlows, toast, canSelectStockFlow]);
 
   const visibleProducts = products.filter((product) => `${product.name} ${product.category}`.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')));
+  const selectedStockFlow = stockFlows.find((flow) => flow.id === Number(stockFlowId));
+  const stockFor = (product, imageId = null) => {
+    if (!canSelectStockFlow || !selectedStockFlow) return imageId
+      ? product.images?.find((image) => image.id === imageId)?.stockQuantity ?? 0
+      : product.stockQuantity;
+    const variantKey = imageId ? `image:${imageId}` : 'product';
+    return selectedStockFlow.levels.find((level) => level.productId === product.id && level.variantKey === variantKey)?.quantity ?? 0;
+  };
   const subtotalCents = cart.reduce((sum, line) => sum + line.unitCents * line.qty, 0);
   const discountCents = moneyToCents(discount);
   const surchargeCents = moneyToCents(surcharge);
@@ -101,7 +116,7 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
     const variations = (product.images || []).length > 0;
     const baseCents = image?.priceCents ?? product.priceCents;
     const qtyInCart = cart.filter((line) => line.productId === product.id && line.imageId === imageId && line.priceOptionId === priceOptionId).reduce((sum, line) => sum + line.qty, 0);
-    const stock = image?.stockQuantity ?? product.stockQuantity;
+    const stock = stockFor(product, image?.id || null);
     if (product.stockEnabled && qtyInCart + 1 > stock) {
       toast('Estoque insuficiente para essa opção.', 'error');
       return;
@@ -154,6 +169,7 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
     try {
       const result = await api.post('/catalog/pos/checkout', {
         items: cart.map((line) => ({ productId: line.productId, imageId: line.imageId, priceOptionId: line.priceOptionId, qty: line.qty })),
+        ...(canSelectStockFlow && stockFlowId ? { stockFlowId: Number(stockFlowId) } : {}),
         customerName, customerPhone, notes, discountCents, surchargeCents, payments: paymentBreakdown,
       });
       setLastOrder(result.order);
@@ -167,6 +183,7 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
       setMixedAmount('');
       setCartOpen(false);
       loadProducts();
+      if (canSelectStockFlow) loadStockFlows();
       if (receipt?.enabled) toast('Venda finalizada. Deseja imprimir o comprovante não fiscal?', 'success');
       else toast('Venda finalizada.');
     } catch (error) { toast(error.message, 'error'); } finally { setBusy(false); }
@@ -263,21 +280,30 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
       </header>
       <div className="pos-layout">
         <section className="pos-products-panel">
-          <div className="pos-products-head"><h2>Produtos</h2><input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar produto ou categoria" aria-label="Buscar produtos do PDV" /></div>
+          <div className="pos-products-head"><h2>Produtos</h2><input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar produto ou categoria" aria-label="Buscar produtos do PDV" />
+            {canSelectStockFlow && stockFlows.length > 1 && <label className="pos-stock-flow">Fluxo de estoque
+              <select className="input" value={stockFlowId} disabled={cart.length > 0} onChange={(event) => setStockFlowId(event.target.value)}>
+                {stockFlows.map((flow) => <option key={flow.id} value={flow.id}>{flow.name}{flow.isDefault ? ' (padrão do catálogo)' : ''}</option>)}
+              </select>
+              {cart.length > 0 && <small>Finalize ou limpe o carrinho para trocar o fluxo.</small>}
+            </label>}
+          </div>
           {!visibleProducts.length ? <div className="empty-hero"><h2>Nenhum produto disponível</h2><p>Cadastre e ative produtos para vender no caixa.</p></div> : (
             <div className="pos-product-grid">
               {visibleProducts.map((product) => {
                 const image = product.mainImage || product.images?.[0];
                 const tier = tierPrice(product, cart);
                 const unit = tier?.priceCents ?? image?.priceCents ?? product.priceCents;
-                const unavailable = product.stockEnabled && product.stockQuantity < 1 && !(product.images || []).some((variant) => variant.stockQuantity > 0);
+                const availableStock = stockFor(product);
+                const variantStocks = (product.images || []).map((variant) => stockFor(product, variant.id));
+                const unavailable = product.stockEnabled && (product.images?.length ? !variantStocks.some((stock) => stock > 0) : availableStock < 1);
                 return (
                   <button type="button" className="pos-product-card" key={product.id} onClick={() => chooseProduct(product)} disabled={unavailable}>
                     <span className="pos-product-image">{imageUrl(image) ? <img src={imageUrl(image)} alt="" loading="lazy" /> : <span>{product.name.slice(0, 1).toUpperCase()}</span>}</span>
                     <span className="pos-product-name">{product.name}</span>
                     <span className="pos-product-category">{product.category}</span>
                     <strong>{unit > 0 ? brl(unit) : 'Preço não informado'}</strong>
-                    {product.stockEnabled && <small>{unavailable ? 'Sem estoque' : `${product.stockQuantity} em estoque`}</small>}
+                    {product.stockEnabled && <small>{unavailable ? 'Sem estoque' : `${product.images?.length ? variantStocks.reduce((sum, stock) => sum + stock, 0) : availableStock} em estoque`}</small>}
                   </button>
                 );
               })}
@@ -291,11 +317,11 @@ export default function PointOfSale({ onClose, allowCustomers = true }) {
       </div>
       {selection && (
         <Modal title={`Adicionar ${selection.product.name}`} onClose={() => setSelection(null)}
-          footer={<><button className="btn btn-ghost" onClick={() => setSelection(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => addToCart(selection.product, selection.imageId, selection.priceOptionId)}>Adicionar ao carrinho</button></>}>
+          footer={<><button className="btn btn-ghost" onClick={() => setSelection(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => addToCart(selection.product, selection.imageId, selection.priceOptionId)} disabled={selection.product.stockEnabled && stockFor(selection.product, selection.imageId) < 1}>Adicionar ao carrinho</button></>}>
           <div className="pos-option-list">
             {(selection.product.images || []).length > 0 && <label>Variação
               <select className="input" value={selection.imageId || ''} onChange={(event) => setSelection((current) => ({ ...current, imageId: Number(event.target.value) }))}>
-                {(selection.product.images || []).map((image) => <option key={image.id} value={image.id}>{[image.label, image.size, image.color].filter(Boolean).join(' · ') || 'Opção'} · {brl(image.priceCents ?? selection.product.priceCents)}{selection.product.stockEnabled ? ` · estoque ${image.stockQuantity}` : ''}</option>)}
+                {(selection.product.images || []).map((image) => <option key={image.id} value={image.id}>{[image.label, image.size, image.color].filter(Boolean).join(' · ') || 'Opção'} · {brl(image.priceCents ?? selection.product.priceCents)}{selection.product.stockEnabled ? ` · estoque ${stockFor(selection.product, image.id)}` : ''}</option>)}
               </select>
             </label>}
             {(selection.product.priceOptions || []).some((option) => option.priceCents !== null) && <label>Preço especial

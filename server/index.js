@@ -27,6 +27,7 @@ import shopAppRoutes from './routes/shop-app.js';
 import { publicApi, tokenRoutes } from './routes/api-tokens.js';
 import publicPortfolioRoutes, { injectMeta, portfolioShareMeta } from './routes/public-portfolio.js';
 import productRoutes from './routes/products.js';
+import inventoryRoutes from './routes/inventory.js';
 import catalogRoutes from './routes/catalog.js';
 import publicCatalogRoutes, { ordersWebhook } from './routes/public-catalog.js';
 import { catalogPaymentWebhooks, catalogPaymentsRouter } from './routes/catalog-payments.js';
@@ -178,6 +179,7 @@ app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);
 app.use('/api/products', auth, requireAccess, express.json({ limit: '40mb' }), productRoutes);
 app.use('/api/catalog', auth, requireAccess, pinGuard('pedidos'), catalogRoutes);
+app.use('/api/inventory', auth, requireAccess, pinGuard('produtos'), inventoryRoutes);
 app.use('/api/catalog/payments', auth, requireAccess, pinGuard('pedidos'), catalogPaymentsRouter);
 app.use('/api/admin', auth, requireAdmin, adminRoutes);
 app.use('/api', (_req, res) => res.status(404).json({ error: 'Rota não encontrada.' }));

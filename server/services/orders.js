@@ -10,6 +10,7 @@ import { lookupCep, quoteCorreios, quoteMotoboy } from './geo.js';
 import { resolvePublicOwner } from '../utils/store.js';
 import { paymentConnections, infinitePayReady } from './catalog-payments.js';
 import { emitApiWebhook } from './api-webhooks.js';
+import { ensureDefaultStockFlow, mirrorStockLevel } from './inventory.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -182,11 +183,18 @@ export async function createOrder(userSlug, body = {}) {
   for (let attempt = 0; attempt < 3; attempt++) {
     try {
       order = await prisma.$transaction(async (tx) => {
+        const stockFlow = await ensureDefaultStockFlow(tx, owner.id, store?.id ?? null);
         for (const demand of stockDemand.values()) {
-          const result = demand.image
-            ? await tx.productImage.updateMany({ where: { id: demand.image.id, productId: demand.product.id, stockQuantity: { gte: demand.qty } }, data: { stockQuantity: { decrement: demand.qty } } })
-            : await tx.product.updateMany({ where: { id: demand.product.id, stockEnabled: true, stockQuantity: { gte: demand.qty } }, data: { stockQuantity: { decrement: demand.qty } } });
+          const variantKey = demand.image ? `image:${demand.image.id}` : 'product';
+          const result = await tx.stockLevel.updateMany({
+            where: { flowId: stockFlow.id, productId: demand.product.id, variantKey, quantity: { gte: demand.qty } },
+            data: { quantity: { decrement: demand.qty } },
+          });
           if (result.count !== 1) throw new AppError(409, `O estoque de ${demand.product.name} acabou de mudar. Atualize o carrinho e tente novamente.`);
+          const level = await tx.stockLevel.findUnique({
+            where: { flowId_productId_variantKey: { flowId: stockFlow.id, productId: demand.product.id, variantKey } },
+          });
+          await mirrorStockLevel(tx, stockFlow, demand.product.id, variantKey, level.quantity);
         }
         await tx.orderCustomerProfile.upsert({
           where: { userId_scopeKey_customerPhone: { userId: owner.id, scopeKey: store?.id ? `store:${store.id}` : 'main', customerPhone: phone } },
@@ -197,7 +205,7 @@ export async function createOrder(userSlug, body = {}) {
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });
         const createdOrder = await tx.order.create({
-          data: { userId: owner.id, storeId: store?.id ?? null, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
+          data: { userId: owner.id, storeId: store?.id ?? null, stockFlowId: stockFlow.id, code: newCode(), customerName, customerPhone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
         });
         await tx.orderStrategyRecord.create({
           data: {

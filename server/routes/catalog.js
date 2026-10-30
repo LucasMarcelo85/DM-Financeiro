@@ -12,6 +12,7 @@ import { emitApiWebhook } from '../services/api-webhooks.js';
 import * as whatsapp from '../services/whatsapp.js';
 import { dateRange, importedDate } from '../utils/date-range.js';
 import { assertPin } from '../utils/pin.js';
+import { ensureDefaultStockFlow, resolveStockFlow } from '../services/inventory.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -271,7 +272,15 @@ router.post('/pos/checkout', async (req, res) => {
     const paymentMethod = payments.length > 1 ? 'misto' : payments[0].method;
     const code = `PDV-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     const displayName = customerName || 'Consumidor final';
-    const stockOrder = { userId: req.user.id, storeId, items };
+    const defaultFlow = req.shopUser && !req.shopPerms.includes('estoque')
+      ? await ensureDefaultStockFlow(tx, req.user.id, storeId)
+      : null;
+    if (defaultFlow && body.stockFlowId != null) throw new AppError(403, 'Seu acesso só permite usar o fluxo padrão de estoque.', 'FORBIDDEN');
+    const allowedFlowIds = req.shopUser
+      ? defaultFlow ? [defaultFlow.id] : req.shopUser.stockFlowIds
+      : null;
+    const stockFlow = await resolveStockFlow(tx, req.user.id, storeId, body.stockFlowId, allowedFlowIds);
+    const stockOrder = { userId: req.user.id, storeId, stockFlowId: stockFlow.id, items };
     await changeOrderStock(tx, stockOrder, 'reserve');
     if (customerPhone) {
       const scopeKey = customerScopeKey(storeId);
@@ -285,6 +294,7 @@ router.post('/pos/checkout', async (req, res) => {
       data: {
         userId: req.user.id,
         storeId,
+        stockFlowId: stockFlow.id,
         code,
         customerName: displayName,
         customerPhone,
@@ -662,7 +672,7 @@ router.patch('/orders/:id', async (req, res) => {
 
 async function archiveOrders(where) {
   return prisma.$transaction(async (tx) => {
-    const orders = await tx.order.findMany({ where, select: { id: true, userId: true, storeId: true, items: true, stockReserved: true } });
+    const orders = await tx.order.findMany({ where, select: { id: true, userId: true, storeId: true, items: true, stockReserved: true, stockFlowId: true } });
     if (!orders.length) return 0;
     for (const order of orders) {
       if (order.stockReserved) await changeOrderStock(tx, order, 'restore');

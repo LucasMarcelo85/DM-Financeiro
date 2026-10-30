@@ -6,6 +6,7 @@ import { cleanProduct, publicProduct } from '../utils/catalog.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
 import { dateRange } from '../utils/date-range.js';
+import { syncProductStock } from '../services/inventory.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
@@ -46,11 +47,18 @@ async function owned(req) {
   return p;
 }
 
-async function assertCanCreate(user, requested = 1) {
+async function assertCanCreate(req, requested = 1, storeId = null) {
+  const user = req.user;
   const limit = limitsFor(user).catalogProducts;
   if (limit < 1) throw new AppError(403, 'O seu plano não inclui produtos e catálogo digital. Mude para um plano com catálogo para cadastrar.', 'LIMIT_REACHED');
   const count = await prisma.product.count({ where: { userId: user.id } });
   if (count + requested > limit) throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? 'produto/serviço' : 'produtos/serviços'} e há espaço para mais ${Math.max(0, limit - count)}. Exclua algum ou mude de plano para cadastrar mais.`, 'LIMIT_REACHED');
+  if (req.shopUser) {
+    const store = await prisma.store.findUnique({ where: { id: storeId }, select: { appProductLimit: true } });
+    const appLimit = Math.min(limit, store?.appProductLimit ?? limit);
+    const appCount = await prisma.product.count({ where: { userId: user.id, storeId } });
+    if (appCount + requested > appLimit) throw new AppError(403, `O criador do aplicativo liberou até ${appLimit} produtos nesta loja.`, 'LIMIT_REACHED');
+  }
 }
 
 function createData(data, userId, storeId) {
@@ -75,7 +83,7 @@ router.get('/', async (req, res) => {
   if (req.query.kind === 'produto' || req.query.kind === 'servico') where.kind = req.query.kind;
   const [rows, count, cats, savedPreferences] = await Promise.all([
     prisma.product.findMany({ where, orderBy: [{ category: 'asc' }, { name: 'asc' }], include: productInclude, take: 500 }),
-    prisma.product.count({ where: { userId: req.user.id } }),
+    prisma.product.count({ where: req.shopUser ? { userId: req.user.id, storeId } : { userId: req.user.id } }),
     prisma.product.findMany({ where: { userId: req.user.id, storeId }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
     req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null,
   ]);
@@ -87,8 +95,13 @@ router.get('/', async (req, res) => {
       priceLabels: savedPreferences.priceLabels,
     } : {}),
   };
+  let productLimit = limitsFor(req.user).catalogProducts;
+  if (req.shopUser) {
+    const store = await prisma.store.findUnique({ where: { id: storeId }, select: { appProductLimit: true } });
+    productLimit = Math.min(productLimit, store?.appProductLimit ?? productLimit);
+  }
   preferences.categories = [...new Set([...preferences.categories, ...cats.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  res.json({ products: rows.map(dto), count, limit: limitsFor(req.user).catalogProducts, categories: preferences.categories, preferences });
+  res.json({ products: rows.map(dto), count, limit: productLimit, categories: preferences.categories, preferences });
 });
 
 router.get('/export', async (req, res) => {
@@ -140,11 +153,12 @@ router.post('/import', async (req, res) => {
           continue;
         }
       }
-      await assertCanCreate(req.user);
+      await assertCanCreate(req, 1, storeId);
       const data = cleanProduct(row);
-      const product = await prisma.product.create({
-        data: createData(data, req.user.id, storeId),
-        include: productInclude,
+      const product = await prisma.$transaction(async (tx) => {
+        const created = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
+        await syncProductStock(tx, created);
+        return created;
       });
       publishProduct(req.user.id, product, 'product.created');
       created += 1;
@@ -175,9 +189,14 @@ router.get('/:id', async (req, res) => {
 });
 
 router.post('/', async (req, res) => {
-  await assertCanCreate(req.user);
+  const storeId = await storeScope(req);
+  await assertCanCreate(req, 1, storeId);
   const data = cleanProduct(req.body);
-  const p = await prisma.product.create({ data: createData(data, req.user.id, await storeScope(req)), include: productInclude });
+  const p = await prisma.$transaction(async (tx) => {
+    const created = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
+    await syncProductStock(tx, created);
+    return created;
+  });
   publishProduct(req.user.id, p, 'product.created');
   res.status(201).json({ product: dto(p) });
 });
@@ -190,13 +209,15 @@ router.post('/bulk', async (req, res) => {
     ...(product?.mainImage ? [product.mainImage] : []),
   ].reduce((size, image) => size + (typeof image?.data === 'string' ? image.data.length : 0), 0), 0);
   if (imagePayloadSize > 32 * 1024 * 1024) throw new AppError(413, 'O lote de fotos ficou muito grande. Cadastre menos produtos ou reduza o número de imagens por produto.');
-  await assertCanCreate(req.user, list.length);
-  const prepared = list.map((product) => cleanProduct(product));
   const storeId = await storeScope(req);
+  await assertCanCreate(req, list.length, storeId);
+  const prepared = list.map((product) => cleanProduct(product));
   const products = await prisma.$transaction(async (tx) => {
     const created = [];
     for (const data of prepared) {
-      created.push(await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude }));
+      const product = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
+      await syncProductStock(tx, product);
+      created.push(product);
     }
     return created;
   });
@@ -234,7 +255,9 @@ router.patch('/:id', async (req, res) => {
         await tx.productPriceOption.create({ data: { productId: current.id, label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity, scope: option.scope, minCartCents: option.minCartCents, position } });
       }
     }
-    return tx.product.update({ where: { id: current.id }, data, include: productInclude });
+    const updated = await tx.product.update({ where: { id: current.id }, data, include: productInclude });
+    await syncProductStock(tx, updated);
+    return updated;
   });
   publishProduct(req.user.id, p, 'product.updated');
   res.json({ product: dto(p) });
