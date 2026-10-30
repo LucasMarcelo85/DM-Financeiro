@@ -24,7 +24,6 @@
 .pv-modal-primary, .pv-modal-secondary { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
 .pv-modal-primary { background: var(--p, #f2a33a); color: var(--on-p, #14202e); }
 .pv-modal-secondary { background: #e2e8f0; color: #14202e; }
-.pv-custom-frame { display: block; width: 100%; height: 100%; border: 0; background: transparent; }
 .pv-modal-image { display: block; max-width: 100%; max-height: 260px; margin: 16px auto; border-radius: 12px; object-fit: contain; }
 .pv-modal-questions { display: grid; gap: 16px; margin-top: 20px; }
 .pv-modal-question { display: grid; gap: 7px; color: #334155; font-size: .95rem; font-weight: 600; }

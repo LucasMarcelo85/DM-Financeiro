@@ -21,7 +21,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
-  { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' }, { t: 'custom', icon: 'braces' },
+  { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' },
   { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
@@ -48,6 +48,7 @@ export default function PortfolioEditor() {
   const [share, setShare] = useState(false);
   const [busy, setBusy] = useState('');
   const [leave, setLeave] = useState(false);
+  const [leaveTarget, setLeaveTarget] = useState('/portfolio');
   const [panelOpen, setPanelOpen] = useState(false);
   const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers'
   const [products, setProducts] = useState([]);
@@ -184,12 +185,6 @@ export default function PortfolioEditor() {
   }, [id, toast]);
 
   useEffect(() => {
-    if (saveState !== 'dirty' || interacting) return undefined;
-    const t = setTimeout(save, 2500);
-    return () => clearTimeout(t);
-  }, [saveState, doc, name, save, interacting]);
-
-  useEffect(() => {
     const warn = (e) => { if (version.current !== savedVersion.current) { e.preventDefault(); e.returnValue = ''; } };
     window.addEventListener('beforeunload', warn);
     return () => window.removeEventListener('beforeunload', warn);
@@ -197,17 +192,25 @@ export default function PortfolioEditor() {
 
   async function goBack() {
     if (version.current === savedVersion.current) return nav('/portfolio');
-    if (await save()) nav('/portfolio'); else setLeave(true);
-    return undefined;
+    setLeaveTarget('/portfolio');
+    setLeave(true);
   }
 
   async function switchPage(nextId) {
     if (!nextId || nextId === id) return;
-    if (version.current !== savedVersion.current && !(await save())) {
+    if (version.current !== savedVersion.current) {
+      setLeaveTarget(`/portfolio/${nextId}`);
       setLeave(true);
       return;
     }
     nav(`/portfolio/${nextId}`);
+  }
+
+  async function saveAndLeave() {
+    if (await save() && version.current === savedVersion.current) {
+      setLeave(false);
+      nav(leaveTarget);
+    }
   }
 
   // ---------------------------------------------------------------- publicar e compartilhar
@@ -526,9 +529,9 @@ export default function PortfolioEditor() {
       {catalogCfg && <CatalogSettings onClose={() => setCatalogCfg(false)} />}
       {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
       {leave && (
-        <Modal title="Não foi possível salvar" onClose={() => setLeave(false)}
-          footer={<><button className="btn btn-ghost" onClick={() => setLeave(false)}>Continuar editando</button><button className="btn btn-danger" onClick={() => { version.current = savedVersion.current; nav('/portfolio'); }}>Sair sem salvar</button></>}>
-          <p>Suas últimas alterações ainda não foram salvas. Se sair agora, elas serão perdidas.</p>
+        <Modal title="Alterações não salvas" onClose={() => setLeave(false)}
+          footer={<><button className="btn btn-ghost" onClick={() => setLeave(false)}>Continuar editando</button><button className="btn btn-danger" onClick={() => { version.current = savedVersion.current; nav(leaveTarget); }}>Sair sem salvar</button><button className="btn btn-primary" onClick={saveAndLeave} disabled={saveState === 'saving'}>{saveState === 'saving' ? 'Salvando...' : 'Salvar e sair'}</button></>}>
+          <p>As alterações só são gravadas quando você clicar em <strong>Salvar</strong>. Quer salvar antes de sair?</p>
         </Modal>
       )}
     </div>

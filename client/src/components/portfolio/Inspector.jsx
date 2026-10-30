@@ -491,15 +491,6 @@ function ModalSection({ el, api, products = [] }) {
   );
 }
 
-function CustomCodeSection({ el, api }) {
-  return (
-    <Section title="HTML, CSS e JavaScript">
-      <TextField label="Código (máximo de 100.000 caracteres)" value={el.code} onChange={(code) => api.patch({ code }, 'custom:code')} multiline rows={14} maxLength={100000} id={`custom-code-${el.id}`} />
-      <p className="muted small">O código é executado em um quadro isolado com JavaScript, alertas e janelas permitidos. Ele não acessa a página principal, dados da loja, cookies ou serviços de rede. Modais com tela cheia podem ser limitados ao tamanho deste bloco; use o elemento “Modal por etapas” para cobrir a página inteira.</p>
-    </Section>
-  );
-}
-
 function AnimationSection({ el, api }) {
   const a = el.anim;
   const f = (k) => (v) => api.patch({ anim: { ...a, [k]: v } }, `anim:${k}`);
@@ -554,7 +545,7 @@ export function ElementInspector({ el, device, api, products, layoutBox }) {
       {el.t === 'menu' && <MenuSection el={el} api={api} />}
       {el.t === 'products' && <ProductsSection key={el.id} el={el} api={api} products={products} />}
       {el.t === 'modal' && <ModalSection el={el} api={api} products={products} />}
-      {el.t === 'custom' && <CustomCodeSection el={el} api={api} />}
+      {el.t === 'custom' && <Section title="Script desativado"><p className="muted small">A ferramenta de script foi removida e este código salvo não é executado. Exclua o bloco ou substitua por outro elemento.</p></Section>}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}
       {linkable && (

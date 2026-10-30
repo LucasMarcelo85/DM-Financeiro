@@ -45,7 +45,7 @@ const newId = () => crypto.randomBytes(6).toString('hex');
 const str = (v, max) => (typeof v === 'string' ? v.slice(0, max) : '');
 const line = (v, max) => (typeof v === 'string' ? v.replace(/[\r\n]+/g, ' ').slice(0, max) : '');
 const bool = (v, d) => (typeof v === 'boolean' ? v : d);
-const pick = (v, set, d) => (set.has(v) ? v : d);
+const pick = (v, options, d) => ((options instanceof Set ? options.has(v) : Array.isArray(options) && options.includes(v)) ? v : d);
 
 function num(v, min, max, d) {
   const n = typeof v === 'number' ? v : NaN;
