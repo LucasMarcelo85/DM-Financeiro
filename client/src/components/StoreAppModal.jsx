@@ -35,19 +35,19 @@ function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false });
+  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false, auditInstanceLimit: 0 });
   const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS, stockFlowIds: [], isPrimary: false });
   const [busy, setBusy] = useState(false);
   const initializedFlowsStoreId = useRef(null);
   const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
-    && (key !== 'auditoria' || cfg.auditEnabled));
+    && (key !== 'auditoria' || cfg.auditEnabled && Number(cfg.auditInstanceLimit) > 0));
 
   const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
     setData(r);
     setCfg({
       enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
       userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
-      auditEnabled: r.store.app.auditEnabled,
+      auditEnabled: r.store.app.auditEnabled, auditInstanceLimit: r.store.app.auditInstanceLimit,
     });
     if (initializedFlowsStoreId.current !== storeId) {
       initializedFlowsStoreId.current = storeId;
@@ -99,11 +99,23 @@ export default function StoreAppModal({ storeId, onClose }) {
             <small className="muted">Até {data.maxAppProducts} produtos, respeitando o limite global do seu plano e adicionais.</small>
           </label>
           {data.availablePerms.includes('auditoria') && <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            <input type="checkbox" checked={cfg.auditEnabled} onChange={(e) => setCfg({ ...cfg, auditEnabled: e.target.checked })} />
+            <input type="checkbox" checked={cfg.auditEnabled} disabled={!cfg.auditEnabled && data.maxAppAuditInstances < 1} onChange={(e) => setCfg({
+              ...cfg,
+              auditEnabled: e.target.checked,
+              auditInstanceLimit: e.target.checked ? Math.min(data.maxAppAuditInstances, Math.max(1, Number(cfg.auditInstanceLimit) || 0)) : 0,
+            })} />
             Liberar auditoria neste aplicativo
           </label>}
+          {data.availablePerms.includes('auditoria') && cfg.auditEnabled && <label style={{ display: 'grid', gap: 4 }}>
+            <span>Conexões de auditoria liberadas para este app</span>
+            <input className="input" type="number" min="1" max={data.maxAppAuditInstances} step="1" value={cfg.auditInstanceLimit}
+              onChange={(e) => setCfg({ ...cfg, auditInstanceLimit: e.target.value === '' ? '' : Number(e.target.value) })}
+              aria-label="Limite de conexões de auditoria do app" />
+            <small className="muted">Disponível: {data.maxAppAuditInstances}. Cada vaga reservada é descontada do limite da sua conta e dos outros apps.</small>
+          </label>}
+          {data.availablePerms.includes('auditoria') && !cfg.auditEnabled && data.maxAppAuditInstances < 1 && <p className="muted small">Não há vagas de auditoria disponíveis. Reduza o limite de outro app ou amplie o limite da conta.</p>}
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
-          <button className="btn btn-primary" disabled={busy} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
+          <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
           {store.app.enabled && data.appAvailable ? (
             <div className="banner" style={{ flexWrap: 'wrap' }}>

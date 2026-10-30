@@ -12,6 +12,7 @@ import { ensureDefaultStockFlow } from '../services/inventory.js';
 // Lojas extras da conta. Cada loja tem site, produtos, pedidos e domínio próprios.
 const router = Router();
 const MAX_APP_PRODUCTS = 2_147_483_647;
+const MAX_APP_AUDIT_INSTANCES = 2_147_483_647;
 
 const dto = (s) => ({
   id: s.id, name: s.name, slug: s.slug, path: `/${s.slug}`,
@@ -19,6 +20,7 @@ const dto = (s) => ({
   app: {
     enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '',
     userLimit: s.appUserLimit, productLimit: s.appProductLimit, auditEnabled: s.appAuditEnabled,
+    auditInstanceLimit: s.appAuditInstanceLimit,
   },
   createdAt: s.createdAt,
 });
@@ -191,10 +193,10 @@ const cleanPerms = (v, user, store) => {
   if (list.some((p) => APP_PERMS.includes(p) && !available.includes(p))) {
     throw new AppError(403, 'Uma ou mais áreas selecionadas não estão disponíveis no plano desta loja.', 'TAB_NOT_IN_PLAN');
   }
-  if (list.includes('auditoria') && !store.appAuditEnabled) {
-    throw new AppError(403, 'Ative a auditoria nas configurações do app antes de liberar esse acesso.', 'LIMIT_REACHED');
+  if (list.includes('auditoria') && (!store.appAuditEnabled || store.appAuditInstanceLimit < 1)) {
+    throw new AppError(403, 'Defina ao menos uma conexão de auditoria nas configurações do app antes de liberar esse acesso.', 'LIMIT_REACHED');
   }
-  const out = available.filter((p) => list.includes(p) && (p !== 'auditoria' || store.appAuditEnabled));
+  const out = available.filter((p) => list.includes(p) && (p !== 'auditoria' || store.appAuditEnabled && store.appAuditInstanceLimit > 0));
   if (!out.length) throw new AppError(400, 'Escolha pelo menos uma área que o lojista poderá usar.');
   return out.join(',');
 };
@@ -221,6 +223,15 @@ router.get('/:id/app', async (req, res) => {
     select: { id: true, name: true, isDefault: true },
     orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
   });
+  const [mainAuditCount, allocatedAudit] = await Promise.all([
+    prisma.instance.count({ where: { userId: req.user.id, purpose: 'auditoria', auditScope: 'main' } }),
+    prisma.store.aggregate({
+      where: { userId: req.user.id, appAuditEnabled: true },
+      _sum: { appAuditInstanceLimit: true },
+    }),
+  ]);
+  const allocatedElsewhere = Math.max(0, (allocatedAudit._sum.appAuditInstanceLimit || 0) - (store.appAuditEnabled ? store.appAuditInstanceLimit : 0));
+  const auditAvailable = Math.max(0, limits.auditInstances - mainAuditCount - allocatedElsewhere);
   res.json({
     store: {
       ...dto(store),
@@ -231,6 +242,7 @@ router.get('/:id/app', async (req, res) => {
     flows,
     maxAppUsers: limits.appUsers,
     maxAppProducts: Math.min(limits.catalogProducts, MAX_APP_PRODUCTS),
+    maxAppAuditInstances: Math.min(MAX_APP_AUDIT_INSTANCES, Math.max(store.appAuditInstanceLimit, auditAvailable)),
     appAvailable: limits.stores > 0 && limits.appUsers > 0 && availablePerms(req.user).length > 0,
   });
 });
@@ -254,7 +266,15 @@ router.put('/:id/app', async (req, res) => {
     throw new AppError(400, `O limite de produtos do app precisa ficar entre 0 e ${maxProducts}.`);
   }
   const auditEnabled = Boolean(req.body?.auditEnabled);
-  if (auditEnabled && !availablePerms(req.user).includes('auditoria')) {
+  const auditInstanceLimit = auditEnabled ? Number(req.body?.auditInstanceLimit) : 0;
+  if (!Number.isInteger(auditInstanceLimit) || auditInstanceLimit < 0 || auditInstanceLimit > MAX_APP_AUDIT_INSTANCES) {
+    throw new AppError(400, 'Informe uma quantidade válida de conexões de auditoria para o app.');
+  }
+  if (auditEnabled && auditInstanceLimit < 1) {
+    throw new AppError(400, 'Defina pelo menos uma conexão de auditoria para liberar auditoria no app.');
+  }
+  const unchangedAuditOverPlan = auditEnabled === store.appAuditEnabled && auditInstanceLimit === store.appAuditInstanceLimit;
+  if (auditEnabled && !availablePerms(req.user).includes('auditoria') && !unchangedAuditOverPlan) {
     throw new AppError(403, 'A auditoria não está disponível no plano ou nos adicionais desta conta.', 'LIMIT_REACHED');
   }
   let saved;
@@ -264,11 +284,30 @@ router.put('/:id/app', async (req, res) => {
       if (existingUsers > userLimit && userLimit !== store.appUserLimit) {
         throw new AppError(400, `Esta loja já possui ${existingUsers} acessos. Exclua acessos antes de reduzir a quantidade para ${userLimit}.`);
       }
+      const currentAuditCount = await tx.instance.count({
+        where: { userId: req.user.id, purpose: 'auditoria', auditScope: `store:${store.id}` },
+      });
+      if (auditEnabled && auditInstanceLimit < currentAuditCount) {
+        throw new AppError(400, `Este app já possui ${currentAuditCount} conexões de auditoria. Remova conexões antes de reduzir o limite.`);
+      }
+      const [mainAuditCount, allocatedElsewhere] = await Promise.all([
+        tx.instance.count({ where: { userId: req.user.id, purpose: 'auditoria', auditScope: 'main' } }),
+        tx.store.aggregate({
+          where: { userId: req.user.id, appAuditEnabled: true, id: { not: store.id } },
+          _sum: { appAuditInstanceLimit: true },
+        }),
+      ]);
+      const availableAuditLimit = Math.max(0, limits.auditInstances - mainAuditCount - (allocatedElsewhere._sum.appAuditInstanceLimit || 0));
+      const unchangedOverLimit = auditInstanceLimit === store.appAuditInstanceLimit && store.appAuditEnabled;
+      if (auditInstanceLimit > availableAuditLimit && !unchangedOverLimit) {
+        throw new AppError(400, `Você pode liberar até ${availableAuditLimit} conexões de auditoria para este app. O limite é compartilhado com os demais apps e com a conta principal.`);
+      }
       return tx.store.update({
         where: { id: store.id },
         data: {
           appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null,
           appColor: color || null, appUserLimit: userLimit, appProductLimit: productLimit, appAuditEnabled: auditEnabled,
+          appAuditInstanceLimit: auditInstanceLimit,
         },
       });
     }, { isolationLevel: 'Serializable' });

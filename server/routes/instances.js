@@ -104,11 +104,35 @@ export function instanceRouter(purpose) {
     return name;
   }
 
-  async function assertCanAdd(user) {
-    const limit = limitOf(user);
-    const count = await prisma.instance.count({ where: { userId: user.id, purpose } });
-    if (count >= limit) {
-      throw new AppError(403, `Seu plano permite ${limit} ${limit === 1 ? noun : nouns}. Mude de plano para adicionar mais.`, 'LIMIT_REACHED');
+  async function auditScopeLimit(user, req, auditScope) {
+    if (!audit) return limitOf(user);
+    if (auditScope?.startsWith('store:')) {
+      const storeId = Number(auditScope.slice('store:'.length));
+      const store = await prisma.store.findFirst({
+        where: { id: storeId, userId: user.id },
+        select: { appAuditEnabled: true, appAuditInstanceLimit: true },
+      });
+      return store?.appAuditEnabled ? store.appAuditInstanceLimit : 0;
+    }
+    const [allocated, ownCount] = await Promise.all([
+      prisma.store.aggregate({
+        where: { userId: user.id, appAuditEnabled: true },
+        _sum: { appAuditInstanceLimit: true },
+      }),
+      prisma.instance.count({ where: { userId: user.id, purpose, auditScope: 'main' } }),
+    ]);
+    return Math.max(ownCount, limitOf(user) - (allocated._sum.appAuditInstanceLimit || 0));
+  }
+
+  async function assertCanAdd(user, req, auditScope) {
+    const total = await prisma.instance.count({ where: { userId: user.id, purpose } });
+    const globalLimit = limitOf(user);
+    const scopeLimit = await auditScopeLimit(user, req, auditScope);
+    const scopeCount = audit
+      ? await prisma.instance.count({ where: { userId: user.id, purpose, auditScope } })
+      : total;
+    if (total >= globalLimit || scopeCount >= scopeLimit) {
+      throw new AppError(403, `O limite disponível é ${scopeLimit} ${scopeLimit === 1 ? noun : nouns} para este acesso. Ajuste o limite do app ou amplie o plano para adicionar mais.`, 'LIMIT_REACHED');
     }
   }
 
@@ -173,9 +197,10 @@ export function instanceRouter(purpose) {
       ...(audit ? { auditScope } : {}),
       ...storeFilter,
     };
-    const [rows, count] = await Promise.all([
+    const [rows, count, limit] = await Promise.all([
       prisma.instance.findMany({ where, orderBy: { id: 'asc' }, select: SELECT }),
-      prisma.instance.count({ where: { userId: req.user.id, purpose } }),
+      prisma.instance.count({ where: audit ? { userId: req.user.id, purpose, auditScope } : { userId: req.user.id, purpose } }),
+      audit ? auditScopeLimit(req.user, req, auditScope) : Promise.resolve(limitOf(req.user)),
     ]);
     const configured = evolutionConfigured();
     let failed = false;
@@ -192,7 +217,7 @@ export function instanceRouter(purpose) {
       })
     );
     res.json({
-      instances, purpose, limit: limitOf(req.user), count, auditScope,
+      instances, purpose, limit, count, auditScope,
       availableScopes: { main: true, app: !audit || stores.size > 0 },
       evolutionConfigured: configured, unreachable: failed,
       metaWebhookUrl: metaWebhookUrl(), appUrlIsPublic: appUrlIsPublic(),
@@ -200,11 +225,11 @@ export function instanceRouter(purpose) {
   });
 
   router.post('/', async (req, res) => {
-    await assertCanAdd(req.user);
     const b = req.body || {};
     const label = cleanLabel(b.label);
     if (audit) req.auditStores = await auditStores(req.user, req);
     const auditScope = audit ? cleanAuditScope(b.auditScope, req.user, req) : 'main';
+    await assertCanAdd(req.user, req, auditScope);
     const storeId = req.forcedStore !== undefined
       ? req.forcedStore
       : audit && auditScope.startsWith('store:') ? Number(auditScope.slice('store:'.length))
@@ -255,6 +280,13 @@ export function instanceRouter(purpose) {
       req.auditStores = await auditStores(req.user, req);
       data.auditScope = cleanAuditScope(b.auditScope, req.user, req);
       data.storeId = data.auditScope.startsWith('store:') ? Number(data.auditScope.slice('store:'.length)) : null;
+      if (data.auditScope !== inst.auditScope) {
+        const [targetLimit, targetCount] = await Promise.all([
+          auditScopeLimit(req.user, req, data.auditScope),
+          prisma.instance.count({ where: { userId: req.user.id, purpose, auditScope: data.auditScope } }),
+        ]);
+        if (targetCount >= targetLimit) throw new AppError(409, 'O destino não tem vagas de auditoria disponíveis. Ajuste o limite do app antes de mover esta conexão.', 'LIMIT_REACHED');
+      }
     }
     if (inst.provider === 'meta' && b.meta && typeof b.meta === 'object') {
       const m = cleanMeta(b.meta, { partial: true });

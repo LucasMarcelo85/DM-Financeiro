@@ -18,9 +18,14 @@ const TABS = [
   ['api', 'API e webhooks'],
   ['auditoria', 'Auditoria'],
 ];
-const firstTab = (perms, isPrimary) => TABS.find(([key]) => key === 'produtos' ? perms.includes(key) || perms.includes('estoque') : key === 'equipe' ? isPrimary : key === 'pedidos'
-  ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
-  : perms.includes(key))?.[0] || '';
+const tabsFor = (perms = [], isPrimary = false) => TABS.filter(([key]) => key === 'produtos'
+  ? perms.includes(key) || perms.includes('estoque')
+  : key === 'equipe'
+    ? isPrimary
+    : key === 'pedidos'
+      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
+      : perms.includes(key));
+const firstTab = (perms, isPrimary) => tabsFor(perms, isPrimary)[0]?.[0] || '';
 const foregroundFor = (color) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
   const channel = (offset) => {
@@ -51,12 +56,16 @@ export default function ShopApp() {
 
   useEffect(() => {
     if (!authed) { setPerms(null); return; }
+    let active = true;
     api.get('/shop-app/me').then((r) => {
+      if (!active) return;
       setPerms(r.user.perms);
       setIsPrimary(Boolean(r.user.isPrimary));
-      setTab(firstTab(r.user.perms, r.user.isPrimary));
+      const allowedTabs = tabsFor(r.user.perms, r.user.isPrimary).map(([key]) => key);
+      setTab((current) => allowedTabs.includes(current) ? current : firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
-    }).catch((e) => toast(e.message, 'error'));
+    }).catch((e) => { if (active) toast(e.message, 'error'); });
+    return () => { active = false; };
   }, [authed]);
 
   useEffect(() => {
@@ -204,33 +213,27 @@ export default function ShopApp() {
     );
   }
 
-  const tabs = TABS.filter(([key]) => key === 'produtos'
-    ? perms?.includes('produtos') || perms?.includes('estoque')
-    : key === 'equipe'
-      ? isPrimary
-    : key === 'pedidos'
-      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((p) => perms?.includes(p))
-      : perms?.includes(key));
+  const tabs = tabsFor(perms || [], isPrimary);
   const otherTab = tabs.find(([key]) => key !== 'pdv')?.[0];
 
   return (
     <>
       <header className="shop-app-bar" style={bar}>
         <strong style={{ fontSize: 18 }}>{info.name}</strong>
-        <nav style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
+        <nav role="tablist" aria-label="Áreas do aplicativo" style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
           {tabs.length > 1 && tabs.map(([key, label]) => (
-            <button key={key} type="button" className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
+            <button key={key} type="button" role="tab" aria-selected={tab === key} className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </nav>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShopToken(null); setAuthed(false); }}>Sair</button>
       </header>
-      <main style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+      <main id="shop-app-panel" role="tabpanel" style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
           : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
             : tab === 'produtos' ? <Products allow={perms} />
               : tab === 'equipe' ? <TeamManagement />
-              : tab === 'pedidos' ? <Orders allow={perms} />
-                : tab === 'pdv' ? <Orders allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
+              : tab === 'pedidos' ? <Orders key="shop-orders" allow={perms} />
+                : tab === 'pdv' ? <Orders key="shop-pdv" allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
                 : tab === 'api' ? <Api />
                   : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
                     : tab === 'entregas' ? <>

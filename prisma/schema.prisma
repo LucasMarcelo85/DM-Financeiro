@@ -751,6 +751,7 @@ model Store {
   appUserLimit           Int       @default(10) @map("app_user_limit")
   appProductLimit        Int       @default(0) @map("app_product_limit")
   appAuditEnabled        Boolean   @default(false) @map("app_audit_enabled")
+  appAuditInstanceLimit  Int       @default(0) @map("app_audit_instance_limit")
   appUsers               StoreUser[]
   stockFlows             StockFlow[]
   strategyRecords        OrderStrategyRecord[]

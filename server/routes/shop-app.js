@@ -42,7 +42,7 @@ const allowedPerms = (user, permissions, store) => {
     if (perm === 'api') return tabs.includes('api');
     if (perm === 'entregas') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'estoque') return tabs.includes('produtos') && limits.catalogProducts > 0;
-    if (perm === 'auditoria') return Boolean(store?.appAuditEnabled) && tabs.includes('auditoria') && limits.auditInstances > 0;
+    if (perm === 'auditoria') return Boolean(store?.appAuditEnabled && store.appAuditInstanceLimit > 0) && tabs.includes('auditoria') && limits.auditInstances > 0;
     return false;
   });
 };
@@ -124,7 +124,7 @@ const meDTO = (su, store) => ({
   app: {
     name: appName(store), color: appColor(store),
     whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
-    auditSend: Boolean(store.appAuditEnabled && limitsFor(store.user).auditSend),
+    auditSend: Boolean(store.appAuditEnabled && store.appAuditInstanceLimit > 0 && limitsFor(store.user).auditSend),
   },
 });
 

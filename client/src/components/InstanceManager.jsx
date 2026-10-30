@@ -249,7 +249,8 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
               ? 'Escolha como conectar: QR Code (WhatsApp comum) ou API oficial da Meta. As conversas passam a aparecer aqui em tempo real, só para leitura.'
               : <>Escolha como conectar: <strong>QR Code</strong> (leia com o celular que enviará as mensagens) ou <strong>API oficial da Meta</strong>.</>}
           </p>
-          <button className="btn btn-primary" onClick={() => setChoose(true)} disabled={busy === 'add'}>{busy === 'add' ? 'Criando conexão...' : audit ? 'Conectar número' : 'Conectar WhatsApp'}</button>
+          {!canAdd && <p className="muted small">{shop ? 'O criador do aplicativo ainda não liberou conexões de auditoria para este app.' : 'Não há limite de conexões disponível nesta conta.'}</p>}
+          <button className="btn btn-primary" onClick={() => setChoose(true)} disabled={!canAdd || busy === 'add'}>{busy === 'add' ? 'Criando conexão...' : audit ? 'Conectar número' : 'Conectar WhatsApp'}</button>
         </section>
       )}
 
