@@ -91,7 +91,7 @@ const PIXEL_CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https://www.facebook.com https://*.facebook.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com https://*.google.com https://*.doubleclick.net https://analytics.tiktok.com",
-  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
+  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com data:",
   "media-src 'self' https:",
   "connect-src 'self' https://www.facebook.com https://*.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.doubleclick.net https://analytics.tiktok.com https://*.tiktok.com",
   "frame-ancestors 'none'",
