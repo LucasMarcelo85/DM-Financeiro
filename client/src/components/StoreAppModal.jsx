@@ -63,6 +63,7 @@ export default function StoreAppModal({ storeId, onClose }) {
 
   const store = data?.store;
   const link = store ? (store.domain.verified ? `https://${store.domain.name}/app` : `${window.location.origin}/app/${store.slug}`) : '';
+  const appReady = Boolean(store?.app.enabled && data?.appAvailable);
 
   async function share() {
     const text = `Acesse o aplicativo da loja ${store.app.name || store.name}: ${link}`;
@@ -77,6 +78,21 @@ export default function StoreAppModal({ storeId, onClose }) {
       {!data ? <p className="muted">Carregando...</p> : (
         <div style={{ display: 'grid', gap: 14 }}>
           <p className="muted small">O lojista instala este aplicativo no celular. Escolha as áreas que cada acesso poderá usar; os dados e as conexões ficam limitados a este site.</p>
+
+          <section className="banner" aria-label="Link do aplicativo" style={{ display: 'grid', gap: 10 }}>
+            <div>
+              <strong>Link para enviar ao usuário</strong>
+              <code style={{ display: 'block', marginTop: 6, wordBreak: 'break-all' }}>{link}</code>
+            </div>
+            <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+              <button className="btn btn-primary btn-sm" disabled={!appReady} onClick={share}>Compartilhar</button>
+              <button className="btn btn-ghost btn-sm" disabled={!appReady} onClick={async () => toast((await copyText(link)) ? 'Link copiado!' : 'Copie o link manualmente.')}>Copiar link</button>
+              {appReady
+                ? <a className="btn btn-ghost btn-sm" href={link} target="_blank" rel="noopener noreferrer">Visualizar aplicativo</a>
+                : <button className="btn btn-ghost btn-sm" disabled>Visualizar aplicativo</button>}
+            </div>
+            {!appReady && <small className="muted">{!data.appAvailable ? 'O plano atual não disponibiliza o aplicativo.' : cfg.enabled ? 'Salve o aplicativo para ativar este link.' : 'Ative e salve o aplicativo para poder enviar este link.'}</small>}
+          </section>
 
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="checkbox" checked={cfg.enabled} disabled={!data.appAvailable} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} /> Aplicativo ativo
@@ -116,17 +132,6 @@ export default function StoreAppModal({ storeId, onClose }) {
           {data.availablePerms.includes('auditoria') && !cfg.auditEnabled && data.maxAppAuditInstances < 1 && <p className="muted small">Não há vagas de auditoria disponíveis. Reduza o limite de outro app ou amplie o limite da conta.</p>}
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
-
-          {store.app.enabled ? (
-            <div className="banner" style={{ flexWrap: 'wrap' }}>
-              <div><strong>Link do aplicativo</strong><code style={{ wordBreak: 'break-all', display: 'block' }}>{link}</code></div>
-              <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
-                <button className="btn btn-primary btn-sm" onClick={share}>Compartilhar</button>
-                <button className="btn btn-ghost btn-sm" onClick={async () => toast((await copyText(link)) ? 'Link copiado!' : 'Copie o link manualmente.')}>Copiar</button>
-                <a className="btn btn-ghost btn-sm" href={link} target="_blank" rel="noopener noreferrer">Visualizar aplicativo</a>
-              </div>
-            </div>
-          ) : <p className="muted small">{data.appAvailable ? 'Ative o aplicativo e salve para liberar o link de compartilhamento.' : 'O aplicativo desta loja não está disponível no plano atual.'}</p>}
 
           <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas ({data.users.length}/{Math.min(cfg.userLimit || 0, data.maxAppUsers)})</h3>
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
