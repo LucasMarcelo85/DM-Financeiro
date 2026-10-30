@@ -247,6 +247,51 @@ function MenuView({ el, device, mode }) {
   );
 }
 
+function ModalToolView({ el, mode }) {
+  const [open, setOpen] = useState(false);
+  const [stepIndex, setStepIndex] = useState(0);
+  const steps = el.steps?.length ? el.steps : [{ title: 'Etapa 1', content: '' }];
+  const step = steps[stepIndex] || steps[0];
+  useEffect(() => {
+    if (!open) return undefined;
+    const onKey = (event) => { if (event.key === 'Escape') setOpen(false); };
+    document.addEventListener('keydown', onKey);
+    return () => document.removeEventListener('keydown', onKey);
+  }, [open]);
+  return (
+    <>
+      <button type="button" className="pv-modal-trigger" onClick={mode === 'public' ? () => { setStepIndex(0); setOpen(true); } : undefined}>{el.trigger}</button>
+      {open && createPortal(
+        <div className="pv-modal-overlay" onMouseDown={(event) => { if (event.target === event.currentTarget) setOpen(false); }}>
+          <section className="pv-modal" role="dialog" aria-modal="true" aria-labelledby={`pv-modal-title-${el.id}`}>
+            <button type="button" className="pv-modal-close" onClick={() => setOpen(false)} aria-label="Fechar">×</button>
+            <h2 id={`pv-modal-title-${el.id}`}>{el.title}</h2>
+            <div className="pv-modal-progress" aria-label={`Etapa ${stepIndex + 1} de ${steps.length}`}>Etapa {stepIndex + 1} de {steps.length}</div>
+            <h3>{step.title}</h3>
+            <p className="pv-modal-content">{step.content}</p>
+            <div className="pv-modal-actions">
+              {stepIndex > 0 && <button type="button" className="pv-modal-secondary" onClick={() => setStepIndex((index) => index - 1)}>Voltar</button>}
+              {stepIndex < steps.length - 1
+                ? <button type="button" className="pv-modal-primary" onClick={() => setStepIndex((index) => index + 1)}>Continuar</button>
+                : <>
+                  {el.actionLabel && el.actionUrl && <a className="pv-modal-primary" href={el.actionUrl} target="_blank" rel="noopener noreferrer">{el.actionLabel}</a>}
+                  <button type="button" className="pv-modal-secondary" onClick={() => setOpen(false)}>Concluir</button>
+                </>}
+            </div>
+          </section>
+        </div>,
+        document.body,
+        `modal-${el.id}`,
+      )}
+    </>
+  );
+}
+
+function CustomCodeView({ el, mode }) {
+  const srcDoc = `<!doctype html><html><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta http-equiv="Content-Security-Policy" content="default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob:; media-src data: blob:; font-src data:; connect-src 'none'; frame-src 'none'; object-src 'none'; base-uri 'none'; form-action 'none'; navigate-to 'none'"><style>html,body{margin:0;min-height:100%;font-family:system-ui,sans-serif}body{overflow:auto}</style></head><body>${el.code || ''}</body></html>`;
+  return <iframe className="pv-custom-frame" title="Conteúdo personalizado" sandbox="allow-scripts" referrerPolicy="no-referrer" srcDoc={srcDoc} style={mode === 'edit' ? { pointerEvents: 'none' } : undefined} />;
+}
+
 function VideoView({ el, mode }) {
   const v = el.url ? parseVideo(el.url) : null;
   if (!v) return mode === 'edit' ? <div className="pv-ph"><span>Cole o link de um vídeo (YouTube ou Vimeo) no painel</span></div> : null;
@@ -374,6 +419,8 @@ function ElementViewBase({ el, device, mode, animate, products, z, onLink, onCar
   else if (el.t === 'carousel') content = <CarouselView el={el} mode={mode} />;
   else if (el.t === 'menu') content = <MenuView el={el} device={device} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
+  else if (el.t === 'modal') content = <ModalToolView el={el} mode={mode} />;
+  else if (el.t === 'custom') content = <CustomCodeView el={el} mode={mode} />;
   else if (el.t === 'catsearch') content = <CatSearchView el={el} mode={mode} />;
   else if (el.t === 'catgrid') content = <CatGridView el={el} device={device} mode={mode} />;
   else if (el.t === 'button') {

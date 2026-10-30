@@ -261,7 +261,7 @@ export const MAX_ELEMENTS = 200;
 export const DEVICES = ['desktop', 'tablet', 'mobile'];
 export const KINDS = new Set(['site', 'catalog']);
 
-const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'catsearch', 'catgrid', 'carousel', 'menu', 'spacer']);
+const EL_TYPES = new Set(['text', 'image', 'icon', 'button', 'shape', 'video', 'products', 'modal', 'custom', 'catsearch', 'catgrid', 'carousel', 'menu', 'spacer']);
 const ENTER = new Set(['none', 'fade', 'slide-up', 'slide-down', 'slide-left', 'slide-right', 'zoom-in', 'zoom-out', 'flip-x', 'flip-y', 'bounce', 'rotate', 'blur', 'drop']);
 const LOOP = new Set(['none', 'float', 'pulse', 'shake', 'spin', 'wiggle', 'glow', 'swing', 'heartbeat', 'rubber', 'bounce', 'tada', 'flash', 'hue']);
 const HOVER = new Set(['none', 'grow', 'shrink', 'lift', 'glow', 'rotate', 'tilt', 'shake', 'brighten', 'pulse']);
@@ -415,6 +415,26 @@ function cleanElement(raw) {
       });
       break;
     }
+    case 'modal':
+      Object.assign(el, {
+        trigger: line(raw.trigger, 60) || 'Saiba mais',
+        title: line(raw.title, 100) || 'Mais informações',
+        steps: (Array.isArray(raw.steps) ? raw.steps : []).slice(0, 8).map((step, index) => ({
+          id: typeof step?.id === 'string' && /^[\w-]{1,40}$/.test(step.id) ? step.id : `step${index + 1}`,
+          title: line(step?.title, 80) || `Etapa ${index + 1}`,
+          content: str(step?.content, 3000),
+        })),
+        actionLabel: line(raw.actionLabel, 40),
+        actionUrl: (() => {
+          const value = str(raw.actionUrl, 500).trim();
+          return /^https?:\/\/[^\s]+$/i.test(value) ? value : '';
+        })(),
+      });
+      if (!el.steps.length) el.steps.push({ id: 'step1', title: 'Etapa 1', content: '' });
+      break;
+    case 'custom':
+      el.code = str(raw.code, 12000);
+      break;
     case 'catsearch':
       Object.assign(el, { showSearch: bool(raw.showSearch, true), showCategories: bool(raw.showCategories, true), placeholder: line(raw.placeholder, 60) || 'Buscar produtos' });
       break;

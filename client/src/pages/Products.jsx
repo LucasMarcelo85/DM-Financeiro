@@ -237,7 +237,9 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
   const [stockQuantity, setStockQuantity] = useState(String(product?.stockQuantity || 0));
   const [moreProductPhotos, setMoreProductPhotos] = useState([]);
   const [active, setActive] = useState(product ? product.active : true);
-  const [varied, setVaried] = useState((product?.images.length || 0) > 1 || Boolean(product?.images.some((image) => image.label || image.color || image.size)));
+  const [varied, setVaried] = useState(editing
+    ? (product?.images.length || 0) > 0
+    : (product?.images.length || 0) > 1 || Boolean(product?.images.some((image) => image.label || image.color || image.size)));
   const [images, setImages] = useState(() => (product?.images || []).map((i) => ({
     key: `i${i.id}`, id: i.id, url: i.url,
     color: i.color || (!i.size ? i.label : ''), colorHex: i.colorHex || '', size: i.size || '',
@@ -294,7 +296,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
 
   function continueStep() {
     setError('');
-    if (step === 1 && varied && visible.some((image) => !image.color.trim() && !image.size.trim())) {
+    if (step === 1 && varied && visible.some((image) => !image.id && !image.color.trim() && !image.size.trim())) {
       return setError('Preencha cor ou tamanho para cada variação com foto, ou remova a foto sem variação.');
     }
     if (step === 2 && priceOptions.some((option) => !option.label.trim())) {
@@ -312,7 +314,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
   function productBody() {
     if (name.trim().length < 2) return { error: 'Informe o nome.' };
     if (!category.trim()) return { error: 'Informe a categoria.' };
-    if (varied && visible.some((i) => !i.color.trim() && !i.size.trim())) return { error: 'Informe cor ou tamanho de cada variação com foto.' };
+    if (varied && visible.some((i) => !i.id && !i.color.trim() && !i.size.trim())) return { error: 'Informe cor ou tamanho de cada variação com foto.' };
     if (priceOptions.some((option) => !option.label.trim())) return { error: 'Informe o nome de cada forma de preço ou remova a linha vazia.' };
     if (priceOptions.some((option) => option.scope !== 'cart_value' && (!/^\d+$/.test(option.minQuantity) || Number(option.minQuantity) < 1 || Number(option.minQuantity) > 999))) return { error: 'Informe a quantidade mínima de cada faixa entre 1 e 999.' };
     if (priceOptions.some((option) => option.scope === 'cart_value' && moneyToCents(option.minCartValue) < 1)) return { error: 'Informe o valor mínimo do carrinho para cada faixa baseada em valor.' };
@@ -322,6 +324,7 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
       kind, name: name.trim(), category: category.trim(), description: description.trim(), priceCents: moneyToCents(price), active,
       stockEnabled, stockQuantity: Number(stockQuantity) || 0,
       priceOptions: priceOptions.map((option) => ({ ...(option.id ? { id: option.id } : {}), label: option.label.trim(), priceCents: option.price === '' ? null : moneyToCents(option.price), minQuantity: Number(option.minQuantity) || 1, scope: option.scope, minCartCents: moneyToCents(option.minCartValue) })),
+      ...(editing ? { mainImage: product.mainImage ? { id: product.mainImage.id } : null } : {}),
       images: (varied ? visible : visible.slice(0, 1)).map((i) => ({ ...(i.id ? { id: i.id } : { data: i.data }), ...(varied ? { color: i.color.trim(), colorHex: i.colorHex, size: i.size.trim() } : {}), stockQuantity: Number(i.stockQuantity) || 0, priceCents: null })),
     } };
   }

@@ -21,7 +21,7 @@ import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
   { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
-  { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' },
+  { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' }, { t: 'custom', icon: 'braces' },
   { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
 ];
@@ -307,6 +307,14 @@ export default function PortfolioEditor() {
     addNew(t, base);
   }
 
+  const addProductsIndividually = useCallback((ids) => {
+    for (const productId of ids) {
+      const current = docRef.current;
+      const bottom = pageHeight(current, deviceRef.current, products, current.catalog);
+      if (!addNew('products', { ids: [productId] }, { x: 40, y: bottom + 24 })) break;
+    }
+  }, [products]);
+
   const patchSelected = useCallback((patch, key) => {
     const sel = selectedRef.current;
     if (sel) commit(patchElement(docRef.current, sel, patch), `${sel}:${key || Object.keys(patch).join(',')}`);
@@ -347,12 +355,13 @@ export default function PortfolioEditor() {
     patchSeo: (p, key) => commit(patchSeo(docRef.current, p), key || 'seo'),
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
+    addProductsIndividually,
     act, toast, saveSlug, copyLink,
     error: (m) => toast(m, 'error'),
     imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
     play: () => { setAnimate(true); setReplay((r) => r + 1); },
     openCatalogSettings: () => setCatalogCfg(true),
-  }), [patchSelected, setBox, commit, toast, meta?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [patchSelected, setBox, commit, toast, addProductsIndividually, meta?.path]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------- atalhos
   useEffect(() => {

@@ -77,7 +77,7 @@ export function cleanProduct(b = {}) {
     const colorHex = !isPrimary && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
     const stockQuantity = intIn(im.stockQuantity ?? 0, 0, 1_000_000, `Estoque da variação ${i + 1}`);
     const label = isPrimary ? '' : (line(im.label, 100) || [color, size].filter(Boolean).join(' · '));
-    if (!isPrimary && !label) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
+    if (!isPrimary && !label && !Number.isInteger(im.id)) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
     const out = { isPrimary, label, size, color, colorHex, priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;

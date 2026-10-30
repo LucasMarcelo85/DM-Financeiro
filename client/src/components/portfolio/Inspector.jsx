@@ -404,8 +404,9 @@ function CatGridSection({ el, api }) {
 function ProductsSection({ el, api, products }) {
   const [q, setQ] = useState('');
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
+  const ids = el.ids || [];
   const list = useMemo(() => products.filter((p) => !q.trim() || p.name.toLowerCase().includes(q.trim().toLowerCase()) || p.category.toLowerCase().includes(q.trim().toLowerCase())), [products, q]);
-  const toggle = (id) => api.patch({ ids: el.ids.includes(id) ? el.ids.filter((x) => x !== id) : [...el.ids, id].slice(0, 24) }, 'el:ids');
+  const toggle = (id) => api.patch({ ids: ids.includes(id) ? ids.filter((x) => x !== id) : [...ids, id].slice(0, 24) }, 'el:ids');
   return (
     <Section title="Produtos / serviços">
       {!products.length && <p className="muted small">Você ainda não cadastrou produtos. Cadastre na aba <strong>Produtos/Serviços</strong> e volte aqui.</p>}
@@ -415,13 +416,16 @@ function ProductsSection({ el, api, products }) {
           <div className="pe-prodlist">
             {list.map((p) => (
               <label key={p.id} className="pe-check pe-prod">
-                <input type="checkbox" checked={el.ids.includes(p.id)} onChange={() => toggle(p.id)} />
+                <input type="checkbox" checked={ids.includes(p.id)} onChange={() => toggle(p.id)} />
                 {(p.mainImage || p.images[0]) && <img src={(p.mainImage || p.images[0]).url} alt="" />}
                 <span>{p.name}<small>{p.category}</small></span>
               </label>
             ))}
           </div>
-          <p className="muted small">{el.ids.length} de 24 escolhidos.</p>
+          <p className="muted small">{ids.length} de 24 escolhidos.</p>
+          <button type="button" className="btn btn-ghost btn-sm" disabled={!ids.length} onClick={() => api.addProductsIndividually(ids)}>
+            Criar um bloco separado para cada selecionado
+          </button>
         </>
       )}
       <RangeField label="Colunas no computador" value={el.cols.desktop} min={1} max={6} onChange={(v) => api.patch({ cols: { ...el.cols, desktop: v } }, 'el:cols')} id="cols-d" />
@@ -431,6 +435,44 @@ function ProductsSection({ el, api, products }) {
       <Check label="Mostrar preço" checked={el.showPrice} onChange={f('showPrice')} />
       <TextField label="WhatsApp para pedidos (com DDD)" value={el.whatsapp ? maskPhone(el.whatsapp) : ''} onChange={(v) => f('whatsapp')(v.replace(/\D/g, ''))} placeholder="(85) 99999-9999" id="prod-wa" hint="Com o número, cada cartão ganha um botão que abre uma conversa já falando do produto." />
       {el.whatsapp && <TextField label="Texto do botão" value={el.buttonLabel} onChange={f('buttonLabel')} maxLength={40} id="prod-btn" />}
+    </Section>
+  );
+}
+
+function ModalSection({ el, api }) {
+  const set = (key) => (value) => api.patch({ [key]: value }, `modal:${key}`);
+  const patchStep = (id, patch) => api.patch({ steps: el.steps.map((step) => (step.id === id ? { ...step, ...patch } : step)) }, `modal:step:${id}`);
+  const steps = el.steps || [];
+  return (
+    <>
+      <Section title="Abertura do modal">
+        <TextField label="Texto do botão" value={el.trigger} onChange={set('trigger')} maxLength={60} id={`modal-trigger-${el.id}`} />
+        <TextField label="Título" value={el.title} onChange={set('title')} maxLength={100} id={`modal-title-${el.id}`} />
+      </Section>
+      <Section title="Etapas">
+        {steps.map((step, index) => (
+          <details key={step.id} className="pe-sub" open={index === 0}>
+            <summary>{step.title || `Etapa ${index + 1}`}</summary>
+            <TextField label="Nome da etapa" value={step.title} onChange={(value) => patchStep(step.id, { title: value })} maxLength={80} id={`modal-step-title-${step.id}`} />
+            <TextField label="Conteúdo" value={step.content} onChange={(value) => patchStep(step.id, { content: value })} multiline rows={5} maxLength={3000} id={`modal-step-content-${step.id}`} />
+            {steps.length > 1 && <button type="button" className="link-btn" onClick={() => api.patch({ steps: steps.filter((item) => item.id !== step.id) })}>Remover etapa</button>}
+          </details>
+        ))}
+        {steps.length < 8 && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.patch({ steps: [...steps, { id: sid(), title: `Etapa ${steps.length + 1}`, content: '' }] })}><EIcon name="plus" size={16} /> Adicionar etapa</button>}
+      </Section>
+      <Section title="Ação final (opcional)">
+        <TextField label="Texto do botão final" value={el.actionLabel} onChange={set('actionLabel')} maxLength={40} id={`modal-action-label-${el.id}`} />
+        <TextField label="Link http(s)" value={el.actionUrl} onChange={set('actionUrl')} maxLength={500} placeholder="https://..." id={`modal-action-url-${el.id}`} />
+      </Section>
+    </>
+  );
+}
+
+function CustomCodeSection({ el, api }) {
+  return (
+    <Section title="HTML, CSS e JavaScript">
+      <TextField label="Código (máximo de 12.000 caracteres)" value={el.code} onChange={(code) => api.patch({ code }, 'custom:code')} multiline rows={14} maxLength={12000} id={`custom-code-${el.id}`} />
+      <p className="muted small">O código é executado em um quadro isolado: não acessa a página, dados da loja, cookies ou serviços externos. Para imagens, use arquivos incorporados em data URL.</p>
     </Section>
   );
 }
@@ -487,7 +529,9 @@ export function ElementInspector({ el, device, api, products, layoutBox }) {
       {el.t === 'video' && <VideoSection el={el} api={api} />}
       {el.t === 'carousel' && <CarouselSection el={el} api={api} />}
       {el.t === 'menu' && <MenuSection el={el} api={api} />}
-      {el.t === 'products' && <ProductsSection el={el} api={api} products={products} />}
+      {el.t === 'products' && <ProductsSection key={el.id} el={el} api={api} products={products} />}
+      {el.t === 'modal' && <ModalSection el={el} api={api} />}
+      {el.t === 'custom' && <CustomCodeSection el={el} api={api} />}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}
       {linkable && (
