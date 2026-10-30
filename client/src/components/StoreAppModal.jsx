@@ -117,13 +117,13 @@ export default function StoreAppModal({ storeId, onClose }) {
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
-          {store.app.enabled && data.appAvailable ? (
+          {store.app.enabled ? (
             <div className="banner" style={{ flexWrap: 'wrap' }}>
               <div><strong>Link do aplicativo</strong><code style={{ wordBreak: 'break-all', display: 'block' }}>{link}</code></div>
               <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
                 <button className="btn btn-primary btn-sm" onClick={share}>Compartilhar</button>
                 <button className="btn btn-ghost btn-sm" onClick={async () => toast((await copyText(link)) ? 'Link copiado!' : 'Copie o link manualmente.')}>Copiar</button>
-                <a className="btn btn-ghost btn-sm" href={link} target="_blank" rel="noopener noreferrer">Abrir</a>
+                <a className="btn btn-ghost btn-sm" href={link} target="_blank" rel="noopener noreferrer">Visualizar aplicativo</a>
               </div>
             </div>
           ) : <p className="muted small">{data.appAvailable ? 'Ative o aplicativo e salve para liberar o link de compartilhamento.' : 'O aplicativo desta loja não está disponível no plano atual.'}</p>}
