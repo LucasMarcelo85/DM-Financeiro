@@ -36,14 +36,27 @@ export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false, auditInstanceLimit: 0 });
-  const [nu, setNu] = useState({ name: '', login: '', password: '', perms: ALL_PERMS, stockFlowIds: [], isPrimary: false });
+  const [appNotifications, setAppNotifications] = useState({ enabled: false, instanceId: '', fallbackEnabled: false, fallbackInstanceId: '' });
+  const [notificationInstances, setNotificationInstances] = useState([]);
+  const [nu, setNu] = useState({ name: '', login: '', perms: ALL_PERMS, stockFlowIds: [], isPrimary: false });
+  const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [busy, setBusy] = useState(false);
   const initializedFlowsStoreId = useRef(null);
   const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
     && (key !== 'auditoria' || cfg.auditEnabled && Number(cfg.auditInstanceLimit) > 0));
 
-  const load = useCallback(() => api.get(`/stores/${storeId}/app`).then((r) => {
+  const load = useCallback(() => Promise.all([
+    api.get(`/stores/${storeId}/app`),
+    api.get(`/instances?store=${storeId}&includeOwner=1`),
+  ]).then(([r, connectionData]) => {
     setData(r);
+    setNotificationInstances(connectionData.instances || []);
+    setAppNotifications({
+      enabled: r.appNotifications.enabled,
+      instanceId: r.appNotifications.instanceId,
+      fallbackEnabled: r.appNotifications.fallbackEnabled,
+      fallbackInstanceId: r.appNotifications.fallbackInstanceId,
+    });
     setCfg({
       enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
       userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
@@ -78,6 +91,12 @@ export default function StoreAppModal({ storeId, onClose }) {
       {!data ? <p className="muted">Carregando...</p> : (
         <div style={{ display: 'grid', gap: 14 }}>
           <p className="muted small">O lojista instala este aplicativo no celular. Escolha as áreas que cada acesso poderá usar; os dados e as conexões ficam limitados a este site.</p>
+          {temporaryCredential && <section className="banner" style={{ display: 'grid', gap: 8 }}>
+            <strong>Senha provisória de {temporaryCredential.name}</strong>
+            <p className="muted small" style={{ margin: 0 }}>Envie esta senha ao usuário. No primeiro acesso, ele precisará cadastrar uma senha nova. Ela não será exibida novamente.</p>
+            <code style={{ fontSize: 16, userSelect: 'all' }}>{temporaryCredential.password}</code>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={async () => toast((await copyText(temporaryCredential.password)) ? 'Senha copiada!' : 'Copie a senha manualmente.')}>Copiar senha</button>
+          </section>}
 
           <section className="banner" aria-label="Link do aplicativo" style={{ display: 'grid', gap: 10 }}>
             <div>
@@ -102,6 +121,59 @@ export default function StoreAppModal({ storeId, onClose }) {
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             Cor <input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
           </label>
+          <section className="banner" style={{ display: 'grid', gap: 10 }}>
+            <strong>Notificações de pedidos do app</strong>
+            <small className="muted">O destino é o WhatsApp cadastrado nas configurações de entrega da loja.</small>
+            <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+              <input type="checkbox" checked={appNotifications.enabled}
+                onChange={(e) => setAppNotifications({
+                  ...appNotifications,
+                  enabled: e.target.checked,
+                  fallbackEnabled: e.target.checked && appNotifications.fallbackEnabled,
+                })} />
+              Receber notificações pela instância da loja
+            </label>
+            {appNotifications.enabled && <>
+              <label style={{ display: 'grid', gap: 4 }}>
+                <span>Instância principal da loja</span>
+                <select className="input" value={appNotifications.instanceId}
+                  onChange={(e) => setAppNotifications({ ...appNotifications, instanceId: e.target.value })}>
+                  <option value="">Selecione uma instância</option>
+                  {notificationInstances.filter((instance) => (instance.storeId === Number(storeId)
+                    || String(instance.id) === appNotifications.instanceId)
+                    && (instance.connected || String(instance.id) === appNotifications.instanceId)).map((instance) => (
+                    <option key={instance.id} value={instance.id}>
+                      {instance.label || instance.metaPhoneDisplay || instance.name}
+                      {instance.storeId === null ? ' · conta do administrador (configuração anterior)' : ''}
+                      {instance.connected ? '' : ' · desconectada'}
+                    </option>
+                  ))}
+                </select>
+              </label>
+              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+                <input type="checkbox" checked={appNotifications.fallbackEnabled}
+                  disabled={!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)}
+                  onChange={(e) => setAppNotifications({ ...appNotifications, fallbackEnabled: e.target.checked })} />
+                Se houver falha, usar uma instância da conta do administrador
+              </label>
+              {appNotifications.fallbackEnabled && <label style={{ display: 'grid', gap: 4 }}>
+                <span>Instância reserva do administrador</span>
+                <select className="input" value={appNotifications.fallbackInstanceId}
+                  onChange={(e) => setAppNotifications({ ...appNotifications, fallbackInstanceId: e.target.value })}>
+                  <option value="">Selecione uma instância</option>
+                  {notificationInstances.filter((instance) => instance.storeId === null
+                    && (instance.connected || String(instance.id) === appNotifications.fallbackInstanceId)).map((instance) => (
+                    <option key={instance.id} value={instance.id}>
+                      {instance.label || instance.metaPhoneDisplay || instance.name}{instance.connected ? '' : ' · desconectada'}
+                    </option>
+                  ))}
+                </select>
+                <small className="muted">A instância reserva só será usada quando o envio pela instância da loja falhar.</small>
+              </label>}
+              {!notificationInstances.some((instance) => instance.storeId === Number(storeId) && instance.connected)
+                && <small className="muted">Conecte uma instância de envio nesta loja para receber notificações.</small>}
+            </>}
+          </section>
           <label style={{ display: 'grid', gap: 4 }}>
             <span>Quantidade de acessos permitidos nesta loja</span>
             <input className="input" type="number" min="1" max={data.maxAppUsers} step="1" value={cfg.userLimit}
@@ -131,7 +203,7 @@ export default function StoreAppModal({ storeId, onClose }) {
           </label>}
           {data.availablePerms.includes('auditoria') && !cfg.auditEnabled && data.maxAppAuditInstances < 1 && <p className="muted small">Não há vagas de auditoria disponíveis. Reduza o limite de outro app ou amplie o limite da conta.</p>}
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
-          <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, cfg), 'Aplicativo salvo.')}>Salvar aplicativo</button>
+          <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, { ...cfg, appNotifications }), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
           <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas ({data.users.length}/{Math.min(cfg.userLimit || 0, data.maxAppUsers)})</h3>
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
@@ -142,9 +214,17 @@ export default function StoreAppModal({ storeId, onClose }) {
                   <strong>{u.name}</strong> <code>{u.login}</code>
                   {u.isPrimary && <span className="pill pill-sent">Principal</span>}
                   <span className={`pill ${u.active ? 'pill-sent' : 'pill-failed'}`}>{u.active ? 'Ativo' : 'Desativado'}</span>
+                  {u.mustChangePassword && <span className="pill">Senha provisória</span>}
                   <span style={{ marginLeft: 'auto', display: 'flex', gap: 6 }}>
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { active: !u.active }))}>{u.active ? 'Desativar' : 'Ativar'}</button>
-                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { const p = window.prompt(`Nova senha para ${u.name} (mínimo 6 caracteres):`); if (p) run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { password: p }), 'Senha alterada.'); }}>Nova senha</button>
+                    <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => {
+                      if (window.confirm(`Criar uma senha provisória para ${u.name}? O usuário precisará cadastrar uma senha nova ao entrar.`)) {
+                        run(async () => {
+                          const result = await api.post(`/stores/${storeId}/app/users/${u.id}/reset-password`);
+                          setTemporaryCredential({ name: u.name, password: result.temporaryPassword });
+                        }, 'Senha provisória criada.');
+                      }
+                    }}>Resetar senha</button>
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
@@ -170,7 +250,7 @@ export default function StoreAppModal({ storeId, onClose }) {
           <div style={{ display: 'grid', gap: 8 }}>
             <input className="input" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="Nome do lojista" maxLength={80} aria-label="Nome do lojista" />
             <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
-            <input className="input" type="password" value={nu.password} onChange={(e) => setNu({ ...nu, password: e.target.value })} placeholder="Senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Senha" />
+            <p className="muted small" style={{ margin: 0 }}>Uma senha provisória será gerada após criar o acesso. O usuário deverá cadastrar uma senha nova ao entrar.</p>
             <strong className="small">O que este acesso pode usar:</strong>
             <PermChecks labels={permissionLabels} value={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} onChange={(perms) => setNu({ ...nu, perms })} />
             <strong className="small">Fluxos de estoque permitidos:</strong>
@@ -185,11 +265,12 @@ export default function StoreAppModal({ storeId, onClose }) {
               <input type="checkbox" checked={nu.isPrimary} onChange={(e) => setNu({ ...nu, isPrimary: e.target.checked })} />
               Este será o usuário principal e poderá delegar apenas os acessos que recebeu
             </label>
-            <button className="btn btn-primary" disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers) || !nu.name.trim() || !nu.login.trim() || nu.password.length < 6 || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
+            <button className="btn btn-primary" disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers) || !nu.name.trim() || !nu.login.trim() || !nu.perms.some((perm) => permissionLabels.some(([key]) => key === perm))}
               onClick={() => run(async () => {
                 const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
-                await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
-                setNu({ name: '', login: '', password: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
+                const result = await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
+                setTemporaryCredential({ name: result.user.name, password: result.temporaryPassword });
+                setNu({ name: '', login: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
               }, 'Acesso criado.')}>Criar acesso</button>
           </div>
         </div>

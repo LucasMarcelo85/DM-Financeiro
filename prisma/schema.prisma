@@ -772,6 +772,7 @@ model StoreUser {
   name         String
   login        String
   passwordHash String   @map("password_hash")
+  mustChangePassword Boolean @default(false) @map("must_change_password")
   active       Boolean  @default(true)
   perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,pdv,api,entregas,auditoria")
   isPrimary    Boolean  @default(false) @map("is_primary")

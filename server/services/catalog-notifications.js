@@ -28,8 +28,6 @@ export async function notifyCatalogOrder(order, event) {
       ...(order.storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId: order.storeId }] }),
     },
   });
-  if (!instance) throw new Error('A instância de notificação não pertence mais à conta ou a esta loja.');
-  if (await whatsapp.getState(instance) !== 'open') throw new Error('A instância de notificação está desconectada.');
 
   const lines = (Array.isArray(order.items) ? order.items : [])
     .map((item) => `• ${item.qty}x ${item.name}${item.variation ? ` (${item.variation})` : ''} — ${brl(item.totalCents)}`);
@@ -37,6 +35,28 @@ export async function notifyCatalogOrder(order, event) {
     ? [`✅ *Pedido pago pela InfinitePay*`, `Pedido: *#${order.code}*`, `Cliente: ${order.customerName}`, `Total: *${brl(order.totalCents)}*`, order.paymentId ? `ID do pagamento: ${order.paymentId}` : ''].filter(Boolean).join('\n')
     : [`🛍️ *Novo pedido recebido*`, `Pedido: *#${order.code}*`, `Cliente: ${order.customerName} · ${order.customerPhone}`, ...lines, `Total: *${brl(order.totalCents)}*`, order.paymentStatus === 'pending' ? 'Pagamento online pendente.' : ''].filter(Boolean).join('\n');
 
-  await whatsapp.sendText(instance, number, text);
-  return true;
+  let primaryError;
+  try {
+    if (!instance) throw new Error('A instância principal de notificação não pertence mais à conta ou a esta loja.');
+    if (await whatsapp.getState(instance) !== 'open') throw new Error('A instância principal de notificação está desconectada.');
+    await whatsapp.sendText(instance, number, text);
+    return true;
+  } catch (error) {
+    primaryError = error;
+  }
+
+  if (!notification.fallbackEnabled || !notification.fallbackInstanceId) throw primaryError;
+  const fallback = await prisma.instance.findFirst({
+    where: {
+      id: notification.fallbackInstanceId, userId: order.userId, purpose: 'envio', storeId: null,
+    },
+  });
+  if (!fallback) throw new Error(`Falha na instância da loja (${primaryError.message}) e a instância reserva não pertence mais à conta do administrador.`);
+  try {
+    if (await whatsapp.getState(fallback) !== 'open') throw new Error('A instância reserva do administrador está desconectada.');
+    await whatsapp.sendText(fallback, number, text);
+    return true;
+  } catch (fallbackError) {
+    throw new Error(`Falha no envio pela instância da loja (${primaryError.message}) e pela instância reserva (${fallbackError.message}).`);
+  }
 }

@@ -12,7 +12,12 @@ const num = (v) => (v === '' || v === null || v === undefined ? '' : String(v));
 
 const toForm = (c) => ({
   storeName: c.storeName, whatsapp: c.whatsapp ? formatStoredPhone(c.whatsapp) : '',
-  orderNotifications: { enabled: Boolean(c.orderNotifications?.enabled), instanceId: String(c.orderNotifications?.instanceId || '') },
+  orderNotifications: {
+    enabled: Boolean(c.orderNotifications?.enabled),
+    instanceId: String(c.orderNotifications?.instanceId || ''),
+    fallbackEnabled: Boolean(c.orderNotifications?.fallbackEnabled),
+    fallbackInstanceId: String(c.orderNotifications?.fallbackInstanceId || ''),
+  },
   checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
   pickup: { ...c.pickup },
   excursion: { ...c.excursion },
@@ -22,7 +27,12 @@ const toForm = (c) => ({
 
 const toConfig = (f) => ({
   storeName: f.storeName, whatsapp: f.whatsapp.replace(/\D/g, ''),
-  orderNotifications: { enabled: f.orderNotifications.enabled, instanceId: f.orderNotifications.instanceId || null },
+  orderNotifications: {
+    enabled: f.orderNotifications.enabled,
+    instanceId: f.orderNotifications.instanceId || null,
+    fallbackEnabled: f.orderNotifications.fallbackEnabled,
+    fallbackInstanceId: f.orderNotifications.fallbackEnabled ? f.orderNotifications.fallbackInstanceId || null : null,
+  },
   checkout: { minItems: Number(f.checkout.minItems) || 1, minSubtotalCents: moneyToCents(f.checkout.minSubtotal) },
   pickup: f.pickup,
   excursion: { enabled: f.excursion.enabled },
@@ -37,7 +47,7 @@ const toConfig = (f) => ({
   },
 });
 
-export default function CatalogSettings({ onClose, onSaved }) {
+export default function CatalogSettings({ onClose, onSaved, storeId: configuredStoreId }) {
   const toast = useToast();
   const [f, setF] = useState(null);
   const [info, setInfo] = useState({ hasSuperfreteToken: false });
@@ -50,18 +60,19 @@ export default function CatalogSettings({ onClose, onSaved }) {
   const [infiniteHandle, setInfiniteHandle] = useState('');
   const [paymentBusy, setPaymentBusy] = useState('');
   const [instances, setInstances] = useState([]);
+  const activeStore = configuredStoreId || (!isShopMode() ? getActiveStore() : null);
+  const settingsUrl = activeStore ? `/catalog/settings?store=${activeStore}` : '/catalog/settings';
 
   useEffect(() => {
-    api.get('/catalog/settings').then((r) => { setF(toForm(r.config)); setInfo(r); }).catch((e) => setError(e.message));
+    api.get(settingsUrl).then((r) => { setF(toForm(r.config)); setInfo(r); }).catch((e) => setError(e.message));
     api.get('/catalog/payments').then((r) => {
       setPaymentProviders(r.providers || []);
       setInfiniteHandle(r.providers?.find((p) => p.provider === 'infinitepay')?.handle || '');
     }).catch((e) => setError(e.message));
-    const activeStore = !isShopMode() ? getActiveStore() : null;
     const instanceQuery = new URLSearchParams({ includeOwner: '1' });
     if (activeStore) instanceQuery.set('store', activeStore);
     api.get(`/instances?${instanceQuery}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
-  }, []);
+  }, [settingsUrl]);
 
   if (!f) return <Modal title="Entregas e frete" onClose={onClose}><p className="muted">{error || 'Carregando...'}</p></Modal>;
 
@@ -80,7 +91,7 @@ export default function CatalogSettings({ onClose, onSaved }) {
   async function save() {
     setBusy(true); setError('');
     try {
-      const r = await api.put('/catalog/settings', { config: toConfig(f) });
+      const r = await api.put(settingsUrl, { config: toConfig(f) });
       setInfo(r); setF(toForm(r.config));
       toast('Configurações do catálogo salvas.');
       onSaved?.(r);
@@ -137,17 +148,48 @@ export default function CatalogSettings({ onClose, onSaved }) {
                 onChange={(e) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, instanceId: e.target.value } }))}
               >
                 <option value="">Selecione uma instância</option>
-                {instances.filter((instance) => instance.connected || String(instance.id) === f.orderNotifications.instanceId).map((instance) => (
+                {instances.filter((instance) => (!activeStore || instance.storeId === Number(activeStore)
+                  || String(instance.id) === f.orderNotifications.instanceId)
+                  && (instance.connected || String(instance.id) === f.orderNotifications.instanceId)).map((instance) => (
                   <option key={instance.id} value={instance.id}>
-                    {instance.label || instance.metaPhoneDisplay || instance.name}{instance.storeId ? ' · loja' : ' · conta do criador'}{instance.connected ? '' : ' · desconectada'}
+                    {instance.label || instance.metaPhoneDisplay || instance.name}
+                    {activeStore && instance.storeId === null ? ' · conta do administrador (configuração anterior)' : ''}
+                    {instance.connected ? '' : ' · desconectada'}
                   </option>
                 ))}
               </select>
             </label>
+            {activeStore && !isShopMode() && <>
+              <Check
+                label="Se a instância da loja falhar, usar uma instância da conta do administrador"
+                checked={f.orderNotifications.fallbackEnabled}
+                onChange={(fallbackEnabled) => setF((current) => ({
+                  ...current,
+                  orderNotifications: { ...current.orderNotifications, fallbackEnabled },
+                }))}
+              />
+              {f.orderNotifications.fallbackEnabled && <label className="field">
+                <span>Instância reserva da conta do administrador</span>
+                <select
+                  className="input"
+                  value={f.orderNotifications.fallbackInstanceId}
+                  onChange={(e) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, fallbackInstanceId: e.target.value } }))}
+                >
+                  <option value="">Selecione uma instância</option>
+                  {instances.filter((instance) => instance.storeId === null
+                    && (instance.connected || String(instance.id) === f.orderNotifications.fallbackInstanceId)).map((instance) => (
+                    <option key={instance.id} value={instance.id}>
+                      {instance.label || instance.metaPhoneDisplay || instance.name}{instance.connected ? '' : ' · desconectada'}
+                    </option>
+                  ))}
+                </select>
+                <small className="muted">Ela será usada somente quando o envio pela instância da loja falhar.</small>
+              </label>}
+            </>}
             <p className="muted small">
-              Os avisos de pedidos do catálogo serão enviados para o WhatsApp da loja informado acima, pela instância conectada à conta do criador ou a esta loja. Vendas registradas no PDV não geram notificações. Pagamentos confirmados pela InfinitePay também são notificados; marcações manuais de pagamento não enviam aviso.
+              Os avisos de pedidos do catálogo serão enviados para o WhatsApp da loja informado acima. Vendas registradas no PDV não geram notificações. Pagamentos confirmados pela InfinitePay também são notificados; marcações manuais de pagamento não enviam aviso.
             </p>
-            {!instances.some((instance) => instance.connected) && <p className="muted small">Conecte um WhatsApp na conta do criador ou na loja para habilitar o envio.</p>}
+            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore))) && <p className="muted small">Conecte um WhatsApp{activeStore ? ' nesta loja' : ' na conta'} para habilitar o envio.</p>}
           </>}
         </fieldset>
         <fieldset className="cs-box">

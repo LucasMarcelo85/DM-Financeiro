@@ -101,6 +101,10 @@ async function shopAuth(req, _res, next) {
   const su = await prisma.storeUser.findUnique({ where: { id }, include: { store: { include: { user: true } } } });
   if (!su || !su.active || !su.store.appEnabled || limitsFor(su.store.user).stores < 1) throw new AppError(401, 'Acesso desativado. Fale com a loja.', 'UNAUTHENTICATED');
   if (!computeAccess(su.store.user).hasAccess) throw new AppError(402, 'A licença desta loja expirou.', 'PAYMENT_REQUIRED');
+  if (su.mustChangePassword
+    && !((req.method === 'GET' && req.path === '/me') || (req.method === 'POST' && req.path === '/password'))) {
+    throw new AppError(403, 'Cadastre uma nova senha para continuar.', 'PASSWORD_CHANGE_REQUIRED');
+  }
   req.user = su.store.user;
   req.forcedStore = su.store.id;
   req.forcedAuditScope = `store:${su.store.id}`;
@@ -120,9 +124,13 @@ const needTab = (tab) => (req, _res, next) => {
 };
 
 const meDTO = (su, store) => ({
-  user: { name: su.name, perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean), store), isPrimary: su.isPrimary },
+  user: {
+    name: su.name, login: su.login,
+    perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean), store),
+    isPrimary: su.isPrimary, mustChangePassword: su.mustChangePassword,
+  },
   app: {
-    name: appName(store), color: appColor(store),
+    id: store.id, name: appName(store), color: appColor(store),
     whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
     auditSend: Boolean(store.appAuditEnabled && store.appAuditInstanceLimit > 0 && limitsFor(store.user).auditSend),
   },
@@ -130,6 +138,23 @@ const meDTO = (su, store) => ({
 
 router.get('/me', shopAuth, (req, res) => {
   res.json(meDTO(req.shopUser, req.shopUser.store));
+});
+
+router.post('/password', shopAuth, async (req, res) => {
+  const currentPassword = String(req.body?.currentPassword ?? '');
+  const password = String(req.body?.newPassword ?? '');
+  if (password.length < 6 || password.length > 72) {
+    throw new AppError(400, 'A nova senha precisa ter de 6 a 72 caracteres.');
+  }
+  if (!req.shopUser.mustChangePassword
+    && !await bcrypt.compare(currentPassword, req.shopUser.passwordHash)) {
+    throw new AppError(400, 'A senha atual está incorreta.');
+  }
+  const updated = await prisma.storeUser.update({
+    where: { id: req.shopUser.id },
+    data: { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: false },
+  });
+  res.json({ ...meDTO(updated, req.shopUser.store) });
 });
 
 const needPrimary = (req, _res, next) => {

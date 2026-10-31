@@ -1,18 +1,21 @@
 import { Router } from 'express';
 import bcrypt from 'bcryptjs';
+import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
-import { AppError } from '../utils/helpers.js';
+import { AppError, normalizePhone } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
 import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { isReservedSlug, isValidSlug, slugify } from '../utils/slug.js';
 import { ensureDefaultStockFlow } from '../services/inventory.js';
+import * as whatsapp from '../services/whatsapp.js';
 
 // Lojas extras da conta. Cada loja tem site, produtos, pedidos e domínio próprios.
 const router = Router();
 const MAX_APP_PRODUCTS = 2_147_483_647;
 const MAX_APP_AUDIT_INSTANCES = 2_147_483_647;
+const temporaryPassword = () => crypto.randomBytes(9).toString('base64url');
 
 const dto = (s) => ({
   id: s.id, name: s.name, slug: s.slug, path: `/${s.slug}`,
@@ -202,15 +205,9 @@ const cleanPerms = (v, user, store) => {
 };
 const userDTO = (u) => ({
   id: u.id, name: u.name, login: u.login, active: u.active,
-  isPrimary: u.isPrimary, stockFlowIds: u.stockFlowIds,
+  isPrimary: u.isPrimary, stockFlowIds: u.stockFlowIds, mustChangePassword: u.mustChangePassword,
   perms: u.perms.split(',').filter(Boolean), createdAt: u.createdAt,
 });
-const cleanPassword = (v) => {
-  const p = String(v ?? '');
-  if (p.length < 6 || p.length > 72) throw new AppError(400, 'A senha precisa ter de 6 a 72 caracteres.');
-  return p;
-};
-
 router.get('/:id/app', async (req, res) => {
   const store = await owned(req);
   const [users, limits] = await Promise.all([
@@ -236,6 +233,12 @@ router.get('/:id/app', async (req, res) => {
     store: {
       ...dto(store),
       app: { ...dto(store).app, productLimit: store.appProductLimit ?? Math.min(limits.catalogProducts, MAX_APP_PRODUCTS) },
+    },
+    appNotifications: {
+      enabled: Boolean(store.config?.orderNotifications?.enabled),
+      instanceId: String(store.config?.orderNotifications?.instanceId || ''),
+      fallbackEnabled: Boolean(store.config?.orderNotifications?.fallbackEnabled),
+      fallbackInstanceId: String(store.config?.orderNotifications?.fallbackInstanceId || ''),
     },
     users: users.map(userDTO),
     availablePerms: availablePerms(req.user),
@@ -277,6 +280,48 @@ router.put('/:id/app', async (req, res) => {
   if (auditEnabled && !availablePerms(req.user).includes('auditoria') && !unchangedAuditOverPlan) {
     throw new AppError(403, 'A auditoria não está disponível no plano ou nos adicionais desta conta.', 'LIMIT_REACHED');
   }
+  let appNotifications;
+  if (req.body?.appNotifications !== undefined) {
+    const raw = req.body.appNotifications || {};
+    appNotifications = {
+      enabled: Boolean(raw.enabled),
+      instanceId: raw.instanceId ? Number(raw.instanceId) : null,
+      fallbackEnabled: Boolean(raw.fallbackEnabled),
+      fallbackInstanceId: raw.fallbackInstanceId ? Number(raw.fallbackInstanceId) : null,
+    };
+    if (appNotifications.enabled && (!Number.isSafeInteger(appNotifications.instanceId) || appNotifications.instanceId < 1)) {
+      throw new AppError(400, 'Selecione a instância da loja para enviar as notificações.');
+    }
+    if (appNotifications.fallbackEnabled && (!appNotifications.enabled
+      || !Number.isSafeInteger(appNotifications.fallbackInstanceId) || appNotifications.fallbackInstanceId < 1)) {
+      throw new AppError(400, 'Selecione a instância do administrador para usar como reserva.');
+    }
+    if (appNotifications.enabled) {
+      if (!normalizePhone(store.config?.whatsapp)) {
+        throw new AppError(400, 'Informe o WhatsApp da loja nas configurações de entrega antes de ativar as notificações.');
+      }
+      let primary = await prisma.instance.findFirst({
+        where: { id: appNotifications.instanceId, userId: req.user.id, storeId: store.id, purpose: 'envio' },
+      });
+      if (!primary && appNotifications.instanceId === Number(store.config?.orderNotifications?.instanceId)) {
+        primary = await prisma.instance.findFirst({
+          where: { id: appNotifications.instanceId, userId: req.user.id, storeId: null, purpose: 'envio' },
+        });
+      }
+      if (!primary || await whatsapp.getState(primary) !== 'open') {
+        throw new AppError(400, 'A instância principal precisa estar conectada à loja.');
+      }
+      if (appNotifications.fallbackEnabled) {
+        const fallback = await prisma.instance.findFirst({
+          where: { id: appNotifications.fallbackInstanceId, userId: req.user.id, storeId: null, purpose: 'envio' },
+        });
+        if (appNotifications.fallbackInstanceId === appNotifications.instanceId
+          || !fallback || await whatsapp.getState(fallback) !== 'open') {
+          throw new AppError(400, 'A instância reserva precisa estar conectada à conta do administrador.');
+        }
+      }
+    }
+  }
   let saved;
   try {
     saved = await prisma.$transaction(async (tx) => {
@@ -302,12 +347,23 @@ router.put('/:id/app', async (req, res) => {
       if (auditInstanceLimit > availableAuditLimit && !unchangedOverLimit) {
         throw new AppError(400, `Você pode liberar até ${availableAuditLimit} conexões de auditoria para este app. O limite é compartilhado com os demais apps e com a conta principal.`);
       }
+      const currentConfig = store.config && typeof store.config === 'object' ? store.config : {};
       return tx.store.update({
         where: { id: store.id },
         data: {
           appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null,
           appColor: color || null, appUserLimit: userLimit, appProductLimit: productLimit, appAuditEnabled: auditEnabled,
           appAuditInstanceLimit: auditInstanceLimit,
+          ...(appNotifications ? {
+            config: {
+              ...currentConfig,
+              orderNotifications: {
+                ...currentConfig.orderNotifications,
+                ...appNotifications,
+                fallbackInstanceId: appNotifications.fallbackEnabled ? appNotifications.fallbackInstanceId : null,
+              },
+            },
+          } : {}),
         },
       });
     }, { isolationLevel: 'Serializable' });
@@ -333,7 +389,8 @@ router.post('/:id/app/users', async (req, res) => {
   if (!Array.isArray(requestedFlowIds) || requestedFlowIds.some((id) => !Number.isSafeInteger(Number(id)) || !availableFlowIds.includes(Number(id)))) {
     throw new AppError(400, 'Um ou mais fluxos de estoque não pertencem a esta loja.');
   }
-  const passwordHash = await bcrypt.hash(cleanPassword(req.body?.password), 10);
+  const password = temporaryPassword();
+  const passwordHash = await bcrypt.hash(password, 10);
   try {
     const u = await prisma.$transaction(async (tx) => {
       const userCount = await tx.storeUser.count({ where: { storeId: store.id } });
@@ -344,10 +401,11 @@ router.post('/:id/app/users', async (req, res) => {
           storeId: store.id, name, login, passwordHash, perms,
           stockFlowIds: [...new Set(requestedFlowIds.map(Number))],
           isPrimary: Boolean(req.body?.isPrimary),
+          mustChangePassword: true,
         },
       });
     }, { isolationLevel: 'Serializable' });
-    res.status(201).json({ user: userDTO(u) });
+    res.status(201).json({ user: userDTO(u), temporaryPassword: password });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Já existe um acesso com esse usuário nesta loja.');
     if (e?.code === 'P2034') throw new AppError(409, 'Os acessos da loja foram alterados ao mesmo tempo. Atualize a tela e tente novamente.', 'CONCURRENT_UPDATE');
@@ -374,12 +432,24 @@ router.patch('/:id/app/users/:uid', async (req, res) => {
     }
     data.stockFlowIds = [...new Set(req.body.stockFlowIds.map(Number))];
   }
-  if (req.body?.password) data.passwordHash = await bcrypt.hash(cleanPassword(req.body.password), 10);
   await prisma.$transaction(async (tx) => {
     if (data.isPrimary) await tx.storeUser.updateMany({ where: { storeId: store.id, isPrimary: true }, data: { isPrimary: false } });
     await tx.storeUser.update({ where: { id }, data });
   });
   res.json({ ok: true });
+});
+
+router.post('/:id/app/users/:uid/reset-password', async (req, res) => {
+  const store = await owned(req);
+  const id = Number(req.params.uid) || 0;
+  const user = await prisma.storeUser.findFirst({ where: { id, storeId: store.id } });
+  if (!user) throw new AppError(404, 'Acesso não encontrado.');
+  const password = temporaryPassword();
+  await prisma.storeUser.update({
+    where: { id },
+    data: { passwordHash: await bcrypt.hash(password, 10), mustChangePassword: true },
+  });
+  res.json({ temporaryPassword: password });
 });
 
 router.delete('/:id/app/users/:uid', async (req, res) => {

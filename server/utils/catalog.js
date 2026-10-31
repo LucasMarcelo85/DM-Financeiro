@@ -95,7 +95,7 @@ const UF = /^[A-Z]{2}$/;
 
 export const defaultCatalogConfig = () => ({
   storeName: '', whatsapp: '',
-  orderNotifications: { enabled: false, instanceId: null },
+  orderNotifications: { enabled: false, instanceId: null, fallbackEnabled: false, fallbackInstanceId: null },
   checkout: { minItems: 1, minSubtotalCents: 0 },
   pickup: { enabled: false, name: '', address: '' },
   excursion: { enabled: false },
@@ -120,12 +120,19 @@ export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
   const notificationInstanceId = !notificationsEnabled || notifications.instanceId === '' || notifications.instanceId === null || notifications.instanceId === undefined
     ? null
     : intIn(notifications.instanceId, 1, Number.MAX_SAFE_INTEGER, 'Instância de notificação');
+  const fallbackEnabled = notifications.fallbackEnabled === true;
+  const fallbackInstanceId = !fallbackEnabled || notifications.fallbackInstanceId === '' || notifications.fallbackInstanceId === null || notifications.fallbackInstanceId === undefined
+    ? null
+    : intIn(notifications.fallbackInstanceId, 1, Number.MAX_SAFE_INTEGER, 'Instância reserva de notificação');
   if (notificationsEnabled && (!whatsapp || !notificationInstanceId)) {
     throw new AppError(400, 'Informe o WhatsApp da loja e escolha uma instância para receber as notificações.');
   }
+  if (notificationsEnabled && fallbackEnabled && !fallbackInstanceId) {
+    throw new AppError(400, 'Escolha a instância da conta do administrador para usar como reserva.');
+  }
   const cfg = {
     storeName: line(r.storeName, 80), whatsapp: whatsapp || '',
-    orderNotifications: { enabled: notificationsEnabled, instanceId: notificationInstanceId },
+    orderNotifications: { enabled: notificationsEnabled, instanceId: notificationInstanceId, fallbackEnabled, fallbackInstanceId },
     checkout: {
       minItems: intIn(checkout.minItems ?? d.checkout.minItems, 1, 999, 'Quantidade mínima do pedido'),
       minSubtotalCents: intIn(checkout.minSubtotalCents ?? d.checkout.minSubtotalCents, 0, MAX_PRICE, 'Valor mínimo do pedido'),

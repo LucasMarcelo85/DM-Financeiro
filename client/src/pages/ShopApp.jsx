@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
 import { api, getShopToken, setShopToken } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
+import Modal from '../components/Modal.jsx';
 import Products from './Products.jsx';
 import Orders from './Orders.jsx';
 import Api from './Api.jsx';
@@ -46,6 +47,9 @@ export default function ShopApp() {
   const [info, setInfo] = useState(null);
   const [missing, setMissing] = useState(false);
   const [authed, setAuthed] = useState(Boolean(getShopToken()));
+  const [profile, setProfile] = useState(null);
+  const [appStoreId, setAppStoreId] = useState(null);
+  const [mustChangePassword, setMustChangePassword] = useState(false);
   const [perms, setPerms] = useState(null);
   const [isPrimary, setIsPrimary] = useState(false);
   const [tab, setTab] = useState('');
@@ -53,12 +57,18 @@ export default function ShopApp() {
   const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
+  const [accountOpen, setAccountOpen] = useState(false);
+  const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
+  const [passwordBusy, setPasswordBusy] = useState(false);
 
   useEffect(() => {
-    if (!authed) { setPerms(null); return; }
+    if (!authed) { setPerms(null); setProfile(null); setMustChangePassword(false); return; }
     let active = true;
     api.get('/shop-app/me').then((r) => {
       if (!active) return;
+      setProfile(r.user);
+      setAppStoreId(r.app.id);
+      setMustChangePassword(Boolean(r.user.mustChangePassword));
       setPerms(r.user.perms);
       setIsPrimary(Boolean(r.user.isPrimary));
       const allowedTabs = tabsFor(r.user.perms, r.user.isPrimary).map(([key]) => key);
@@ -76,6 +86,12 @@ export default function ShopApp() {
     const out = () => setAuthed(false);
     window.addEventListener('dm:shop-logout', out);
     return () => window.removeEventListener('dm:shop-logout', out);
+  }, []);
+
+  useEffect(() => {
+    const requirePasswordChange = () => setMustChangePassword(true);
+    window.addEventListener('dm:shop-password-required', requirePasswordChange);
+    return () => window.removeEventListener('dm:shop-password-required', requirePasswordChange);
   }, []);
 
   useEffect(() => {
@@ -97,12 +113,44 @@ export default function ShopApp() {
     try {
       const r = await api.post('/shop-app/login', { u: slug, login: form.login, password: form.password });
       setShopToken(r.token);
+      setProfile(r.user);
+      setAppStoreId(r.app.id);
+      setMustChangePassword(Boolean(r.user.mustChangePassword));
       setPerms(r.user.perms);
       setIsPrimary(Boolean(r.user.isPrimary));
       setTab(firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
       setAuthed(true);
     } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
+  }
+
+  async function changePassword(event) {
+    event.preventDefault();
+    if (passwordForm.newPassword !== passwordForm.confirmPassword) {
+      toast('A confirmação da nova senha não confere.', 'error');
+      return;
+    }
+    setPasswordBusy(true);
+    try {
+      const result = await api.post('/shop-app/password', {
+        ...(!mustChangePassword ? { currentPassword: passwordForm.currentPassword } : {}),
+        newPassword: passwordForm.newPassword,
+      });
+      setProfile(result.user);
+      setMustChangePassword(false);
+      setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setAccountOpen(false);
+      toast('Senha atualizada.');
+    } catch (error) {
+      toast(error.message, 'error');
+    } finally {
+      setPasswordBusy(false);
+    }
+  }
+
+  function logout() {
+    setShopToken(null);
+    setAuthed(false);
   }
 
   if (missing) return <main style={{ padding: 32, textAlign: 'center' }}><h1>Aplicativo indisponível</h1><p className="muted">Confira o endereço com a loja.</p></main>;
@@ -121,6 +169,30 @@ export default function ShopApp() {
           <input className="input" value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} placeholder="Usuário" autoCapitalize="none" autoComplete="username" aria-label="Usuário" />
           <input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha" autoComplete="current-password" aria-label="Senha" />
           <button className="btn btn-primary" disabled={busy || !form.login || !form.password}>{busy ? 'Entrando...' : 'Entrar'}</button>
+        </form>
+      </>
+    );
+  }
+
+  if (mustChangePassword) {
+    return (
+      <>
+        <header style={bar}>
+          <strong style={{ fontSize: 18 }}>{info.name}</strong>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
+        </header>
+        <form onSubmit={changePassword} style={{ maxWidth: 420, margin: '40px auto', padding: 16, display: 'grid', gap: 12 }}>
+          <h1 style={{ margin: 0 }}>Cadastre sua senha</h1>
+          <p className="muted" style={{ margin: 0 }}>Esta é uma senha provisória. Para continuar, escolha uma senha nova com pelo menos 6 caracteres.</p>
+          <input className="input" type="password" value={passwordForm.newPassword}
+            onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+            placeholder="Nova senha" autoComplete="new-password" aria-label="Nova senha" />
+          <input className="input" type="password" value={passwordForm.confirmPassword}
+            onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+            placeholder="Confirme a nova senha" autoComplete="new-password" aria-label="Confirme a nova senha" />
+          <button className="btn btn-primary" disabled={passwordBusy || passwordForm.newPassword.length < 6 || !passwordForm.confirmPassword}>
+            {passwordBusy ? 'Salvando...' : 'Cadastrar senha'}
+          </button>
         </form>
       </>
     );
@@ -225,7 +297,8 @@ export default function ShopApp() {
             <button key={key} type="button" role="tab" aria-selected={tab === key} className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
           ))}
         </nav>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => { setShopToken(null); setAuthed(false); }}>Sair</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}>Usuário</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
       </header>
       <main id="shop-app-panel" role="tabpanel" style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
@@ -243,9 +316,31 @@ export default function ShopApp() {
                         <InstanceManager purpose="envio" />
                         <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas, frete e notificações</button>
                       </section>
-                      {catalogSettingsOpen && <CatalogSettings onClose={() => setCatalogSettingsOpen(false)} />}
+                      {catalogSettingsOpen && <CatalogSettings storeId={appStoreId} onClose={() => setCatalogSettingsOpen(false)} />}
                     </> : null}
       </main>
+      {accountOpen && <Modal title="Usuário e senha" onClose={() => setAccountOpen(false)}>
+        <div style={{ display: 'grid', gap: 12 }}>
+          <div><strong>Nome</strong><div>{profile?.name}</div></div>
+          <div><strong>Usuário de acesso</strong><div><code>{profile?.login}</code></div></div>
+          <hr style={{ width: '100%', border: 0, borderTop: '1px solid var(--line)' }} />
+          <form onSubmit={changePassword} style={{ display: 'grid', gap: 10 }}>
+            <strong>Trocar senha</strong>
+            <input className="input" type="password" value={passwordForm.currentPassword}
+              onChange={(e) => setPasswordForm({ ...passwordForm, currentPassword: e.target.value })}
+              placeholder="Senha atual" autoComplete="current-password" aria-label="Senha atual" />
+            <input className="input" type="password" value={passwordForm.newPassword}
+              onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
+              placeholder="Nova senha (mínimo 6 caracteres)" autoComplete="new-password" aria-label="Nova senha" />
+            <input className="input" type="password" value={passwordForm.confirmPassword}
+              onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
+              placeholder="Confirme a nova senha" autoComplete="new-password" aria-label="Confirme a nova senha" />
+            <button className="btn btn-primary" disabled={passwordBusy || !passwordForm.currentPassword || passwordForm.newPassword.length < 6 || !passwordForm.confirmPassword}>
+              {passwordBusy ? 'Salvando...' : 'Trocar senha'}
+            </button>
+          </form>
+        </div>
+      </Modal>}
     </>
   );
 }

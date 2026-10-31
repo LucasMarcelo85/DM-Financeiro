@@ -115,14 +115,32 @@ router.put('/settings', async (req, res) => {
   const token = current.token;
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
   if (cfg.orderNotifications.enabled) {
-    const instance = await prisma.instance.findFirst({
+    let instance = await prisma.instance.findFirst({
       where: {
         id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
-        ...(storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId }] }),
+        storeId,
       },
     });
+    const previousInstanceId = current.cfg.orderNotifications?.instanceId;
+    if (!instance && storeId !== null && cfg.orderNotifications.instanceId === previousInstanceId) {
+      instance = await prisma.instance.findFirst({
+        where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+      });
+    }
     if (!instance || await whatsapp.getState(instance) !== 'open') {
-      throw new AppError(400, 'Selecione uma instância de WhatsApp conectada da sua conta ou desta loja.');
+      throw new AppError(400, storeId === null
+        ? 'Selecione uma instância de WhatsApp conectada da conta.'
+        : 'Selecione uma instância de WhatsApp conectada desta loja.');
+    }
+    if (cfg.orderNotifications.fallbackEnabled) {
+      if (storeId === null) throw new AppError(400, 'A instância reserva só pode ser configurada para uma loja.');
+      const fallback = await prisma.instance.findFirst({
+        where: { id: cfg.orderNotifications.fallbackInstanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+      });
+      if (cfg.orderNotifications.fallbackInstanceId === cfg.orderNotifications.instanceId
+        || !fallback || await whatsapp.getState(fallback) !== 'open') {
+        throw new AppError(400, 'Selecione uma instância conectada da conta do administrador como reserva.');
+      }
     }
   }
   if (storeId) await prisma.store.update({ where: { id: storeId }, data: { config: cfg } });
