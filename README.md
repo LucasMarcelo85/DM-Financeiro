@@ -1,6 +1,6 @@
 # DM Gerenciador
 
-Plataforma de gestão para pequenos negócios, lojas, clínicas, agências e prestadores de serviços. Reúne clientes, cobranças e lembretes pelo WhatsApp, contratos, portfólios, catálogo de produtos e pedidos, com planos e teste grátis configuráveis.
+Plataforma de gestão para pequenos negócios, lojas, clínicas, agências e prestadores de serviços. Reúne clientes, cobranças e lembretes pelo WhatsApp, atendimento com IA, contratos, portfólios, catálogo de produtos e pedidos, com planos e teste grátis configuráveis.
 
 **Stack:** Node.js + Express + **PostgreSQL com Prisma** (backend) · React + Vite (frontend).
 
@@ -29,7 +29,7 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
 
 - Use um banco **só para este sistema**. O Prisma recusa criar tabelas em um banco que já tem outras (erro `P3005`).
 - Senha com caracteres especiais (`@ : / ? # %`) precisa ser codificada (`@` vira `%40`).
-- Tabelas: `users`, `instances`, `payments`, `contacts` (clientes), `schedules` (cobranças e lembretes agendados), `messages` (histórico) e `billing_payments` (cobranças marcadas como pagas).
+- Tabelas: `users`, `instances`, `payments`, `contacts` (clientes), `schedules` (cobranças e lembretes agendados), `messages` (histórico), `billing_payments` (cobranças marcadas como pagas), `ai_agents`, `ai_conversations` e `ai_messages` (agentes e conversas com IA).
 
 ## O que o sistema faz
 
@@ -48,7 +48,8 @@ SMOKE_DATABASE_URL="postgres://usuario:senha@localhost:5432/postgres" npm run sm
   Períodos: **mensal** (1 mensalidade, 30 dias), **semestral** (paga 5 mensalidades, 183 dias) e **anual** (paga 9 mensalidades, 365 dias). A tela de planos mostra o valor total de cada período lado a lado, sem destacar o desconto. Cada pagamento guarda o período e os dias que libera. O admin lista e exclui usuários, troca o plano e dá acesso mensal (+30 dias).
 - **Depois do teste:** o acesso é bloqueado até o pagamento pelo link da InfinitePay (confirmado direto com a InfinitePay). O envio automático também pausa enquanto não houver acesso.
 - **WhatsApp:** a instância se chama como o CPF/CNPJ. Luz verde = conectado, vermelha = desconectado.
-- **Clientes:** salvos uma vez (nome e WhatsApp) e escolhidos por busca ao criar cobranças e lembretes. Um cliente novo digitado no formulário já é salvo automaticamente.
+- **Atendimento com IA:** agentes de marketing ou atendimento com Gemini, ChatGPT ou Claude; prompts editáveis, credenciais criptografadas, limite mensal de respostas, contatos de clientes/pedidos, campanhas e histórico de conversas atualizado automaticamente. O uso exibido é o contabilizado pelo sistema; saldo e recarga são administrados no painel de cada provedor. Para receber mensagens pela API oficial da Meta, configure o webhook informado no menu IA; conexões Evolution configuram o webhook automaticamente. O contexto dos pedidos inclui até os 100 pedidos mais recentes associados ao telefone do cliente.
+- **Clientes:** salvos uma vez (nome e WhatsApp) e escolhidos por busca ao criar cobranças e lembretes. Um cliente novo digitado no formulário já é salvo automaticamente. A área IA também lista clientes cadastrados e números de pedidos recentes, com campanhas limitadas a 100 contatos por agente.
 - **Cobranças e lembretes:** *avulsos* (uma vez) ou *mensais* (todo mês, no mesmo dia; dia 31 vira o último dia em meses curtos). O usuário escolhe o vencimento, quantos dias **antes** enviar (no dia, 1, 2, 3, 5, 7 ou até 30) e o **horário**. Também dá para **enviar agora**. A mensagem aceita `{nome}`, `{valor}` e `{vencimento}`, trocados na hora do envio.
 - **Link ou Pix:** sai em uma **segunda mensagem**, para copiar e colar com um toque.
 - **Envio automático:** o sistema verifica a cada 30 s (`SCHEDULER_INTERVAL_SECONDS`). Se o WhatsApp estiver desconectado, tenta de novo a cada 15 min, até 4 vezes. Se o horário passar mais de 6 horas (sistema parado, por exemplo), **não** envia a cobrança atrasada e registra a falha. O envio não duplica, mesmo com mais de uma cópia do sistema rodando.

@@ -24,6 +24,7 @@ import Profile from './pages/Profile.jsx';
 import Products from './pages/Products.jsx';
 import Orders from './pages/Orders.jsx';
 import Api from './pages/Api.jsx';
+import AiService from './pages/AiService.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import PinPrompt from './components/PinPrompt.jsx';
 import { isTabLocked, tabOfPath } from './lib/pin.js';
@@ -106,6 +107,7 @@ export default function App() {
         <Route path="produtos" element={<Products />} />
         <Route path="pedidos" element={<Orders />} />
         <Route path="api" element={<Api />} />
+        <Route path="ia" element={<AiService />} />
         <Route path="plano" element={<Billing />} />
         <Route path="perfil" element={<Profile />} />
         <Route path="pagamento/retorno" element={<PaymentReturn />} />

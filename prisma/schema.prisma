@@ -111,6 +111,7 @@ model User {
   stockFlows         StockFlow[]
   apiTokens          ApiToken[]
   webhookEndpoints   ApiWebhookEndpoint[]
+  aiAgents           AiAgent[]
 
   @@map("users")
 }
@@ -143,6 +144,7 @@ model Instance {
   schedules     Schedule[]
   auditChats    AuditChat[]
   auditContacts AuditContact[]
+  aiAgents      AiAgent[]
 
   @@index([userId, purpose])
   @@index([userId, purpose, auditScope])
@@ -889,4 +891,62 @@ model PosSettings {
   @@unique([userId, scopeKey])
   @@index([storeId])
   @@map("pos_settings")
+}
+
+model AiAgent {
+  id              Int      @id @default(autoincrement())
+  userId          Int      @map("user_id")
+  instanceId      Int?     @map("instance_id")
+  name            String
+  provider        String
+  model           String
+  apiKey          String   @map("api_key")
+  mode            String   @default("atendimento")
+  prompt          String
+  monthlyLimit    Int      @default(100) @map("monthly_limit")
+  active          Boolean  @default(true)
+  contactIds      Json     @default("[]") @map("contact_ids")
+  createdAt       DateTime @default(now()) @map("created_at")
+  updatedAt       DateTime @updatedAt @map("updated_at")
+
+  user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance     Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  conversations AiConversation[]
+
+  @@index([userId, mode])
+  @@index([instanceId, active])
+  @@map("ai_agents")
+}
+
+model AiConversation {
+  id        Int      @id @default(autoincrement())
+  agentId   Int      @map("agent_id")
+  phone     String
+  name      String   @default("")
+  updatedAt DateTime @updatedAt @map("updated_at")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  agent    AiAgent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  messages AiMessage[]
+
+  @@unique([agentId, phone])
+  @@index([agentId, updatedAt])
+  @@map("ai_conversations")
+}
+
+model AiMessage {
+  id             Int      @id @default(autoincrement())
+  conversationId Int      @map("conversation_id")
+  externalId     String?  @map("external_id")
+  role           String
+  content        String
+  inputTokens    Int      @default(0) @map("input_tokens")
+  outputTokens   Int      @default(0) @map("output_tokens")
+  createdAt      DateTime @default(now()) @map("created_at")
+
+  conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
+
+  @@unique([conversationId, externalId])
+  @@index([conversationId, createdAt])
+  @@map("ai_messages")
 }

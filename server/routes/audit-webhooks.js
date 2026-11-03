@@ -3,7 +3,8 @@ import { prisma } from '../prisma.js';
 import { decrypt, safeEqual } from '../utils/secret.js';
 import { evolutionTokenFor } from '../utils/webhooks.js';
 import * as meta from '../services/meta.js';
-import { ingestEvolution, ingestMeta } from '../services/audit.js';
+import { fromEvolution, ingestEvolution, ingestMeta } from '../services/audit.js';
+import { receiveAiMessage } from './ai.js';
 
 const lastTouch = new Map(); // grava "último evento recebido" no máximo a cada 10 s por conexão
 
@@ -23,8 +24,18 @@ router.post('/evolution/:name', express.json({ limit: '40mb' }), async (req, res
       }
       await ingestEvolution(inst, req.body?.event, req.body?.data);
     }
+    const eventType = String(req.body?.event || '').toLowerCase().replace(/_/g, '.');
+    if (inst?.provider === 'evolution' && eventType === 'messages.upsert') {
+      const items = Array.isArray(req.body?.data) ? req.body.data : req.body?.data ? [req.body.data] : [];
+      for (const item of items) {
+        const message = fromEvolution(item);
+        if (message && !message.fromMe && !message.isGroup && message.type === 'text') {
+          await receiveAiMessage(inst, { phone: message.phone, name: message.chatName, text: message.body, externalId: message.externalId });
+        }
+      }
+    }
   } catch (e) {
-    console.error(`[auditoria] erro ao receber evento de ${name}:`, e);
+    console.error(`[webhook] erro ao receber evento de ${name}:`, e);
   }
   return res.json({ ok: true });
 });
@@ -42,15 +53,20 @@ router.post('/meta', async (req, res) => {
   try {
     const events = meta.parseWebhook(req.body);
     for (const ev of events) {
-      const insts = await prisma.instance.findMany({ where: { provider: 'meta', purpose: 'auditoria', metaPhoneNumberId: ev.phoneNumberId }, include: { user: true } });
+      const insts = await prisma.instance.findMany({ where: { provider: 'meta', metaPhoneNumberId: ev.phoneNumberId }, include: { user: true } });
       for (const inst of insts) {
         // O App Secret assina cada webhook: sem assinatura válida a mensagem é ignorada.
         if (!meta.verifySignature(req.rawBody, req.get('x-hub-signature-256'), decrypt(inst.metaAppSecret))) continue;
-        await ingestMeta(inst, ev);
+        if (inst.purpose === 'auditoria') await ingestMeta(inst, ev);
+        for (const message of ev.messages || []) {
+          if (!message.fromMe && message.type === 'text') {
+            await receiveAiMessage(inst, { phone: message.jid, name: message.pushName, text: message.body, externalId: message.externalId });
+          }
+        }
       }
     }
   } catch (e) {
-    console.error('[auditoria] erro ao receber evento da Meta:', e);
+    console.error('[webhook] erro ao receber evento da Meta:', e);
   }
   return res.json({ ok: true });
 });

@@ -13,7 +13,7 @@ const DEFAULT_PLANS = [
   { id: 'ouro', name: 'Ouro', color: '#b98a0f', sortOrder: 3, instances: 3, auditInstances: 5, contracts: 20, portfolios: 7, catalogProducts: 120, appUsers: 10, auditSend: true },
 ];
 // Abas do menu que o administrador pode liberar, esconder e ordenar em cada plano.
-export const PLAN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api'];
+export const PLAN_TABS = ['inicio', 'whatsapp', 'clientes', 'cobrancas', 'lembretes', 'contratos', 'auditoria', 'portfolio', 'produtos', 'pedidos', 'api', 'ia'];
 const cleanTabs = (list) => (Array.isArray(list)
   ? [...new Set(list.filter((tab) => PLAN_TABS.includes(tab)))]
   : [...PLAN_TABS]);

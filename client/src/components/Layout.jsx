@@ -19,6 +19,7 @@ const NAV = [
   { to: '/produtos', label: 'Produtos', icon: 'box', feature: 'catalog' },
   { to: '/pedidos', label: 'Pedidos', icon: 'receipt', feature: 'catalog' },
   { to: '/api', label: 'API', icon: 'link' },
+  { to: '/ia', label: 'IA', icon: 'sparkles' },
   { to: '/plano', label: 'Plano', icon: 'card', always: true },
   { to: '/perfil', label: 'Perfil', icon: 'gear', always: true },
 ];
