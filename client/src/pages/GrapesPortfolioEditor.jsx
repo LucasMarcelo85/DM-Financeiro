@@ -4,7 +4,6 @@ import grapesjs from 'grapesjs';
 import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
 import Modal from '../components/Modal.jsx';
-import { GRAPES_BLOCKS, GRAPES_TEMPLATES } from '../lib/portfolio/grapesTemplates.js';
 import { cleanGrapesCss } from '../lib/portfolio/grapesCss.js';
 import { cleanGrapesHtml, makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
 import '../lib/portfolio/grapesEditor.css';
@@ -32,9 +31,9 @@ export default function GrapesPortfolioEditor() {
   const [error, setError] = useState('');
   const [showPreview, setShowPreview] = useState(false);
   const [htmlToolOpen, setHtmlToolOpen] = useState(false);
-  const [importText, setImportText] = useState('');
+  const [htmlText, setHtmlText] = useState('');
+  const [cssText, setCssText] = useState('');
   const [previewSrc, setPreviewSrc] = useState('');
-  const [templateKey, setTemplateKey] = useState('');
   const [device, setDevice] = useState('Desktop');
   const fileInput = useRef(null);
   const imageInput = useRef(null);
@@ -88,10 +87,8 @@ export default function GrapesPortfolioEditor() {
       setName(portfolio.name);
       setPublished(portfolio.published);
       if (portfolio.data?.editor === 'grapesjs') {
-        setTemplateKey('saved');
         setCanSave(true);
       }
-      else setTemplateKey('');
     }).catch((loadError) => {
       if (!active) return;
       toast(loadError.message, 'error');
@@ -118,19 +115,7 @@ export default function GrapesPortfolioEditor() {
           { name: 'Celular', width: '375px', widthMedia: '575px' },
         ],
       },
-      blockManager: { appendTo: '#gpe-blocks' },
-      styleManager: {
-        appendTo: '#gpe-styles',
-        sectors: [
-          { name: 'Layout', open: true, properties: ['display', 'position', 'top', 'right', 'left', 'bottom', 'width', 'height', 'max-width', 'min-height', 'margin', 'padding', 'gap'] },
-          { name: 'Tipografia', open: false, properties: ['font-family', 'font-size', 'font-weight', 'letter-spacing', 'color', 'line-height', 'text-align', 'text-decoration'] },
-          { name: 'Fundo', open: false, properties: ['background-color', 'background', 'background-image', 'background-size', 'background-position'] },
-          { name: 'Bordas e efeitos', open: false, properties: ['border', 'border-radius', 'box-shadow', 'opacity'] },
-          { name: 'Avançado', open: false, properties: ['overflow', 'z-index', 'cursor', 'transition'] },
-        ],
-      },
-      layerManager: { appendTo: '#gpe-layers' },
-      traitManager: { appendTo: '#gpe-traits' },
+      panels: { defaults: [] },
       assetManager: {
         assets: [],
         uploadFile: (event) => {
@@ -146,14 +131,6 @@ export default function GrapesPortfolioEditor() {
       projectData: {},
     });
     editorRef.current = editor;
-    for (const block of GRAPES_BLOCKS) {
-      editor.BlockManager.add(block.id, {
-        label: block.label,
-        category: block.category,
-        content: block.content,
-        activate: false,
-      });
-    }
     if (page.data?.editor === 'grapesjs') {
       editor.setComponents(cleanGrapesHtml(page.data.html || ''));
       editor.setStyle(cleanGrapesCss(page.data.css || ''));
@@ -165,6 +142,10 @@ export default function GrapesPortfolioEditor() {
       editorRef.current = null;
     };
   }, [page, markCanvasDirty, addImageFiles]);
+
+  useEffect(() => {
+    if (page && page.data?.editor !== 'grapesjs') setHtmlToolOpen(true);
+  }, [page]);
 
   useEffect(() => {
     const warn = (event) => {
@@ -194,7 +175,7 @@ export default function GrapesPortfolioEditor() {
   const save = useCallback(async () => {
     if (status === 'saving') return false;
     if (!canSave) {
-      toast('Adicione um bloco, escolha um modelo ou importe HTML antes de salvar esta página neste editor.', 'error');
+      toast('Insira o HTML e o CSS da página para começar a editar no canvas.', 'error');
       return false;
     }
     setStatus('saving');
@@ -214,35 +195,36 @@ export default function GrapesPortfolioEditor() {
     }
   }, [canSave, getDocument, id, name, status, toast]);
 
-  const applyTemplate = (template) => {
-    if (!editorRef.current) return;
-    if (page?.data?.editor !== 'grapesjs' && page?.data?.v && !window.confirm('Esta página usa o editor atual. Ao salvar aqui, o conteúdo antigo será substituído pelo modelo escolhido. Quer continuar?')) return;
-    initializing.current = true;
-    editorRef.current.setComponents(template.html);
-    editorRef.current.setStyle(template.css);
-    setTemplateKey(template.id);
-    requestAnimationFrame(() => { initializing.current = false; markCanvasDirty(); });
+  const openHtmlTool = () => {
+    const editor = editorRef.current;
+    if (editor && canSave) {
+      setHtmlText(editor.getHtml());
+      setCssText(editor.getCss());
+    } else {
+      setHtmlText('');
+      setCssText('');
+    }
+    setHtmlToolOpen(true);
   };
 
-  const importHtml = (source) => {
+  const applyHtmlToCanvas = () => {
     if (!editorRef.current) return;
-    if (source.length > HTML_IMPORT_LIMIT) {
-      toast('O HTML pode ter no máximo 1 MB.', 'error');
+    if (htmlText.length > HTML_IMPORT_LIMIT || cssText.length > HTML_IMPORT_LIMIT) {
+      toast('O HTML e o CSS podem ter no máximo 1 MB cada.', 'error');
       return;
     }
     try {
-      const parsed = new DOMParser().parseFromString(source, 'text/html');
+      const parsed = new DOMParser().parseFromString(htmlText, 'text/html');
       const stylesheet = [...parsed.querySelectorAll('style')].map((style) => style.textContent || '').join('\n');
-      const content = parsed.body.innerHTML || source;
+      const content = parsed.body.innerHTML || htmlText;
       const clean = cleanGrapesHtml(content);
-      const css = stylesheet ? cleanGrapesCss(stylesheet) : '';
+      const css = cleanGrapesCss([stylesheet, cssText].filter(Boolean).join('\n'));
       initializing.current = true;
       editorRef.current.setComponents(clean);
       editorRef.current.setStyle(css);
-      setTemplateKey('imported');
       setHtmlToolOpen(false);
       requestAnimationFrame(() => { initializing.current = false; markCanvasDirty(); });
-      toast('HTML importado e analisado pelo editor. Scripts e conteúdo ativo foram removidos.');
+      toast('HTML e CSS carregados no canvas para edição visual. Scripts e conteúdo ativo foram removidos.');
     } catch (importError) {
       toast(importError.message, 'error');
     }
@@ -257,7 +239,8 @@ export default function GrapesPortfolioEditor() {
       return;
     }
     try {
-      setImportText(await file.text());
+      setHtmlText(await file.text());
+      setCssText('');
       setHtmlToolOpen(true);
     } catch (fileError) { toast(fileError.message, 'error'); }
   }
@@ -297,20 +280,19 @@ export default function GrapesPortfolioEditor() {
     });
   }
 
-  function goToPreviousEditor() {
+  function goToPortfolioEditor() {
     if (saveVersion.current !== savedVersion.current && !window.confirm('Há alterações não salvas. Sair sem salvar?')) return;
     navigate(`/portfolio/${id}`);
   }
 
   if (!page) {
-    return <div className="gpe-loading"><span className="lamp lamp-lg is-pending" /> Carregando editor de blocos...</div>;
+    return <div className="gpe-loading"><span className="lamp lamp-lg is-pending" /> Carregando canvas...</div>;
   }
 
-  const savedEditor = page.data?.editor === 'grapesjs';
   return (
     <div className="gpe">
       <header className="gpe-toolbar">
-        <button type="button" className="btn btn-ghost btn-sm" onClick={goToPreviousEditor}><span aria-hidden="true">←</span> Editor anterior</button>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={goToPortfolioEditor}><span aria-hidden="true">←</span> Portfólio</button>
         <input className="input gpe-name" value={name} onChange={(event) => { setName(event.target.value); markDirty(); }} aria-label="Nome da página" maxLength={120} />
         <span className={`gpe-status is-${status}`} role="status">{SAVE_STATUS[status]}</span>
         <div className="gpe-device-picker" role="group" aria-label="Tamanho da prévia">
@@ -318,38 +300,18 @@ export default function GrapesPortfolioEditor() {
         </div>
         <div className="gpe-toolbar-actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={openMediaManager}>Gerenciar mídias</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => imageInput.current?.click()}>Adicionar imagem</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHtmlToolOpen(true)}>Editar HTML</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => imageInput.current?.click()}>Enviar imagem</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={openHtmlTool}>HTML/CSS</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={togglePreview}>Visualizar</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => publish(!published)} disabled={!!busy}>{busy === 'publish' ? 'Publicando...' : published ? 'Despublicar' : 'Publicar'}</button>
           <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={!canSave || status === 'saved' || status === 'saving'}>{status === 'saving' ? 'Salvando...' : 'Salvar'}</button>
         </div>
       </header>
-      {!savedEditor && page.data?.v && <div className="gpe-notice">Esta página está no editor anterior e ainda não foi alterada. Abra a ferramenta HTML ou escolha um modelo para começar. Ao salvar, o conteúdo antigo será substituído.</div>}
-      <div className="gpe-template-bar">
-        <strong>Modelos prontos</strong>
-        {GRAPES_TEMPLATES.map((template) => <button key={template.id} type="button" className={templateKey === template.id ? 'is-selected' : ''} onClick={() => applyTemplate(template)}>{template.name}</button>)}
-        <span>Referências: MUI, Bootstrap e Tailwind. O editor não carrega essas bibliotecas automaticamente.</span>
-      </div>
-      <div className="gpe-workspace">
-        <aside className="gpe-sidebar">
-          <div className="gpe-sidebar-tabs">
-            <button type="button" onClick={() => { document.getElementById('gpe-blocks')?.scrollIntoView({ block: 'start' }); }}>Blocos</button>
-            <button type="button" onClick={() => { document.getElementById('gpe-layers')?.scrollIntoView({ block: 'start' }); }}>Camadas</button>
-            <button type="button" onClick={() => { document.getElementById('gpe-styles')?.scrollIntoView({ block: 'start' }); }}>Estilos CSS</button>
-          </div>
-          <section><h2>Blocos permitidos</h2><div id="gpe-blocks" /></section>
-          <section><h2>Estrutura e camadas</h2><div id="gpe-layers" /></section>
-        </aside>
-        <main className="gpe-canvas">
-          <div ref={canvasRef} className="gpe-editor-canvas" />
-          {error && <p className="gpe-error" role="alert">{error}</p>}
-        </main>
-        <aside className="gpe-properties">
-          <section><h2>Propriedades do elemento</h2><div id="gpe-traits" /></section>
-          <section><h2>Estilos CSS</h2><div id="gpe-styles" /></section>
-        </aside>
-      </div>
+      <main className="gpe-canvas">
+        <div ref={canvasRef} className="gpe-editor-canvas" />
+        {!canSave && <div className="gpe-empty"><strong>Seu canvas está vazio</strong><span>Insira seu HTML e CSS para carregar a página e editá-la visualmente.</span><button type="button" className="btn btn-primary" onClick={openHtmlTool}>Inserir HTML/CSS</button></div>}
+        {error && <p className="gpe-error" role="alert">{error}</p>}
+      </main>
       <input ref={fileInput} hidden type="file" accept=".html,.htm,text/html" onChange={importFile} />
       <input ref={imageInput} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => { addImageFiles(Array.from(event.target.files || [])); event.target.value = ''; }} />
       {htmlToolOpen && (
@@ -359,24 +321,41 @@ export default function GrapesPortfolioEditor() {
           wide
           footer={(
             <>
-              <button type="button" className="btn btn-ghost" onClick={() => fileInput.current?.click()}>Abrir arquivo HTML</button>
+              <button type="button" className="btn btn-ghost" onClick={() => fileInput.current?.click()}>Importar arquivo HTML</button>
               <button type="button" className="btn btn-ghost" onClick={() => setHtmlToolOpen(false)}>Cancelar</button>
-              <button type="button" className="btn btn-primary" onClick={() => importHtml(importText)} disabled={!importText.trim()}>Abrir no editor</button>
+              <button type="button" className="btn btn-primary" onClick={applyHtmlToCanvas} disabled={!htmlText.trim()}>Carregar no canvas</button>
             </>
           )}
         >
-          <p className="muted">Cole o HTML da sua página. Ao clicar em <strong>Abrir no editor</strong>, o conteúdo será convertido em elementos editáveis no canvas. Estilos dentro de tags <code>&lt;style&gt;</code> são importados; scripts, iframes e conteúdo ativo são removidos.</p>
-          <textarea
-            className="input gpe-import-text"
-            value={importText}
-            onChange={(event) => setImportText(event.target.value)}
-            maxLength={HTML_IMPORT_LIMIT}
-            placeholder={'Cole aqui o código HTML da sua página:\n<section><h1>Minha página</h1><p>Meu conteúdo</p></section>'}
-            aria-label="HTML para abrir no editor visual"
-            spellCheck={false}
-            autoFocus
-          />
-          <span className="gpe-html-import-limit">{importText.length.toLocaleString('pt-BR')} / 1.048.576 caracteres</span>
+          <p className="muted">Cole o HTML e o CSS da página. O conteúdo será carregado no canvas para edição visual. O CSS em tags <code>&lt;style&gt;</code> do HTML também será aplicado. Scripts, iframes e conteúdo ativo são removidos.</p>
+          <div className="gpe-code-fields">
+            <label>
+              <span>HTML</span>
+              <textarea
+                className="input gpe-import-text"
+                value={htmlText}
+                onChange={(event) => setHtmlText(event.target.value)}
+                maxLength={HTML_IMPORT_LIMIT}
+                placeholder={'<section>\n  <h1>Minha página</h1>\n  <p>Meu conteúdo</p>\n</section>'}
+                aria-label="HTML da página"
+                spellCheck={false}
+                autoFocus
+              />
+            </label>
+            <label>
+              <span>CSS</span>
+              <textarea
+                className="input gpe-import-css"
+                value={cssText}
+                onChange={(event) => setCssText(event.target.value)}
+                maxLength={HTML_IMPORT_LIMIT}
+                placeholder={'body { font-family: Arial, sans-serif; }\nsection { padding: 48px; }'}
+                aria-label="CSS da página"
+                spellCheck={false}
+              />
+            </label>
+          </div>
+          <span className="gpe-html-import-limit">HTML {htmlText.length.toLocaleString('pt-BR')} / 1.048.576 · CSS {cssText.length.toLocaleString('pt-BR')} / 1.048.576 caracteres</span>
         </Modal>
       )}
       {showPreview && (

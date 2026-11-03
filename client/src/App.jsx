@@ -92,6 +92,7 @@ export default function App() {
       <Route element={<Protected bare />}>
         <Route path="contratos/:id" element={<ContractEditor />} />
         <Route path="portfolio/:id" element={<PortfolioEditor />} />
+        <Route path="portfolio/:id/canvas" element={<Suspense fallback={<Splash />}><GrapesPortfolioEditor /></Suspense>} />
         <Route path="portfolio/:id/blocks" element={<Suspense fallback={<Splash />}><GrapesPortfolioEditor /></Suspense>} />
       </Route>
       <Route element={<Protected />}>
