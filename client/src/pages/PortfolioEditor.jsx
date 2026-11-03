@@ -437,6 +437,7 @@ export default function PortfolioEditor() {
         <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); setAnimate(false); }} title="Ver a página sem as ferramentas de edição">
           <EIcon name="eye" size={15} /> <span className="ce-lbl">{preview ? 'Voltar a editar' : 'Visualizar'}</span>
         </button>
+        {meta.kind !== 'catalog' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => nav(`/portfolio/${id}/blocks`)} title="Abrir o editor de blocos GrapesJS">Editor de blocos</button>}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublished(!meta.published)} disabled={!!busy}>{busy === 'publish' ? 'Aguarde...' : meta.published ? 'Despublicar' : 'Publicar'}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShare(true)}><EIcon name="share" size={16} /> <span className="ce-lbl">Compartilhar</span></button>
         <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saveState === 'saving' || saveState === 'saved'}>Salvar</button>

@@ -72,7 +72,7 @@ const TYPE_DEFAULTS = {
     steps: [{ id: 'step1', title: 'Etapa 1', content: 'Adicione aqui os detalhes.', image: '', questions: [] }],
     actionType: 'whatsapp', actionLabel: 'Enviar respostas', actionUrl: '', actionPhone: '', actionProductId: null,
   }),
-  custom: () => ({ code: '<section style="padding: 24px; text-align: center;"><h2>Seu conteúdo personalizado</h2><p>Edite este bloco com HTML, CSS e JavaScript.</p></section>' }),
+  custom: () => ({ code: '<section style="padding: 24px; text-align: center;"><h2>Seu conteúdo personalizado</h2><p>Edite este bloco com HTML e CSS. Scripts não são permitidos.</p></section>' }),
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };

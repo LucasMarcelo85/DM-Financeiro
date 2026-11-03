@@ -1,6 +1,7 @@
 import crypto from 'node:crypto';
 import { AppError, normalizePhone } from './helpers.js';
 import { FONT_KEYS } from './contract.js';
+import { cleanGrapesPortfolio, cleanPortfolioHtml } from './portfolio-sanitize.js';
 
 // Valida e "limpa" o documento do editor de portfólio antes de salvar (e antes de qualquer pessoa ver a página pública).
 // O documento é reconstruído só com campos conhecidos (lista branca) e valores dentro de limites: nada inesperado
@@ -444,7 +445,7 @@ function cleanElement(raw) {
       if (!el.steps.length) el.steps.push({ id: 'step1', title: 'Etapa 1', content: '', image: '', questions: [] });
       break;
     case 'custom':
-      el.code = str(raw.code, 100000);
+      el.code = cleanPortfolioHtml(str(raw.code, 100000));
       break;
     case 'catsearch':
       Object.assign(el, { showSearch: bool(raw.showSearch, true), showCategories: bool(raw.showCategories, true), placeholder: line(raw.placeholder, 60) || 'Buscar produtos' });
@@ -557,6 +558,7 @@ function cleanDocV2(raw, kindHint) {
 
 // Aceita o formato novo (v2) e o antigo (blocos empilhados), para não quebrar páginas já salvas.
 export function cleanPortfolioDoc(raw, kind) {
+  if (isObj(raw) && raw.editor === 'grapesjs') return cleanGrapesPortfolio(raw, kind);
   if (isObj(raw) && raw.v === 2) return cleanDocV2(raw, kind);
   return cleanPortfolioDocV1(raw);
 }

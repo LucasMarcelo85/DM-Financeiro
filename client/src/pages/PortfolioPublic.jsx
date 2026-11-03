@@ -5,6 +5,7 @@ import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageS
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
+import { makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
 export default function PortfolioPublic({ fixedUser = '' }) {
@@ -17,7 +18,13 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     setState({ loading: true, page: null, owner: null, products: [], store: null });
     const qs = `u=${encodeURIComponent(userSlug)}${pageSlug ? `&p=${encodeURIComponent(pageSlug)}` : ''}`;
     api.get(`/public/portfolio?${qs}`)
-      .then((r) => alive && setState({ loading: false, owner: { ...r.owner, credit: r.credit !== false }, products: r.products || [], store: r.store || null, page: { ...r.page, doc: normalizeDoc(r.page.data, r.page.kind) } }))
+      .then((r) => {
+        if (!alive) return;
+        const doc = r.page.data?.editor === 'grapesjs'
+          ? { ...normalizeDoc({}, r.page.kind), ...r.page.data, kind: r.page.kind, seo: { title: r.page.data.title || r.page.name || '', description: r.page.data.description || '' } }
+          : normalizeDoc(r.page.data, r.page.kind);
+        setState({ loading: false, owner: { ...r.owner, credit: r.credit !== false }, products: r.products || [], store: r.store || null, page: { ...r.page, doc } });
+      })
       .catch(() => alive && setState({ loading: false, page: null, owner: null, products: [], store: null }));
     return () => { alive = false; };
   }, [userSlug, pageSlug]);
@@ -62,6 +69,15 @@ function PublicPage({ page, products, store, slug, credit }) {
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
   const showCart = isCatalog && !directOrder && cartOpen;
+
+  if (doc.editor === 'grapesjs') {
+    return (
+      <div className="pv-root gpe-published" style={style}>
+        <iframe title={doc.title || page.name || 'Página do portfólio'} sandbox="" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
+        {credit !== false && <PageCredit theme={doc.theme} />}
+      </div>
+    );
+  }
 
   return (
     <div className="pv-root" style={style}>
