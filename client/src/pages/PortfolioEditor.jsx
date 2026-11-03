@@ -443,6 +443,15 @@ export default function PortfolioEditor() {
         <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saveState === 'saving' || saveState === 'saved'}>Salvar</button>
       </header>
 
+      {meta.kind !== 'catalog' && (
+        <div className="banner banner-green pe-block-editor-entry">
+          <div>
+            <strong>Quer montar seu site com blocos e colar um HTML pronto?</strong>
+            <span>Abra o editor GrapesJS para arrastar elementos, usar modelos e converter HTML em uma página editável.</span>
+          </div>
+          <button type="button" className="btn btn-primary" onClick={() => nav(`/portfolio/${id}/blocks`)}>Abrir editor visual de blocos</button>
+        </div>
+      )}
       {converted && <p className="banner banner-amber pe-converted" role="status">Esta página foi criada no editor antigo e foi convertida para o editor livre. Confira como ficou em cada tela (computador, tablet e celular) e ajuste. Ela só é salva quando você salvar ou editar.</p>}
 
       <div className="ce-body" style={{ '--pe-l': `${panelW.l}px`, '--pe-r': `${panelW.r}px` }}>
