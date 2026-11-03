@@ -3,6 +3,7 @@ import { useNavigate, useParams } from 'react-router-dom';
 import grapesjs from 'grapesjs';
 import { api } from '../api.js';
 import { useToast } from '../components/Toast.jsx';
+import Modal from '../components/Modal.jsx';
 import { GRAPES_BLOCKS, GRAPES_TEMPLATES } from '../lib/portfolio/grapesTemplates.js';
 import { cleanGrapesCss } from '../lib/portfolio/grapesCss.js';
 import { cleanGrapesHtml, makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
@@ -30,13 +31,13 @@ export default function GrapesPortfolioEditor() {
   const [busy, setBusy] = useState('');
   const [error, setError] = useState('');
   const [showPreview, setShowPreview] = useState(false);
+  const [htmlToolOpen, setHtmlToolOpen] = useState(false);
   const [importText, setImportText] = useState('');
   const [previewSrc, setPreviewSrc] = useState('');
   const [templateKey, setTemplateKey] = useState('');
   const [device, setDevice] = useState('Desktop');
   const fileInput = useRef(null);
   const imageInput = useRef(null);
-  const htmlInput = useRef(null);
 
   const markDirty = useCallback(() => {
     if (initializing.current) return;
@@ -237,8 +238,9 @@ export default function GrapesPortfolioEditor() {
       const css = stylesheet ? cleanGrapesCss(stylesheet) : '';
       initializing.current = true;
       editorRef.current.setComponents(clean);
-      if (css) editorRef.current.setStyle(css);
+      editorRef.current.setStyle(css);
       setTemplateKey('imported');
+      setHtmlToolOpen(false);
       requestAnimationFrame(() => { initializing.current = false; markCanvasDirty(); });
       toast('HTML importado e analisado pelo editor. Scripts e conteúdo ativo foram removidos.');
     } catch (importError) {
@@ -256,6 +258,7 @@ export default function GrapesPortfolioEditor() {
     }
     try {
       setImportText(await file.text());
+      setHtmlToolOpen(true);
     } catch (fileError) { toast(fileError.message, 'error'); }
   }
 
@@ -316,37 +319,13 @@ export default function GrapesPortfolioEditor() {
         <div className="gpe-toolbar-actions">
           <button type="button" className="btn btn-ghost btn-sm" onClick={openMediaManager}>Gerenciar mídias</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => imageInput.current?.click()}>Adicionar imagem</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInput.current?.click()}>Importar HTML</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => { htmlInput.current?.scrollIntoView({ behavior: 'smooth', block: 'center' }); htmlInput.current?.focus(); }}>Colar HTML</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setHtmlToolOpen(true)}>Editar HTML</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={togglePreview}>Visualizar</button>
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => publish(!published)} disabled={!!busy}>{busy === 'publish' ? 'Publicando...' : published ? 'Despublicar' : 'Publicar'}</button>
           <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={!canSave || status === 'saved' || status === 'saving'}>{status === 'saving' ? 'Salvando...' : 'Salvar'}</button>
         </div>
       </header>
-      {!savedEditor && page.data?.v && <div className="gpe-notice">Esta página está no editor anterior e ainda não foi alterada. Escolha um modelo ou importe HTML; ao salvar, o conteúdo antigo será substituído. Você pode voltar ao editor anterior antes de salvar.</div>}
-      <section className="gpe-html-import" aria-labelledby="gpe-html-title">
-        <div className="gpe-html-import-heading">
-          <div>
-            <h2 id="gpe-html-title">Cole o HTML para criar ou substituir o conteúdo da página</h2>
-            <p>O HTML será convertido em blocos visuais editáveis. Scripts, iframes e conteúdo ativo serão removidos.</p>
-          </div>
-          <div className="gpe-html-import-actions">
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileInput.current?.click()}>Abrir arquivo HTML</button>
-            <button type="button" className="btn btn-primary btn-sm" onClick={() => importHtml(importText)} disabled={!importText.trim()}>Converter HTML em blocos</button>
-          </div>
-        </div>
-        <textarea
-          ref={htmlInput}
-          className="input gpe-import-text"
-          value={importText}
-          onChange={(event) => setImportText(event.target.value)}
-          maxLength={HTML_IMPORT_LIMIT}
-          placeholder={'Cole aqui o código HTML completo da página, por exemplo:\n<section><h1>Minha página</h1><p>Meu conteúdo</p></section>'}
-          aria-label="HTML da página para converter em blocos editáveis"
-          spellCheck={false}
-        />
-        <span className="gpe-html-import-limit">{importText.length.toLocaleString('pt-BR')} / 1.048.576 caracteres</span>
-      </section>
+      {!savedEditor && page.data?.v && <div className="gpe-notice">Esta página está no editor anterior e ainda não foi alterada. Abra a ferramenta HTML ou escolha um modelo para começar. Ao salvar, o conteúdo antigo será substituído.</div>}
       <div className="gpe-template-bar">
         <strong>Modelos prontos</strong>
         {GRAPES_TEMPLATES.map((template) => <button key={template.id} type="button" className={templateKey === template.id ? 'is-selected' : ''} onClick={() => applyTemplate(template)}>{template.name}</button>)}
@@ -373,6 +352,33 @@ export default function GrapesPortfolioEditor() {
       </div>
       <input ref={fileInput} hidden type="file" accept=".html,.htm,text/html" onChange={importFile} />
       <input ref={imageInput} hidden type="file" accept="image/png,image/jpeg,image/webp,image/gif" multiple onChange={(event) => { addImageFiles(Array.from(event.target.files || [])); event.target.value = ''; }} />
+      {htmlToolOpen && (
+        <Modal
+          title="Ferramenta HTML"
+          onClose={() => setHtmlToolOpen(false)}
+          wide
+          footer={(
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => fileInput.current?.click()}>Abrir arquivo HTML</button>
+              <button type="button" className="btn btn-ghost" onClick={() => setHtmlToolOpen(false)}>Cancelar</button>
+              <button type="button" className="btn btn-primary" onClick={() => importHtml(importText)} disabled={!importText.trim()}>Abrir no editor</button>
+            </>
+          )}
+        >
+          <p className="muted">Cole o HTML da sua página. Ao clicar em <strong>Abrir no editor</strong>, o conteúdo será convertido em elementos editáveis no canvas. Estilos dentro de tags <code>&lt;style&gt;</code> são importados; scripts, iframes e conteúdo ativo são removidos.</p>
+          <textarea
+            className="input gpe-import-text"
+            value={importText}
+            onChange={(event) => setImportText(event.target.value)}
+            maxLength={HTML_IMPORT_LIMIT}
+            placeholder={'Cole aqui o código HTML da sua página:\n<section><h1>Minha página</h1><p>Meu conteúdo</p></section>'}
+            aria-label="HTML para abrir no editor visual"
+            spellCheck={false}
+            autoFocus
+          />
+          <span className="gpe-html-import-limit">{importText.length.toLocaleString('pt-BR')} / 1.048.576 caracteres</span>
+        </Modal>
+      )}
       {showPreview && (
         <div className="gpe-preview-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) setShowPreview(false); }}>
           <section className="gpe-preview-dialog" role="dialog" aria-modal="true" aria-label="Prévia isolada da página">

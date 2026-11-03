@@ -88,42 +88,6 @@
   font-size: 13px;
 }
 
-.gpe-html-import {
-  display: grid;
-  flex: 0 0 auto;
-  gap: 8px;
-  max-height: 250px;
-  padding: 10px 14px;
-  overflow: auto;
-  background: #fff;
-  border-bottom: 1px solid var(--gpe-border);
-}
-
-.gpe-html-import-heading {
-  display: flex;
-  align-items: center;
-  justify-content: space-between;
-  gap: 12px;
-}
-
-.gpe-html-import-heading h2 {
-  margin: 0;
-  color: #25364c;
-  font-size: 14px;
-}
-
-.gpe-html-import-heading p {
-  margin: 3px 0 0;
-  color: var(--gpe-muted);
-  font-size: 12px;
-}
-
-.gpe-html-import-actions {
-  display: flex;
-  flex: 0 0 auto;
-  gap: 6px;
-}
-
 .gpe-template-bar {
   display: flex;
   align-items: center;
@@ -309,8 +273,8 @@
 
 .gpe-import-text {
   width: 100%;
-  min-height: 92px;
-  max-height: 130px;
+  min-height: 320px;
+  max-height: 60vh;
   resize: vertical;
   font: 12px/1.5 Consolas, monospace;
 }
@@ -436,22 +400,8 @@
     display: none;
   }
 
-  .gpe-html-import {
-    max-height: 200px;
-    padding: 8px;
-  }
-
-  .gpe-html-import-heading {
-    align-items: flex-start;
-    flex-direction: column;
-  }
-
-  .gpe-html-import-actions {
-    flex-wrap: wrap;
-  }
-
   .gpe-import-text {
-    min-height: 65px;
+    min-height: 220px;
   }
 
   .gpe-workspace {
