@@ -691,12 +691,31 @@ export function startAiCampaignWorker() {
   if (campaignTimer) return;
   campaignTimer = setInterval(campaignTick, 5000);
   setTimeout(campaignTick, 3000);
+  purgeTimer = setInterval(purgeOldAiMessages, 60 * 60 * 1000);
+  setTimeout(purgeOldAiMessages, 60 * 1000);
   console.log('[campanhas] envio gradual de marketing ligado (verifica a cada 5s)');
 }
 
 export function stopAiCampaignWorker() {
   if (campaignTimer) clearInterval(campaignTimer);
+  if (purgeTimer) clearInterval(purgeTimer);
   campaignTimer = null;
+  purgeTimer = null;
+}
+
+// Mensagens da IA ficam 30 dias; depois somem do banco, junto com as conversas que ficaram vazias.
+const AI_RETENTION_MS = 30 * 24 * 60 * 60 * 1000;
+const aiCutoff = () => new Date(Date.now() - AI_RETENTION_MS);
+let purgeTimer = null;
+async function purgeOldAiMessages() {
+  try {
+    const cutoff = aiCutoff();
+    const messages = await prisma.aiMessage.deleteMany({ where: { createdAt: { lt: cutoff } } });
+    const conversations = await prisma.aiConversation.deleteMany({ where: { updatedAt: { lt: cutoff }, messages: { none: {} } } });
+    if (messages.count || conversations.count) console.log(`[ia] limpeza de 30 dias: ${messages.count} mensagens e ${conversations.count} conversas removidas`);
+  } catch (error) {
+    console.error('[ia] falha na limpeza de mensagens antigas:', error.message);
+  }
 }
 
 router.post('/agents/:id/campaign', async (req, res) => {
@@ -791,7 +810,7 @@ router.get('/conversations', async (req, res) => {
   const rows = await prisma.aiConversation.findMany({
     where: { userId: req.user.id, phone: { not: '__teste__' }, ...(deletedOnly ? { agentId: null } : agentId ? { agentId } : {}) },
     orderBy: { updatedAt: 'desc' }, take: 200,
-    include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    include: { messages: { where: { createdAt: { gte: aiCutoff() } }, orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   res.json({ conversations: rows.map((row) => ({
     id: row.id, agentId: row.agentId, agentName: row.agentName, mode: row.agentMode, agentDeleted: row.agentId === null,
@@ -807,7 +826,7 @@ router.get('/conversations/:id/messages', async (req, res) => {
     ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: req.user.id } })
     : null;
   if (!conversation) throw new AppError(404, 'Conversa não encontrada.');
-  const messages = await prisma.aiMessage.findMany({ where: { conversationId },   orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 500 });
+  const messages = await prisma.aiMessage.findMany({ where: { conversationId, createdAt: { gte: aiCutoff() } }, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 500 });
   res.json({ messages: messages.map((message) => ({
     id: message.id, role: message.role, content: message.content, createdAt: message.createdAt.getTime(),
   })) });

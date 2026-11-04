@@ -1812,6 +1812,10 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .inv-qty { width: 5.5rem; padding: .3rem .5rem; }
 .inv-actionbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .7rem .9rem; border: 1px solid color-mix(in srgb, var(--brand, #f2a33a) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--brand, #f2a33a) 5%, #fff); }
 .inv-flows { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; max-height: 40vh; overflow: auto; }
+.inv-board > .inv-flows { flex: 0 1 auto; min-height: 3rem; }
+.inv-board > .inv-flows[open] { flex: 1 1 22rem; max-height: none; min-height: 16rem; }
+.inv-board > .inv-table-wrap { min-height: 8rem; }
+.inv-flows .inventory-create { margin-top: .6rem; }
 .inv-flows summary { cursor: pointer; font-weight: 650; }
 .inv-flows[open] > * + * { margin-top: .6rem; }
 .shop-team { display: grid; gap: 1rem; }
