@@ -21,6 +21,7 @@ import messageRoutes from './messages.js';
 import mediaRoutes from './media.js';
 import contractRoutes from './contracts.js';
 import portfolioRoutes from './portfolios.js';
+import storeRoutes from './stores.js';
 import aiRoutes from './ai.js';
 import { publicUser } from '../services/access.js';
 import { workspaceFor, workspaceUser } from '../services/workspace.js';
@@ -319,6 +320,11 @@ workspaceArea('receipts', SCHEDULING, receiptRoutes);
 workspaceArea('messages', ['whatsapp', ...SCHEDULING], messageRoutes);
 workspaceArea('media', SCHEDULING, mediaRoutes);
 workspaceArea('contracts', ['contratos'], contractRoutes);
+// Domínio: o app usa o mesmo domínio da loja (o dono vê e gerencia o mesmo em Lojas). Reaproveita as rotas de /stores/:id/domain.
+router.use('/portfolios/domain', shopAuth, needAnyPerm('portfolio'), (req, res, next) => {
+  req.url = `/${req.forcedStore}/domain${req.url === '/' ? '' : req.url}`;
+  storeRoutes(req, res, next);
+});
 // Portfólio: o app edita a página principal da própria loja (regras em routes/portfolios.js).
 router.use('/portfolios', shopAuth, needAnyPerm('portfolio'), portfolioRoutes);
 workspaceArea('ai', ['ia'], aiRoutes);

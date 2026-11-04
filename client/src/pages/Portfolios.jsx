@@ -241,7 +241,7 @@ export default function Portfolios() {
           </div>
         </div>
       )}
-      {data && !appMode && <DomainCard domain={data.domain} onChange={load} locked={false} />}
+      {data && <DomainCard domain={data.domain} onChange={load} locked={false} />}
 
       {data === null ? <p className="muted">Carregando...</p> : count === 0 && appMode ? (
         <p className="muted">Nenhuma página disponível para este aplicativo.</p>
