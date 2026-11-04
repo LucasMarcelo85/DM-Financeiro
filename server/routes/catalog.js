@@ -118,7 +118,7 @@ router.put('/settings', async (req, res) => {
     let instance = await prisma.instance.findFirst({
       where: {
         id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
-        storeId,
+        ...(storeId === null ? { storeId } : { OR: [{ storeId }, { storeId: null }] }),
       },
     });
     const previousInstanceId = current.cfg.orderNotifications?.instanceId;

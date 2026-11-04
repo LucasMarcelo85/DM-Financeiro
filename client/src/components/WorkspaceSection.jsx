@@ -1,4 +1,5 @@
-import { useEffect, useMemo, useState } from 'react';
+import { useEffect, useMemo, useRef, useState } from 'react';
+import { createRoot } from 'react-dom/client';
 import { MemoryRouter, Navigate, Route, Routes } from 'react-router-dom';
 import { api } from '../api.js';
 import { AuthContext } from '../auth.jsx';
@@ -11,6 +12,7 @@ import ContractEditor from '../pages/ContractEditor.jsx';
 import Portfolios from '../pages/Portfolios.jsx';
 import PortfolioEditor from '../pages/PortfolioEditor.jsx';
 import AiService from '../pages/AiService.jsx';
+import { ToastProvider } from './Toast.jsx';
 
 export const WORKSPACE_TABS = ['whatsapp', 'contatos', 'cobrancas', 'contratos', 'portfolio', 'ia'];
 
@@ -19,9 +21,23 @@ const START = { whatsapp: '/whatsapp', contatos: '/clientes', cobrancas: '/cobra
 // Editores precisam da tela inteira, como no painel.
 const Full = ({ children }) => <div className="ws-fullscreen">{children}</div>;
 
-// Mostra uma área do painel dentro do app. O roteador em memória mantém os links internos
-// (ex.: lembrete → novo lembrete) sem mexer no endereço do aplicativo.
+// Mostra uma área do painel dentro do app. Ela roda em uma árvore React própria, com roteador
+// em memória, porque o app já está dentro do BrowserRouter (roteadores não podem ser aninhados).
 export default function WorkspaceSection({ area }) {
+  const host = useRef(null);
+  useEffect(() => {
+    const node = document.createElement('div');
+    host.current.appendChild(node);
+    const root = createRoot(node);
+    root.render(<ToastProvider><Workspace area={area} /></ToastProvider>);
+    return () => {
+      setTimeout(() => { root.unmount(); node.remove(); });
+    };
+  }, [area]);
+  return <div ref={host} />;
+}
+
+function Workspace({ area }) {
   const [user, setUser] = useState(null);
   const [error, setError] = useState('');
 

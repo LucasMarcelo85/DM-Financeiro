@@ -150,11 +150,12 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
               >
                 <option value="">Selecione uma instância</option>
                 {instances.filter((instance) => (!activeStore || instance.storeId === Number(activeStore)
+                  || (instance.storeId === null && !isShopMode())
                   || String(instance.id) === f.orderNotifications.instanceId)
                   && (instance.connected || String(instance.id) === f.orderNotifications.instanceId)).map((instance) => (
                   <option key={instance.id} value={instance.id}>
                     {instance.label || instance.metaPhoneDisplay || instance.name}
-                    {activeStore && instance.storeId === null ? ' · conta do administrador (configuração anterior)' : ''}
+                    {activeStore && instance.storeId === null ? ' · conta do administrador' : ''}
                     {instance.connected ? '' : ' · desconectada'}
                   </option>
                 ))}
@@ -190,7 +191,7 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
             <p className="muted small">
               Os avisos de pedidos do catálogo serão enviados para o WhatsApp da loja informado acima. Vendas registradas no PDV não geram notificações. Pagamentos confirmados pela InfinitePay também são notificados; marcações manuais de pagamento não enviam aviso.
             </p>
-            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore))) && <p className="muted small">Conecte um WhatsApp{activeStore ? ' nesta loja' : ' na conta'} para habilitar o envio.</p>}
+            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore) || (instance.storeId === null && !isShopMode()))) && <p className="muted small">Conecte um WhatsApp{activeStore ? ' nesta loja ou na conta do administrador' : ' na conta'} para habilitar o envio.</p>}
           </>}
         </fieldset>
         <fieldset className="cs-box">

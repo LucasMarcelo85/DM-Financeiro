@@ -314,7 +314,7 @@ export default function ShopApp() {
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}>Usuário</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
       </header>
-      <main id="shop-app-panel" role="tabpanel" style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
+      <main id="shop-app-panel" role="tabpanel" className={['pdv', 'pedidos', 'auditoria'].includes(tab) ? 'shop-panel-wide' : ''} style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
           : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
             : tab === 'produtos' ? <Products allow={perms} />

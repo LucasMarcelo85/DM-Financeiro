@@ -106,9 +106,9 @@ export default function StoreAppModal({ storeId, onClose }) {
   }
 
   return (
-    <Modal title="Aplicativo da loja" onClose={onClose}>
+    <Modal title="Aplicativo da loja" onClose={onClose} wide>
       {!data ? <p className="muted">Carregando...</p> : (
-        <div style={{ display: 'grid', gap: 14 }}>
+        <div className="sapp" style={{ display: 'grid', gap: 14 }}>
           <p className="muted small">O lojista instala este aplicativo no celular. Escolha as áreas que cada acesso poderá usar; os dados e as conexões ficam limitados a este site.</p>
           {temporaryCredential && <section className="banner" style={{ display: 'grid', gap: 8 }}>
             <strong>Senha provisória de {temporaryCredential.name}</strong>
@@ -229,13 +229,16 @@ export default function StoreAppModal({ storeId, onClose }) {
               <input className="input" type="number" min="0" max={data.maxAppInstances} step="1" value={cfg.limits.instances ?? ''}
                 onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, instances: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label="WhatsApps de envio do app" />
             </label>
-            {LIMIT_FIELDS.map(([key, label]) => (
-              <label key={key} style={{ display: 'grid', gap: 4 }}>
-                <span>{label}</span>
-                <input className="input" type="number" min="0" step="1" value={cfg.limits[key] ?? ''}
-                  onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, [key]: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label={`${label} do app`} />
-              </label>
-            ))}
+            {LIMIT_FIELDS.map(([key, label]) => {
+              const room = data.limitRoom?.[key];
+              return (
+                <label key={key} style={{ display: 'grid', gap: 4 }}>
+                  <span>{label}{room !== undefined ? ` (disponível: ${room})` : ''}</span>
+                  <input className="input" type="number" min="0" max={room} step="1" value={cfg.limits[key] ?? ''}
+                    onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, [key]: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label={`${label} do app`} />
+                </label>
+              );
+            })}
           </section>
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, { ...cfg, appNotifications }), 'Aplicativo salvo.')}>Salvar aplicativo</button>

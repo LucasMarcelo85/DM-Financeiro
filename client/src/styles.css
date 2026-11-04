@@ -2009,6 +2009,17 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .modal-wide:has(.lbl-layout) .lbl-list, .modal-wide:has(.lbl-layout) .lbl-elements, .modal-wide:has(.rom-layout) .rom-list { max-height: none; overflow: visible; }
 .modal-wide:has(.rom-layout) .rom-paper { max-height: none; }
 .lbl-stage { min-height: 22rem; }
+#shop-app-panel.shop-panel-wide { max-width: none !important; }
+#shop-app-panel .modal-wide {
+  width: 98vw; max-width: none; height: 96vh;
+  grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
+}
+#shop-app-panel .modal-wide .modal-body { min-height: 0; overflow: auto; align-content: start; }
+.modal-wide:has(.sapp) {
+  width: min(98vw, 110rem); max-width: none; height: 96vh;
+  grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
+}
+.modal-wide:has(.sapp) .modal-body { min-height: 0; overflow: auto; align-content: start; }
 .lbl-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .rom-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; align-items: start; }
 @media (max-width: 900px) { .lbl-layout, .rom-layout { grid-template-columns: 1fr; } }

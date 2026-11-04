@@ -228,8 +228,10 @@ async function instanceRoom(db, user, store) {
     db.store.findMany({ where: { userId: user.id, id: { not: store.id } }, select: { appLimits: true } }),
     db.instance.count({ where: { userId: user.id, purpose: 'envio', storeId: null } }),
   ]);
-  const allocated = others.reduce((sum, s) => sum + (readLimits(s).instances || 0), 0);
-  return Math.max(readLimits(store).instances || 0, limitsFor(user).instances - allocated - mainCount);
+  const allocated = others.reduce((sum, s) => sum + (readLimits(s).instances || 0) + (readLimits(s).wsInstances || 0), 0);
+  const own = readLimits(store);
+  const room = limitsFor(user).instances - allocated - mainCount;
+  return { instances: Math.max(own.instances || 0, room - (own.wsInstances || 0)), wsInstances: Math.max(own.wsInstances || 0, room - (own.instances || 0)) };
 }
 router.get('/:id/app', async (req, res) => {
   const store = await owned(req);
@@ -250,6 +252,9 @@ router.get('/:id/app', async (req, res) => {
       _sum: { appAuditInstanceLimit: true },
     }),
   ]);
+  const instRoom = await instanceRoom(prisma, req.user, store);
+  const siblingApps = await prisma.store.findMany({ where: { userId: req.user.id, id: { not: store.id } }, select: { appLimits: true } });
+  const siblingSum = (key) => siblingApps.reduce((sum, s) => sum + (readLimits(s)[key] || 0), 0);
   const allocatedElsewhere = Math.max(0, (allocatedAudit._sum.appAuditInstanceLimit || 0) - (store.appAuditEnabled ? store.appAuditInstanceLimit : 0));
   const auditAvailable = Math.max(0, limits.auditInstances - mainAuditCount - allocatedElsewhere);
   res.json({
@@ -268,7 +273,12 @@ router.get('/:id/app', async (req, res) => {
     flows,
     maxAppUsers: limits.appUsers,
     maxAppProducts: Math.min(limits.catalogProducts, MAX_APP_PRODUCTS),
-    maxAppInstances: await instanceRoom(prisma, req.user, store),
+    maxAppInstances: instRoom.instances,
+    limitRoom: {
+      wsInstances: instRoom.wsInstances,
+      contracts: Math.max(readLimits(store).contracts || 0, limits.contracts - siblingSum('contracts')),
+      portfolios: Math.max(readLimits(store).portfolios || 0, limits.portfolios - siblingSum('portfolios')),
+    },
     maxAppAuditInstances: Math.min(MAX_APP_AUDIT_INSTANCES, Math.max(store.appAuditInstanceLimit, auditAvailable)),
     appAvailable: limits.stores > 0 && limits.appUsers > 0 && availablePerms(req.user).length > 0,
   });
@@ -319,7 +329,7 @@ router.put('/:id/app', async (req, res) => {
     const shared = [['wsInstances', 'instances', 'conexões de WhatsApp'], ['contracts', 'contracts', 'contratos'], ['portfolios', 'portfolios', 'portfólios']];
     const siblings = await prisma.store.findMany({ where: { userId: req.user.id, id: { not: store.id } }, select: { appLimits: true } });
     for (const [key, planKey, label] of shared) {
-      const allocated = siblings.reduce((sum, s) => sum + (readLimits(s)[key] || 0), 0);
+      const allocated = siblings.reduce((sum, s) => sum + (readLimits(s)[key] || 0) + (key === 'wsInstances' ? (readLimits(s).instances || 0) : 0), 0);
       const room = Math.max(0, limits[planKey] - allocated);
       if ((extraLimits[key] || 0) > room) {
         throw new AppError(400, `Você só pode repartir ${room} ${label} com este app (o restante já está em uso por outros apps ou pelo seu plano).`);
@@ -394,7 +404,7 @@ router.put('/:id/app', async (req, res) => {
       }
       const currentConfig = store.config && typeof store.config === 'object' ? store.config : {};
       if (extraLimits?.instances !== undefined) {
-        const room = await instanceRoom(tx, req.user, store);
+        const room = (await instanceRoom(tx, req.user, store)).instances;
         const used = await tx.instance.count({ where: { userId: req.user.id, purpose: 'envio', storeId: store.id } });
         if (extraLimits.instances > room) {
           throw new AppError(400, `Você pode liberar até ${room} WhatsApps de envio para este app. Cada vaga é descontada do limite do seu plano e dos outros apps.`);
