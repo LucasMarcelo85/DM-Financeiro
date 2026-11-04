@@ -232,7 +232,7 @@ router.post('/agents', async (req, res) => {
     if (conflict) throw new AppError(409, 'Esta instância já está vinculada a outro agente de atendimento ativo.');
   }
   const data = {
-    name, provider, model, mode, prompt, monthlyLimit, active, contactIds, instanceId,
+    userId: req.user.id, name, provider, model, mode, prompt, monthlyLimit, active, contactIds, instanceId,
     ...(apiKey ? { apiKey: encrypt(apiKey) } : {}),
   };
   if (!apiKey) throw new AppError(400, 'Informe a credencial do provedor de IA para criar o agente.');
