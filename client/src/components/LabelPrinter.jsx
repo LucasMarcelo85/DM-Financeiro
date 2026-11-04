@@ -83,7 +83,7 @@ export default function LabelPrinter({ products, onClose, onChanged }) {
   const chosen = entries.filter((entry) => selection[entry.key]?.on);
   const total = chosen.reduce((sum, entry) => sum + (selection[entry.key]?.qty || 1), 0);
   const previewEntry = chosen[0] || entries[0] || SAMPLE;
-  const previewScale = Math.min(6, 300 / (config.width * PX_PER_MM));
+  const previewScale = Math.min(10, 460 / (config.width * PX_PER_MM));
 
   const update = useCallback((patch) => setConfig((current) => { const next = { ...current, ...patch }; saveConfig(next); return next; }), []);
   const updateEl = (key, patch) => setConfig((current) => {

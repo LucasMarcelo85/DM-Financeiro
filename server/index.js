@@ -20,7 +20,7 @@ import scheduleRoutes from './routes/schedules.js';
 import statsRoutes from './routes/stats.js';
 import receiptRoutes from './routes/receipts.js';
 import messageRoutes from './routes/messages.js';
-import aiRoutes from './routes/ai.js';
+import aiRoutes, { startAiCampaignWorker, stopAiCampaignWorker } from './routes/ai.js';
 import contractRoutes from './routes/contracts.js';
 import portfolioRoutes from './routes/portfolios.js';
 import storeRoutes from './routes/stores.js';
@@ -270,9 +270,11 @@ const server = app.listen(config.port, () => {
   startAuditSync();
   startMaintenance();
   startApiWebhookWorker();
+  startAiCampaignWorker();
 });
 
 async function shutdown() {
+  stopAiCampaignWorker();
   stopScheduler();
   stopAuditSync();
   stopMaintenance();

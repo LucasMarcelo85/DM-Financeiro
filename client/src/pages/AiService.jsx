@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import ContactsPanel from '../components/ai/ContactsPanel.jsx';
 import ActionsModal from '../components/ai/ActionsModal.jsx';
+import CampaignModal from '../components/ai/CampaignModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
 import Icon from '../components/Icon.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -322,8 +323,7 @@ export default function AiService() {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [conversationAgent, setConversationAgent] = useState('');
-  const [campaignText, setCampaignText] = useState('');
-  const [campaignBusy, setCampaignBusy] = useState(null);
+  const [campaignAgent, setCampaignAgent] = useState(null);
   const [testing, setTesting] = useState(null);
   const [actionsAgent, setActionsAgent] = useState(null);
 
@@ -388,16 +388,6 @@ export default function AiService() {
       await loadConversations();
     } catch (err) { toast(err.message, 'error'); }
   }
-  async function campaign(agent) {
-    if (!window.confirm('Enviar uma mensagem personalizada para os contatos selecionados? A ação fará envios pelo WhatsApp.')) return;
-    setCampaignBusy(agent.id);
-    try {
-      const result = await api.post(`/ai/agents/${agent.id}/campaign`, { message: campaignText });
-      toast(`${result.sent} mensagem(ns) enviada(s); ${result.failed.length} falha(s).`, result.failed.length ? 'error' : 'ok');
-      await load();
-    } catch (err) { toast(err.message, 'error'); }
-    finally { setCampaignBusy(null); }
-  }
   const selectedInstance = (instanceId) => data?.instances.find((instance) => instance.id === instanceId);
 
   return (
@@ -427,9 +417,6 @@ export default function AiService() {
             <div className="ai-empty"><Icon name="sparkles" size={28} /><h2>Crie seu primeiro agente</h2><p className="muted">Escolha um provedor, conecte uma instância WhatsApp e configure o prompt.</p><button className="btn btn-primary" onClick={() => setEditor({})}>Criar agente</button></div>
           ) : (
             <>
-            {data.agents.some((agent) => agent.mode === 'marketing') && (
-              <label className="field ai-campaign-copy"><span>Objetivo ou contexto da campanha</span><textarea className="input" value={campaignText} onChange={(event) => setCampaignText(event.target.value)} maxLength={1000} placeholder="Ex.: apresentar a coleção nova e convidar para ver os produtos no site." /><small>O agente personaliza este texto para cada contato selecionado.</small></label>
-            )}
             <div className="ai-agent-grid">
               {data.agents.map((agent) => (
                 <article className="ai-agent-card" key={agent.id}>
@@ -444,7 +431,7 @@ export default function AiService() {
                     {agent.mode === 'atendimento' && <button className="btn btn-ghost btn-sm" onClick={() => setActionsAgent(agent)}><Icon name="sparkles" size={16} /> Funções</button>}
                     <button className="btn btn-ghost btn-sm" onClick={() => testAgent(agent)} disabled={testing === agent.id}>{testing === agent.id ? 'Testando...' : 'Testar credencial'}</button>
                     <button className="btn btn-ghost btn-sm icon-btn-danger" onClick={() => removeAgent(agent)}><Icon name="trash" size={16} /> Excluir</button>
-                    {agent.mode === 'marketing' && <button className="btn btn-primary btn-sm" onClick={() => campaign(agent)} disabled={!agent.active || campaignBusy === agent.id}>{campaignBusy === agent.id ? 'Enviando...' : `Enviar campanha (${agent.contactIds.length})`}</button>}
+                    {agent.mode === 'marketing' && <button className="btn btn-primary btn-sm" onClick={() => setCampaignAgent(agent)} disabled={!agent.active}><Icon name="send" size={16} /> Campanha ({agent.contactIds.length})</button>}
                   </div>
                 </article>
               ))}
@@ -484,6 +471,7 @@ export default function AiService() {
       {data && tab === 'contatos' && <ContactsPanel folders={data.folders} onChanged={load} />}
       {data && tab === 'prompts' && <PromptsPanel prompts={data.prompts} builtin={data.builtinPrompts} onChanged={load} />}
       {actionsAgent && <ActionsModal agent={actionsAgent} onClose={() => setActionsAgent(null)} />}
+      {campaignAgent && <CampaignModal agent={campaignAgent} onClose={() => setCampaignAgent(null)} />}
       {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} />}
     </>
   );

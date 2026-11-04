@@ -1920,6 +1920,33 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-action-item { display: flex; justify-content: space-between; gap: 1rem; align-items: flex-start; padding: .75rem; border: 1px solid var(--line); border-radius: 10px; }
 .ai-action-item p { margin: .2rem 0 0; }
 
+/* Campanhas de marketing em trânsito */
+.modal-wide:has(.cmp-monitor) { max-width: min(46rem, 96vw); }
+.cmp-form, .cmp-monitor { display: grid; gap: .8rem; }
+.cmp-estimate { padding: .6rem .8rem; border-radius: 8px; background: var(--bg-soft, #f1f5f9); font-size: .9rem; }
+.cmp-estimate.is-bad { background: var(--red-soft); color: var(--red-d); }
+.cmp-head { display: flex; flex-wrap: wrap; align-items: center; gap: .6rem; }
+.cmp-status { padding: .1rem .55rem; border-radius: 999px; font-size: .75rem; font-weight: 700; background: #e2e8f0; }
+.cmp-status.is-running { background: #dcfce7; color: #15803d; }
+.cmp-status.is-paused { background: #fef3c7; color: #92400e; }
+.cmp-status.is-scheduled { background: #dbeafe; color: #1d4ed8; }
+.cmp-progress { width: 100%; height: .6rem; }
+.cmp-counts { display: flex; gap: 1.2rem; flex-wrap: wrap; font-size: .9rem; }
+.cmp-wait { display: grid; gap: .2rem; padding: .7rem .9rem; border: 1px dashed var(--line); border-radius: 10px; }
+.cmp-controls { display: flex; flex-wrap: wrap; gap: .5rem; align-items: center; }
+.cmp-speed { display: flex; align-items: center; gap: .4rem; font-size: .85rem; }
+.cmp-speed .input { padding: .25rem .5rem; }
+.cmp-items { list-style: none; margin: 0; padding: 0; display: grid; gap: .3rem; max-height: 18rem; overflow: auto; }
+.cmp-items li { display: grid; grid-template-columns: auto 1fr auto; gap: .6rem; align-items: center; padding: .4rem .6rem; border: 1px solid var(--line); border-radius: 8px; font-size: .88rem; }
+.cmp-items li.is-next { border-color: var(--brand, #2563eb); background: #eff6ff; }
+.cmp-dot { width: .6rem; height: .6rem; border-radius: 50%; background: #cbd5e1; }
+.cmp-items li.is-sent .cmp-dot { background: #16a34a; }
+.cmp-items li.is-failed .cmp-dot, .cmp-items li.is-skipped .cmp-dot { background: #dc2626; }
+.cmp-items li.is-sending .cmp-dot, .cmp-items li.is-next .cmp-dot { background: #2563eb; animation: cmp-pulse 1s infinite; }
+.cmp-state { color: #475569; text-align: right; }
+.cmp-last { margin-top: .8rem; }
+@keyframes cmp-pulse { 50% { opacity: .35; } }
+
 /* Etiquetas, romaneio, scanner e impressão */
 .print-root { display: none; }
 @media print {
@@ -1932,7 +1959,15 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .rom-doc table { break-inside: auto; }
   .rom-doc tr { break-inside: avoid; }
 }
-.modal-wide:has(.lbl-layout), .modal-wide:has(.rom-layout) { max-width: min(78rem, 97vw); }
+.modal-wide:has(.lbl-layout), .modal-wide:has(.rom-layout) {
+  width: min(96vw, 110rem); max-width: none; height: min(94vh, 70rem);
+  grid-template-rows: auto minmax(0, 1fr) auto; overflow: hidden;
+}
+.modal-wide:has(.lbl-layout) .modal-body, .modal-wide:has(.rom-layout) .modal-body { min-height: 0; overflow: auto; align-content: start; }
+.lbl-layout, .rom-layout { min-height: 100%; }
+.modal-wide:has(.lbl-layout) .lbl-list, .modal-wide:has(.lbl-layout) .lbl-elements, .modal-wide:has(.rom-layout) .rom-list { max-height: none; overflow: visible; }
+.modal-wide:has(.rom-layout) .rom-paper { max-height: none; }
+.lbl-stage { min-height: 22rem; }
 .lbl-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.1fr) minmax(0, 1fr); gap: 1rem; align-items: start; }
 .rom-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(0, 1.2fr); gap: 1rem; align-items: start; }
 @media (max-width: 900px) { .lbl-layout, .rom-layout { grid-template-columns: 1fr; } }

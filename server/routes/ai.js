@@ -566,53 +566,220 @@ router.post('/agents/:id/test', async (req, res) => {
   res.json({ ok: true, message: 'Credencial válida. A chamada de teste foi contabilizada no uso mensal.' });
 });
 
+const CAMPAIGN_MIN_INTERVAL_MS = 20 * 1000;
+const CAMPAIGN_SPEEDS = new Set([1, 2, 4]);
+const CAMPAIGN_OPEN = ['scheduled', 'running', 'paused'];
+const CAMPAIGN_LEASE_MS = 3 * 60 * 1000;
+
+function parseCampaignDate(value, label) {
+  const date = new Date(String(value || ''));
+  if (Number.isNaN(date.getTime())) throw new AppError(400, `Informe ${label} da campanha.`);
+  return date;
+}
+
+async function campaignDto(campaign, { items = true } = {}) {
+  const [counts, list, agent] = await Promise.all([
+    prisma.aiCampaignItem.groupBy({ by: ['status'], where: { campaignId: campaign.id }, _count: { _all: true } }),
+    items ? prisma.aiCampaignItem.findMany({ where: { campaignId: campaign.id }, orderBy: { position: 'asc' }, take: 100 }) : [],
+    prisma.aiAgent.findUnique({ where: { id: campaign.agentId }, select: { name: true, schedule: true } }),
+  ]);
+  const by = Object.fromEntries(counts.map((row) => [row.status, row._count._all]));
+  return {
+    id: campaign.id, agentId: campaign.agentId, agentName: agent?.name || '', status: campaign.status, message: campaign.message,
+    startAt: campaign.startAt, endAt: campaign.endAt, intervalSeconds: Math.round(campaign.intervalMs / 1000), speed: campaign.speed,
+    nextRunAt: campaign.nextRunAt, total: campaign.total, lastError: campaign.lastError, finishedAt: campaign.finishedAt,
+    sent: by.sent || 0, failed: by.failed || 0, skipped: by.skipped || 0, pending: (by.pending || 0) + (by.sending || 0),
+    outsideSchedule: ['scheduled', 'running'].includes(campaign.status) && !isWithinSchedule(agent?.schedule),
+    items: list.map((item) => ({ id: item.id, name: item.name, phone: item.phone, status: item.status, error: item.error, sentAt: item.sentAt })),
+  };
+}
+
+async function finishCampaign(campaign, status, note = '') {
+  await prisma.aiCampaignItem.updateMany({
+    where: { campaignId: campaign.id, status: 'pending' },
+    data: { status: 'skipped', error: status === 'cancelled' ? 'Campanha cancelada.' : 'Fora do período da campanha.' },
+  });
+  await prisma.aiCampaign.update({ where: { id: campaign.id }, data: { status, nextRunAt: null, finishedAt: new Date(), ...(note ? { lastError: note } : {}) } });
+}
+
+// Envia UM contato da campanha e agenda o próximo respeitando a espera entre mensagens.
+async function processCampaign(campaign, scheduledFor) {
+  const now = new Date();
+  const pause = (note) => prisma.aiCampaign.update({ where: { id: campaign.id }, data: { status: 'paused', lastError: note } });
+  const agent = await prisma.aiAgent.findUnique({ where: { id: campaign.agentId }, include: { instance: true } });
+  if (!agent || !agent.active || !agent.instance) return pause('O agente está desativado ou sem instância WhatsApp.');
+  if (campaign.endAt <= now) return finishCampaign(campaign, 'completed', 'O período terminou antes de todos os contatos serem enviados.');
+  if (!isWithinSchedule(agent.schedule)) {
+    return prisma.aiCampaign.update({ where: { id: campaign.id }, data: { nextRunAt: new Date(Date.now() + 60 * 1000) } });
+  }
+  const item = await prisma.aiCampaignItem.findFirst({ where: { campaignId: campaign.id, status: 'pending' }, orderBy: { position: 'asc' } });
+  if (!item) return finishCampaign(campaign, 'completed');
+  const claimed = await prisma.aiCampaignItem.updateMany({ where: { id: item.id, status: 'pending' }, data: { status: 'sending' } });
+  if (!claimed.count) return null;
+
+  let stopNote = '';
+  try {
+    if (agent.instance.provider === 'evolution' && (await evo.getState(agent.instance.name)) !== 'open') {
+      await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'pending' } });
+      return pause('A instância WhatsApp está desconectada. Reconecte e retome a campanha.');
+    }
+    const usage = await usageFor(agent.id);
+    if (usage.requests >= agent.monthlyLimit) {
+      await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'pending' } });
+      return pause('Limite de uso mensal do agente atingido.');
+    }
+    const conversation = await prisma.aiConversation.upsert({
+      where: { agentId_phone: { agentId: agent.id, phone: item.phone } },
+      create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: item.phone, name: item.name || '' },
+      update: { name: item.name || '' },
+    });
+    const context = await createContext(agent, item.phone, item.name);
+    const reply = await complete({
+      provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
+      prompt: `${agent.prompt}${context}`,
+      input: `Crie uma mensagem de marketing personalizada para ${item.name || 'o cliente'}. Tema/campanha: ${campaign.message || 'Apresente nossos produtos e convide a pessoa a conhecer as novidades.'}`,
+    });
+    const text = reply.text.slice(0, 6000);
+    if (!text) throw new AppError(502, 'O provedor retornou uma resposta vazia.');
+    await saveMessage(conversation.id, { role: 'assistant', content: text, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens });
+    await sendText(agent.instance, item.phone, text);
+    await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'sent', sentAt: new Date(), error: '' } });
+  } catch (error) {
+    await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'failed', error: String(error.message || 'Falha no envio.').slice(0, 300) } });
+    if (error.code === 'AI_PROVIDER_LIMIT' || error.code === 'AI_CREDENTIAL_INVALID') stopNote = error.message;
+  }
+  if (stopNote) return pause(stopNote);
+
+  const remaining = await prisma.aiCampaignItem.count({ where: { campaignId: campaign.id, status: 'pending' } });
+  if (!remaining) return finishCampaign(campaign, 'completed');
+  // Espera aleatória (75–100% do intervalo) ancorada no horário previsto, para não acumular atraso nem enviar em rajada.
+  const delay = (campaign.intervalMs / campaign.speed) * (0.75 + Math.random() * 0.25);
+  const next = new Date(Math.max(scheduledFor.getTime() + delay, Date.now() + 8000));
+  return prisma.aiCampaign.update({ where: { id: campaign.id }, data: { status: 'running', nextRunAt: next, lastError: '' } });
+}
+
+let campaignTimer = null;
+let campaignBusy = false;
+async function campaignTick() {
+  if (campaignBusy) return;
+  campaignBusy = true;
+  try {
+    const due = await prisma.aiCampaign.findMany({
+      where: { status: { in: ['scheduled', 'running'] }, nextRunAt: { lte: new Date() } }, orderBy: { nextRunAt: 'asc' }, take: 20,
+    });
+    for (const campaign of due) {
+      const lease = await prisma.aiCampaign.updateMany({
+        where: { id: campaign.id, status: campaign.status, nextRunAt: campaign.nextRunAt },
+        data: { nextRunAt: new Date(Date.now() + CAMPAIGN_LEASE_MS) },
+      });
+      if (!lease.count) continue;
+      try {
+        await processCampaign(campaign, campaign.nextRunAt);
+      } catch (error) {
+        console.error(`[campanha ${campaign.id}] falha:`, error.message);
+        await prisma.aiCampaign.update({ where: { id: campaign.id }, data: { nextRunAt: new Date(Date.now() + 30 * 1000), lastError: String(error.message).slice(0, 300) } }).catch(() => {});
+      }
+    }
+  } catch (error) {
+    console.error('[campanhas] falha no ciclo:', error.message);
+  } finally {
+    campaignBusy = false;
+  }
+}
+
+export function startAiCampaignWorker() {
+  if (campaignTimer) return;
+  campaignTimer = setInterval(campaignTick, 5000);
+  setTimeout(campaignTick, 3000);
+  console.log('[campanhas] envio gradual de marketing ligado (verifica a cada 5s)');
+}
+
+export function stopAiCampaignWorker() {
+  if (campaignTimer) clearInterval(campaignTimer);
+  campaignTimer = null;
+}
+
 router.post('/agents/:id/campaign', async (req, res) => {
   const agent = await ownedAgent(req.user.id, req.params.id);
   if (agent.mode !== 'marketing') throw new AppError(400, 'Envios em lote estão disponíveis apenas para agentes de marketing.');
   if (!agent.active || !agent.instance) throw new AppError(400, 'Ative o agente e selecione uma instância WhatsApp.');
-  if (!isWithinSchedule(agent.schedule)) throw new AppError(400, 'Este agente está fora do horário de funcionamento configurado.');
-  const ids = Array.isArray(agent.contactIds) ? agent.contactIds : [];
-  const selectedPhones = ids.filter(Boolean);
+  const open = await prisma.aiCampaign.findFirst({ where: { agentId: agent.id, status: { in: CAMPAIGN_OPEN } }, select: { id: true } });
+  if (open) throw new AppError(409, 'Este agente já tem uma campanha em andamento. Cancele ou aguarde terminar.');
+  const startAt = parseCampaignDate(req.body?.startAt, 'a data e hora de início');
+  const endAt = parseCampaignDate(req.body?.endAt, 'a data e hora de término');
+  const now = Date.now();
+  if (startAt.getTime() < now - 5 * 60 * 1000) throw new AppError(400, 'O início da campanha não pode estar no passado.');
+  const effectiveStart = new Date(Math.max(startAt.getTime(), now));
+  if (endAt <= effectiveStart) throw new AppError(400, 'O término deve ser depois do início.');
+  const selectedPhones = [...new Set((Array.isArray(agent.contactIds) ? agent.contactIds : []).filter(Boolean))];
+  if (selectedPhones.length > 100) throw new AppError(400, 'Cada campanha pode ter até 100 contatos.');
+  if (!selectedPhones.length) throw new AppError(400, 'Selecione ao menos um contato.');
+  const intervalMs = Math.floor((endAt.getTime() - effectiveStart.getTime()) / selectedPhones.length);
+  if (intervalMs < CAMPAIGN_MIN_INTERVAL_MS) {
+    const minutes = Math.ceil((selectedPhones.length * CAMPAIGN_MIN_INTERVAL_MS) / 60000);
+    throw new AppError(400, `Para ${selectedPhones.length} contato(s) o período precisa ter ao menos ${minutes} minuto(s), com no mínimo 20 segundos entre mensagens, para o número não ser bloqueado.`);
+  }
   const folders = await loadFolders(req.user.id);
   const contactByPhone = new Map();
-  for (const folder of folders) for (const contact of folder.contacts) if (!contactByPhone.has(contact.phone)) contactByPhone.set(contact.phone, { name: contact.name, phone: contact.phone });
-  if (selectedPhones.length > 100) throw new AppError(400, 'Cada campanha pode ter até 100 contatos.');
-  const recipients = selectedPhones.map((phone) => contactByPhone.get(phone) || { name: '', phone });
-  if (!recipients.length) throw new AppError(400, 'Selecione ao menos um contato.');
-  if (agent.instance.provider === 'evolution') {
-    const state = await evo.getState(agent.instance.name);
-    if (state !== 'open') throw new AppError(400, 'A instância WhatsApp está desconectada.');
-  }
-  const result = { sent: 0, failed: [] };
-  for (const contact of recipients) {
-    const usage = await usageFor(agent.id);
-    if (usage.requests >= agent.monthlyLimit) {
-      result.failed.push({ phone: contact.phone, error: 'Limite de uso mensal atingido.' });
-      continue;
-    }
-    const conversation = await prisma.aiConversation.upsert({
-      where: { agentId_phone: { agentId: agent.id, phone: contact.phone } },
-      create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: contact.phone, name: contact.name || '' },
-      update: { name: contact.name || '' },
+  for (const folder of folders) for (const contact of folder.contacts) if (!contactByPhone.has(contact.phone)) contactByPhone.set(contact.phone, contact.name);
+  const campaign = await prisma.aiCampaign.create({
+    data: {
+      userId: req.user.id, agentId: agent.id, message: String(req.body?.message || '').slice(0, 1000).trim(),
+      status: startAt.getTime() > now ? 'scheduled' : 'running', startAt: effectiveStart, endAt, intervalMs, total: selectedPhones.length, nextRunAt: effectiveStart,
+      items: { create: selectedPhones.map((phone, index) => ({ position: index, phone, name: contactByPhone.get(phone) || '' })) },
+    },
+  });
+  res.status(201).json({ campaign: await campaignDto(campaign) });
+});
+
+router.get('/campaigns', async (req, res) => {
+  const agentId = Number(req.query.agentId);
+  const campaigns = await prisma.aiCampaign.findMany({
+    where: { userId: req.user.id, ...(Number.isInteger(agentId) && agentId > 0 ? { agentId } : {}) },
+    orderBy: { createdAt: 'desc' }, take: 5,
+  });
+  res.json({ serverNow: new Date(), campaigns: await Promise.all(campaigns.map((campaign) => campaignDto(campaign))) });
+});
+
+async function ownedCampaign(userId, id) {
+  const campaignId = Number(id);
+  const campaign = Number.isInteger(campaignId) ? await prisma.aiCampaign.findFirst({ where: { id: campaignId, userId } }) : null;
+  if (!campaign) throw new AppError(404, 'Campanha não encontrada.');
+  return campaign;
+}
+
+router.post('/campaigns/:id/:action', async (req, res) => {
+  const campaign = await ownedCampaign(req.user.id, req.params.id);
+  const action = req.params.action;
+  const open = CAMPAIGN_OPEN.includes(campaign.status);
+  if (!open) throw new AppError(409, 'Esta campanha já foi encerrada.');
+  const now = new Date();
+  if (action === 'pause') {
+    if (campaign.status === 'paused') throw new AppError(409, 'A campanha já está pausada.');
+    await prisma.aiCampaign.update({ where: { id: campaign.id }, data: { status: 'paused' } });
+  } else if (action === 'resume') {
+    if (campaign.status !== 'paused') throw new AppError(409, 'A campanha não está pausada.');
+    const pending = await prisma.aiCampaignItem.count({ where: { campaignId: campaign.id, status: 'pending' } });
+    const needed = new Date(now.getTime() + pending * (campaign.intervalMs / campaign.speed));
+    await prisma.aiCampaign.update({
+      where: { id: campaign.id },
+      data: { status: 'running', lastError: '', nextRunAt: new Date(Math.max(now.getTime() + 3000, campaign.startAt.getTime())), endAt: needed > campaign.endAt ? needed : campaign.endAt },
     });
-    try {
-      const context = await createContext(agent, contact.phone, contact.name);
-      const reply = await complete({
-        provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
-        prompt: `${agent.prompt}${context}`,
-        input: `Crie uma mensagem de marketing personalizada para ${contact.name || 'o cliente'}. Tema/campanha: ${String(req.body?.message || 'Apresente nossos produtos e convide a pessoa a conhecer as novidades.').slice(0, 1000)}`,
-      });
-      const text = reply.text.slice(0, 6000);
-      if (!text) throw new AppError(502, 'O provedor retornou uma resposta vazia.');
-      await saveMessage(conversation.id, { role: 'assistant', content: text, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens });
-      await sendText(agent.instance, contact.phone, text);
-      result.sent += 1;
-    } catch (error) {
-      result.failed.push({ phone: contact.phone, error: error.message });
-      if (error.code === 'AI_PROVIDER_LIMIT' || error.code === 'AI_CREDENTIAL_INVALID') break;
-    }
+  } else if (action === 'cancel') {
+    await finishCampaign(campaign, 'cancelled');
+  } else if (action === 'speed') {
+    const speed = Number(req.body?.speed);
+    if (!CAMPAIGN_SPEEDS.has(speed)) throw new AppError(400, 'Escolha a velocidade 1x, 2x ou 4x.');
+    const soonest = new Date(now.getTime() + campaign.intervalMs / speed);
+    const nextRunAt = campaign.status !== 'paused' && campaign.nextRunAt && campaign.nextRunAt > soonest ? soonest : campaign.nextRunAt;
+    await prisma.aiCampaign.update({ where: { id: campaign.id }, data: { speed, nextRunAt } });
+  } else if (action === 'send-now') {
+    if (campaign.status === 'paused') throw new AppError(409, 'Retome a campanha para enviar o próximo agora.');
+    await prisma.aiCampaign.update({ where: { id: campaign.id }, data: { status: 'running', nextRunAt: new Date(now.getTime() + 1000) } });
+  } else {
+    throw new AppError(404, 'Ação desconhecida.');
   }
-  res.json(result);
+  res.json({ campaign: await campaignDto(await ownedCampaign(req.user.id, campaign.id)) });
 });
 
 router.get('/conversations', async (req, res) => {
