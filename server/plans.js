@@ -225,5 +225,6 @@ export function listPlans() {
     prices: Object.fromEntries(PERIOD_IDS.map((per) => [per, priceCents(p.id, per)])),
     ...limitsOf(p.id),
     dmCredit: p.dmCredit,
+    aiMarketing: p.tabs.includes('ia'),
   }));
 }

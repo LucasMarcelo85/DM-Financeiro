@@ -17,6 +17,7 @@ export function planFeatureRows(p) {
     { ok: true, label: 'Portfólio: editor livre (arraste e posicione) para computador, tablet e celular' },
     { ok: p.catalogProducts > 0, label: 'Pedidos com entrega por excursão, motoboy ou Correios (frete simulado)' },
     { ok: Boolean(p.auditSend), label: 'Enviar mensagens pela auditoria' },
+    { ok: Boolean(p.aiMarketing), label: 'Marketing sem IA: mensagens, fotos e vídeos pelo WhatsApp' },
   ];
 }
 

@@ -27,9 +27,11 @@ const PLAN_FEATURES = [
   ['catalogProducts', 'produto ou serviço no catálogo', 'produtos e serviços no catálogo'],
   ['stores', 'loja com aplicativo próprio', 'lojas com aplicativo próprio'],
   ['appUsers', 'acesso por aplicativo de loja', 'acessos por aplicativo de loja'],
+  ['aiMarketing', 'Marketing sem IA', 'Marketing sem IA'],
 ];
 
 const planValue = (plan, key) => {
+  if (key === 'aiMarketing') return plan.aiMarketing ? 'Incluído' : 'Não incluído';
   const value = Number(plan[key] || 0);
   if (key === 'appUsers' && Number(plan.stores) < 1) return 'Não incluído';
   if (key === 'catalogProducts' && value === 0) return 'Não incluído';
@@ -42,8 +44,8 @@ function PlanFeatures({ plan }) {
     <ul className="mt-5 grid gap-3 text-sm text-slate-600">
       {PLAN_FEATURES.filter(([key]) => key !== 'appUsers' || Number(plan.stores) > 0).map(([key, singular, plural]) => (
         <li key={key} className="flex items-start gap-2.5">
-          <span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span>
-          <span>{planValue(plan, key) === 'Não incluído' ? 'Não incluído' : <><strong className="font-semibold text-slate-800">{planValue(plan, key).toLocaleString('pt-BR')}</strong> {planValue(plan, key) === 1 ? singular : plural}</>}</span>
+          <span className={`mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full ${key === 'aiMarketing' && !plan.aiMarketing ? 'bg-slate-200 text-slate-500' : 'bg-emerald-100 text-emerald-700'}`}><Icon name={key === 'aiMarketing' && !plan.aiMarketing ? 'x' : 'check'} size={13} /></span>
+          <span>{planValue(plan, key) === 'Não incluído' ? 'Não incluído' : planValue(plan, key) === 'Incluído' ? <><strong className="font-semibold text-slate-800">Incluído</strong> · envie mensagens, fotos e vídeos pelo WhatsApp sem agente de IA</> : <><strong className="font-semibold text-slate-800">{planValue(plan, key).toLocaleString('pt-BR')}</strong> {planValue(plan, key) === 1 ? singular : plural}</>}</span>
         </li>
       ))}
       {plan.auditSend && <li className="flex items-start gap-2.5"><span className="mt-0.5 grid h-5 w-5 shrink-0 place-items-center rounded-full bg-emerald-100 text-emerald-700"><Icon name="check" size={13} /></span><span>Respostas pela auditoria de conversas</span></li>}
