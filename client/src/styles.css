@@ -1637,6 +1637,14 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .od-customer-orders li { display: grid; grid-template-columns: 1fr 1fr auto auto; align-items: center; gap: 0.7rem; padding: 0.7rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
 .od-customer-orders details { grid-column: 1 / -1; color: var(--muted); font-size: 0.85rem; }
 .od-customer-orders details p { margin: 0.4rem 0 0; }
+.shop-app-top { display: flex; align-items: center; gap: 0.5rem; padding: 0.7rem 1rem; }
+.shop-app-title { flex: 1; min-width: 0; font-size: 1.1rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.shop-app-nav { display: flex; flex-wrap: nowrap; gap: 0.4rem; padding: 0 1rem 0.7rem; overflow-x: auto; scrollbar-width: none; -webkit-overflow-scrolling: touch; }
+.shop-app-nav::-webkit-scrollbar { display: none; }
+.shop-app-nav .btn { flex: 0 0 auto; white-space: nowrap; }
+@media (min-width: 900px) {
+  .shop-app-nav { flex-wrap: wrap; overflow-x: visible; }
+}
 .shop-app-bar .btn-ghost { color: inherit; border-color: currentColor; }
 .shop-app-bar .btn-ghost:hover:not(:disabled) { background: color-mix(in srgb, var(--shop-app-fg) 12%, transparent); border-color: currentColor; }
 .shop-app-bar .btn-primary { background: var(--shop-app-fg); color: var(--shop-app-bg); border-color: var(--shop-app-fg); }

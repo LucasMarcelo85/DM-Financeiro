@@ -304,15 +304,18 @@ export default function ShopApp() {
 
   return (
     <>
-      <header className="shop-app-bar" style={bar}>
-        <strong style={{ fontSize: 18 }}>{info.name}</strong>
-        <nav role="tablist" aria-label="Áreas do aplicativo" style={{ display: 'flex', gap: 8, flex: 1, flexWrap: 'wrap' }}>
-          {tabs.length > 1 && tabs.map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={tab === key} className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setTab(key)}>{label}</button>
+      <header className="shop-app-bar" style={{ ...bar, display: 'block', padding: 0 }}>
+        <div className="shop-app-top">
+          <strong className="shop-app-title">{info.name}</strong>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}>Usuário</button>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
+        </div>
+        {tabs.length > 1 && <nav role="tablist" aria-label="Áreas do aplicativo" className="shop-app-nav">
+          {tabs.map(([key, label]) => (
+            <button key={key} type="button" role="tab" aria-selected={tab === key} className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`}
+              ref={tab === key ? (node) => node?.scrollIntoView?.({ block: 'nearest', inline: 'center' }) : undefined} onClick={() => setTab(key)}>{label}</button>
           ))}
-        </nav>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}>Usuário</button>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
+        </nav>}
       </header>
       <main id="shop-app-panel" role="tabpanel" className={['pdv', 'pedidos', 'auditoria'].includes(tab) ? 'shop-panel-wide' : ''} style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
         {!perms ? <p className="muted">Carregando...</p>
