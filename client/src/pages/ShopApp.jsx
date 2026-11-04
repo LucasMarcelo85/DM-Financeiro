@@ -64,6 +64,7 @@ export default function ShopApp() {
   const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
+  const [loginError, setLoginError] = useState('');
   const [accountOpen, setAccountOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -117,6 +118,7 @@ export default function ShopApp() {
   async function login(e) {
     e.preventDefault();
     setBusy(true);
+    setLoginError('');
     try {
       const r = await api.post('/shop-app/login', { u: slug, login: form.login, password: form.password });
       setShopToken(r.token);
@@ -128,7 +130,10 @@ export default function ShopApp() {
       setTab(firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
       setAuthed(true);
-    } catch (err) { toast(err.message, 'error'); } finally { setBusy(false); }
+    } catch (err) {
+      setLoginError(err.message);
+      toast(err.message, 'error');
+    } finally { setBusy(false); }
   }
 
   async function changePassword(event) {
@@ -171,11 +176,12 @@ export default function ShopApp() {
     return (
       <>
         <header style={bar}><strong style={{ fontSize: 18 }}>{info.name}</strong></header>
-        <form onSubmit={login} style={{ maxWidth: 360, margin: '40px auto', padding: 16, display: 'grid', gap: 12 }}>
+        <form onSubmit={login} style={{ width: 'min(calc(100% - 32px), 26rem)', margin: 'clamp(24px, 8vh, 64px) auto', padding: 'clamp(20px, 4vw, 32px)', display: 'grid', gap: 16, background: '#fff', border: '1px solid var(--line)', borderRadius: 16, boxShadow: '0 12px 36px #0f223814' }}>
           <h1 style={{ margin: 0 }}>Entrar</h1>
-          <input className="input" value={form.login} onChange={(e) => setForm({ ...form, login: e.target.value })} placeholder="Usuário" autoCapitalize="none" autoComplete="username" aria-label="Usuário" />
-          <input className="input" type="password" value={form.password} onChange={(e) => setForm({ ...form, password: e.target.value })} placeholder="Senha" autoComplete="current-password" aria-label="Senha" />
-          <button className="btn btn-primary" disabled={busy || !form.login || !form.password}>{busy ? 'Entrando...' : 'Entrar'}</button>
+          <label className="field"><span>Usuário</span><input className="input" value={form.login} onChange={(e) => { setLoginError(''); setForm({ ...form, login: e.target.value }); }} placeholder="Digite seu usuário" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" aria-label="Usuário" required /></label>
+          <label className="field"><span>Senha</span><input className="input" type="password" value={form.password} onChange={(e) => { setLoginError(''); setForm({ ...form, password: e.target.value }); }} placeholder="Digite sua senha" autoComplete="current-password" aria-label="Senha" required /></label>
+          {loginError && <p className="form-error" role="alert">{loginError}</p>}
+          <button className="btn btn-primary" style={{ minHeight: 48, fontSize: 16 }} disabled={busy || !form.login.trim() || !form.password}>{busy ? 'Entrando...' : 'Entrar'}</button>
         </form>
       </>
     );

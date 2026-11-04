@@ -35,12 +35,40 @@ const scoped = (url) => {
 
 // Aplicativo do lojista (/app): o login é outro e as telas de Produtos e Pedidos reaproveitam as mesmas chamadas, redirecionadas para /shop-app.
 const SHOP_KEY = 'dm:shop-token';
+const memoryShopTokens = new Map();
 export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
 // Cada loja tem sua própria sessão: o token fica guardado por endereço do app, para não misturar lojas no mesmo navegador.
 export const shopSlug = () => decodeURIComponent(/^\/app\/([^/?#]+)/.exec(window.location.pathname)?.[1] || '').toLowerCase();
 const shopKey = () => `${SHOP_KEY}:${shopSlug() || 'domain'}`;
-export const getShopToken = () => localStorage.getItem(shopKey());
-export const setShopToken = (t) => { if (t) localStorage.setItem(shopKey(), t); else localStorage.removeItem(shopKey()); };
+export const getShopToken = () => {
+  const key = shopKey();
+  try {
+    const token = localStorage.getItem(key);
+    if (token) return token;
+  } catch { /* Alguns navegadores bloqueiam o armazenamento persistente. */ }
+  try {
+    const token = sessionStorage.getItem(key);
+    if (token) return token;
+  } catch { /* A sessão em memória ainda permite usar o app até fechar a página. */ }
+  return memoryShopTokens.get(key) || null;
+};
+export const setShopToken = (token) => {
+  const key = shopKey();
+  if (!token) {
+    memoryShopTokens.delete(key);
+    try { localStorage.removeItem(key); } catch { /* O armazenamento pode estar indisponível neste navegador. */ }
+    try { sessionStorage.removeItem(key); } catch { /* A sessão em memória também foi removida. */ }
+    return;
+  }
+  memoryShopTokens.set(key, token);
+  try {
+    localStorage.setItem(key, token);
+    return;
+  } catch { /* Tenta manter a sessão até o fechamento da aba. */ }
+  try {
+    sessionStorage.setItem(key, token);
+  } catch { /* Mantém a sessão em memória se o navegador bloquear ambos os armazenamentos. */ }
+};
 const SHOP_ROUTES = /^\/(products|catalog|inventory|portfolios|instances|tokens|audit|team)(\/|\?|$)/;
 // Menus com dados próprios do app (WhatsApp, clientes, lembretes, contratos, portfólio e IA) usam /shop-app/ws.
 const WORKSPACE_ROUTES = /^\/(instances|contacts|schedules|receipts|messages|media|contracts|ai|stores)(\/|\?|$)/;
