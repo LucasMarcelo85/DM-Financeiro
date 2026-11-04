@@ -289,7 +289,28 @@ function ProfileDemo() {
   );
 }
 
+function MarketingNoAiDemo() {
+  const [kind, setKind] = useState('text');
+  const [interval, setInterval] = useState('30');
+  const [consent, setConsent] = useState(false);
+  const [started, setStarted] = useState(false);
+  const [sent, setSent] = useState(0);
+  return (
+    <div className="dc-stack">
+      <label className="field"><span>Número conectado</span><select className="input" aria-label="Número conectado"><option>WhatsApp da loja</option></select></label>
+      <div className="dc-chips">{[['text', 'Mensagem'], ['image', 'Foto/vídeo']].map(([value, label]) => <button type="button" className={`btn btn-sm ${kind === value ? 'btn-primary' : 'btn-ghost'}`} key={value} onClick={() => setKind(value)}>{label}</button>)}</div>
+      {kind === 'image' && <button type="button" className="btn btn-ghost btn-sm">Escolher foto ou vídeo</button>}
+      <label className="field"><span>{kind === 'image' ? 'Legenda' : 'Mensagem'}</span><textarea className="input" rows={3} placeholder={kind === 'image' ? 'Legenda da mídia...' : 'Escreva sua mensagem...'} aria-label="Mensagem" /></label>
+      <label className="field"><span>Intervalo fixo</span><select className="input" value={interval} onChange={(event) => setInterval(event.target.value)}><option value="20">20 segundos</option><option value="30">30 segundos</option><option value="60">60 segundos</option><option value="120">120 segundos</option></select></label>
+      <label className="small"><input type="checkbox" checked={consent} onChange={(event) => setConsent(event.target.checked)} /> Todos autorizaram receber mensagens.</label>
+      <button type="button" className="btn btn-primary btn-sm" disabled={!consent} onClick={() => { setStarted(true); setSent(Math.min(2, sent + 1)); }}>{started ? 'Simular atualização' : 'Iniciar campanha'}</button>
+      {started && <div className="dc-row"><strong>{sent} de 8 enviados</strong><span>Falhas: 1 · Intervalo: {interval}s</span></div>}
+    </div>
+  );
+}
+
 export const DEMOS = {
   whatsapp: WhatsAppDemo, clientes: ClientsDemo, cobrancas: ChargesDemo, contratos: ContractsDemo, auditoria: AuditDemo,
-  portfolio: PortfolioDemo, produtos: ProductsDemo, pedidos: OrdersDemo, api: ApiDemo, ia: AiDemo, perfil: ProfileDemo,
+  portfolio: PortfolioDemo, produtos: ProductsDemo, pedidos: OrdersDemo, api: ApiDemo, ia: AiDemo,
+  'marketing-sem-ia': MarketingNoAiDemo, perfil: ProfileDemo,
 };

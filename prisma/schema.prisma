@@ -116,6 +116,7 @@ model User {
   aiConversations    AiConversation[]
   aiPrompts          AiPrompt[]
   aiContactFolders   AiContactFolder[]
+  noAiMarketingCampaigns NoAiMarketingCampaign[]
 
   @@map("users")
 }
@@ -149,6 +150,7 @@ model Instance {
   auditChats    AuditChat[]
   auditContacts AuditContact[]
   aiAgents      AiAgent[]
+  noAiMarketingCampaigns NoAiMarketingCampaign[]
 
   @@index([userId, purpose])
   @@index([userId, purpose, auditScope])
@@ -989,6 +991,48 @@ model AiCampaignItem {
 
   @@index([campaignId, status, position])
   @@map("ai_campaign_items")
+}
+
+model NoAiMarketingCampaign {
+  id            Int       @id @default(autoincrement())
+  userId        Int       @map("user_id")
+  instanceId    Int       @map("instance_id")
+  message       String    @default("")
+  mediaData     Bytes?    @map("media_data")
+  mediaMimeType String?   @map("media_mime_type")
+  mediaFileName String?   @map("media_file_name")
+  consentConfirmed Boolean @default(false) @map("consent_confirmed")
+  status        String    @default("running")
+  intervalMs    Int       @map("interval_ms")
+  nextRunAt     DateTime? @map("next_run_at")
+  total         Int       @default(0)
+  lastError     String    @default("") @map("last_error")
+  createdAt     DateTime  @default(now()) @map("created_at")
+  finishedAt    DateTime? @map("finished_at")
+
+  user     User                      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  instance Instance                  @relation(fields: [instanceId], references: [id], onDelete: Cascade)
+  items    NoAiMarketingCampaignItem[]
+
+  @@index([userId, createdAt])
+  @@index([status, nextRunAt])
+  @@map("no_ai_marketing_campaigns")
+}
+
+model NoAiMarketingCampaignItem {
+  id         Int       @id @default(autoincrement())
+  campaignId Int       @map("campaign_id")
+  position   Int
+  phone      String
+  name       String    @default("")
+  status     String    @default("pending")
+  error      String    @default("")
+  sentAt     DateTime? @map("sent_at")
+
+  campaign NoAiMarketingCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status, position])
+  @@map("no_ai_marketing_campaign_items")
 }
 
 // Funções que o agente executa fora da conversa (ex.: avisar um especialista por WhatsApp).

@@ -81,6 +81,14 @@ export const DOCS = [
     limitsList: ['Limites de agentes, respostas e contatos pelo plano.', 'O custo das respostas é do provedor escolhido (sua chave).'],
   },
   {
+    slug: 'marketing-sem-ia', title: 'Marketing sem IA', icon: 'send',
+    summary: 'Envie uma mensagem escrita por você, com foto ou vídeo, para contatos autorizados.',
+    limits: 'Cada campanha aceita até 100 contatos e usa um intervalo fixo entre 20 e 120 segundos.',
+    about: 'Crie campanhas sem configurar agentes ou chaves de IA. Escolha um WhatsApp conectado, selecione contatos que autorizaram receber mensagens e envie texto ou uma imagem/vídeo com legenda. O painel acompanha envios, falhas e previsão de término.',
+    steps: ['Abra Atendimento com IA e clique em Marketing sem IA.', 'Escolha o número conectado e selecione os contatos autorizados.', 'Escreva a mensagem ou adicione foto/vídeo e uma legenda.', 'Escolha o intervalo fixo, confirme o consentimento e inicie. Acompanhe o progresso e as falhas na tela.'],
+    limitsList: ['A ferramenta não usa agente de IA nem gera textos.', 'Máximo de 100 contatos por campanha; apenas uma campanha por vez.', 'Intervalo fixo de 20, 30, 60 ou 120 segundos; não há variação aleatória.', 'Aceita imagens JPEG, PNG ou WebP e vídeos MP4 ou 3GPP de até 10 MB.', 'Envie somente a pessoas que autorizaram receber marketing e respeite pedidos de descadastro.', 'O envio depende da conexão WhatsApp estar ativa. Na API oficial da Meta, mensagens fora da janela de atendimento de 24 horas podem exigir um modelo aprovado.'],
+  },
+  {
     slug: 'perfil', title: 'Perfil', icon: 'gear',
     summary: 'Altere seus dados e a senha e crie um código PIN para proteger abas do sistema.',
     limits: 'Trocar e-mail ou senha pede a senha atual. Abas protegidas por PIN pedem o código de novo ao recarregar a página.',

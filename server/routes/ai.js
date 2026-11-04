@@ -8,7 +8,7 @@ import { complete } from '../services/ai.js';
 import { BUILTIN_PROMPTS, DEFAULT_PROMPTS } from '../services/ai-templates.js';
 import { isWithinSchedule, normalizeSchedule } from '../services/ai-schedule.js';
 import { buildActionsPrompt, extractActionCalls, renderActionMessage } from '../services/ai-actions.js';
-import { sendText } from '../services/whatsapp.js';
+import { getState, sendMedia, sendText } from '../services/whatsapp.js';
 import * as evo from '../services/evolution.js';
 import * as meta from '../services/meta.js';
 
@@ -695,6 +695,7 @@ export function startAiCampaignWorker() {
   if (campaignTimer) return;
   campaignTimer = setInterval(campaignTick, 5000);
   setTimeout(campaignTick, 3000);
+  startNoAiMarketingWorker();
   purgeTimer = setInterval(purgeOldAiMessages, 60 * 60 * 1000);
   setTimeout(purgeOldAiMessages, 60 * 1000);
   console.log('[campanhas] envio gradual de marketing ligado (verifica a cada 5s)');
@@ -705,6 +706,162 @@ export function stopAiCampaignWorker() {
   if (purgeTimer) clearInterval(purgeTimer);
   campaignTimer = null;
   purgeTimer = null;
+  stopNoAiMarketingWorker();
+}
+
+const NO_AI_CAMPAIGN_LIMIT = 100;
+const NO_AI_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+const NO_AI_INTERVALS = new Set([20, 30, 60, 120]);
+const NO_AI_CAMPAIGN_OPEN = ['running', 'paused'];
+const NO_AI_CAMPAIGN_LEASE_MS = 3 * 60 * 1000;
+const MARKETING_MEDIA_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/3gpp']);
+const cleanCampaignError = (error) => String(error?.message || 'Falha no envio.').slice(0, 300);
+let noAiMarketingTimer = null;
+let noAiMarketingBusy = false;
+
+async function noAiMarketingCampaignDto(campaign) {
+  const [counts, items, instance] = await Promise.all([
+    prisma.noAiMarketingCampaignItem.groupBy({ by: ['status'], where: { campaignId: campaign.id }, _count: { _all: true } }),
+    prisma.noAiMarketingCampaignItem.findMany({
+      where: { campaignId: campaign.id }, orderBy: { position: 'asc' }, take: NO_AI_CAMPAIGN_LIMIT,
+      select: { id: true, position: true, phone: true, name: true, status: true, error: true, sentAt: true },
+    }),
+    prisma.instance.findUnique({ where: { id: campaign.instanceId }, select: { name: true, label: true, provider: true, metaPhoneDisplay: true } }),
+  ]);
+  const by = Object.fromEntries(counts.map((row) => [row.status, row._count._all]));
+  const estimatedEndAt = new Date(campaign.createdAt.getTime() + campaign.total * campaign.intervalMs);
+  return {
+    id: campaign.id, status: campaign.status, message: campaign.message,
+    hasMedia: Boolean(campaign.mediaMimeType), mediaMimeType: campaign.mediaMimeType,
+    instanceName: instance?.label || instance?.metaPhoneDisplay || instance?.name || 'Instância removida',
+    provider: instance?.provider || '', intervalSeconds: Math.round(campaign.intervalMs / 1000),
+    createdAt: campaign.createdAt, nextRunAt: campaign.nextRunAt, estimatedEndAt,
+    finishedAt: campaign.finishedAt, total: campaign.total, lastError: campaign.lastError,
+    sent: by.sent || 0, failed: by.failed || 0, skipped: by.skipped || 0,
+    pending: (by.pending || 0) + (by.sending || 0),
+    items: items.map((item) => ({ ...item })),
+  };
+}
+
+async function finishNoAiMarketingCampaign(campaign, status, note = '') {
+  await prisma.noAiMarketingCampaignItem.updateMany({
+    where: { campaignId: campaign.id, status: 'pending' },
+    data: { status: 'skipped', error: status === 'cancelled' ? 'Campanha cancelada.' : 'Campanha encerrada.' },
+  });
+  await prisma.noAiMarketingCampaign.update({
+    where: { id: campaign.id },
+    data: { status, nextRunAt: null, finishedAt: new Date(), ...(note ? { lastError: note } : {}) },
+  });
+}
+
+async function processNoAiMarketingCampaign(campaign, scheduledFor) {
+  const current = await prisma.noAiMarketingCampaign.findUnique({
+    where: { id: campaign.id }, include: { instance: true },
+  });
+  if (!current || current.status !== 'running') return;
+  const item = await prisma.noAiMarketingCampaignItem.findFirst({
+    where: { campaignId: current.id, status: 'pending' }, orderBy: { position: 'asc' },
+  });
+  if (!item) return finishNoAiMarketingCampaign(current, 'completed');
+  const claimed = await prisma.noAiMarketingCampaignItem.updateMany({
+    where: { id: item.id, status: 'pending' }, data: { status: 'sending' },
+  });
+  if (!claimed.count) return;
+
+  let state;
+  try {
+    state = await getState(current.instance);
+  } catch (error) {
+    await prisma.noAiMarketingCampaignItem.update({ where: { id: item.id }, data: { status: 'pending' } });
+    await prisma.noAiMarketingCampaign.update({
+      where: { id: current.id },
+      data: { status: 'paused', nextRunAt: null, lastError: `Não foi possível verificar a conexão WhatsApp: ${cleanCampaignError(error)}` },
+    });
+    return;
+  }
+  if (state !== 'open') {
+    await prisma.noAiMarketingCampaignItem.update({ where: { id: item.id }, data: { status: 'pending' } });
+    await prisma.noAiMarketingCampaign.update({
+      where: { id: current.id }, data: { status: 'paused', nextRunAt: null, lastError: 'A instância WhatsApp está desconectada. Reconecte e retome a campanha.' },
+    });
+    return;
+  }
+
+  try {
+    if (current.mediaMimeType && current.mediaData) {
+      await sendMedia(current.instance, item.phone, {
+        mediatype: current.mediaMimeType.startsWith('video/') ? 'video' : 'image',
+        mimetype: current.mediaMimeType,
+        fileName: current.mediaFileName || 'midia',
+        caption: current.message,
+        base64: Buffer.from(current.mediaData).toString('base64'),
+      });
+    } else {
+      await sendText(current.instance, item.phone, current.message);
+    }
+    await prisma.noAiMarketingCampaignItem.update({
+      where: { id: item.id }, data: { status: 'sent', sentAt: new Date(), error: '' },
+    });
+  } catch (error) {
+    await prisma.noAiMarketingCampaignItem.update({
+      where: { id: item.id }, data: { status: 'failed', error: cleanCampaignError(error) },
+    });
+  }
+
+  const freshCampaign = await prisma.noAiMarketingCampaign.findUnique({ where: { id: current.id } });
+  if (!freshCampaign || freshCampaign.status !== 'running') return;
+  const remaining = await prisma.noAiMarketingCampaignItem.count({
+    where: { campaignId: current.id, status: 'pending' },
+  });
+  if (!remaining) return finishNoAiMarketingCampaign(freshCampaign, 'completed');
+  const nextRunAt = new Date(Math.max(scheduledFor.getTime() + current.intervalMs, Date.now() + 1000));
+  await prisma.noAiMarketingCampaign.update({
+    where: { id: current.id },
+    data: { nextRunAt, lastError: '' },
+  });
+}
+
+async function noAiMarketingCampaignTick() {
+  if (noAiMarketingBusy) return;
+  noAiMarketingBusy = true;
+  try {
+    const due = await prisma.noAiMarketingCampaign.findMany({
+      where: { status: 'running', nextRunAt: { lte: new Date() } },
+      orderBy: { nextRunAt: 'asc' }, take: 20,
+      select: { id: true, nextRunAt: true },
+    });
+    for (const campaign of due) {
+      const lease = await prisma.noAiMarketingCampaign.updateMany({
+        where: { id: campaign.id, status: 'running', nextRunAt: campaign.nextRunAt },
+        data: { nextRunAt: new Date(Date.now() + NO_AI_CAMPAIGN_LEASE_MS) },
+      });
+      if (!lease.count) continue;
+      try {
+        await processNoAiMarketingCampaign(campaign, campaign.nextRunAt);
+      } catch (error) {
+        console.error(`[marketing sem IA ${campaign.id}] falha no processamento:`, error.message);
+        await prisma.noAiMarketingCampaign.update({
+          where: { id: campaign.id },
+          data: { nextRunAt: new Date(Date.now() + 30 * 1000), lastError: cleanCampaignError(error) },
+        });
+      }
+    }
+  } catch (error) {
+    console.error('[marketing sem IA] falha no ciclo:', error.message);
+  } finally {
+    noAiMarketingBusy = false;
+  }
+}
+
+function startNoAiMarketingWorker() {
+  if (noAiMarketingTimer) return;
+  noAiMarketingTimer = setInterval(noAiMarketingCampaignTick, 3000);
+  setTimeout(noAiMarketingCampaignTick, 1500);
+}
+
+function stopNoAiMarketingWorker() {
+  if (noAiMarketingTimer) clearInterval(noAiMarketingTimer);
+  noAiMarketingTimer = null;
 }
 
 // Mensagens da IA ficam 30 dias; depois somem do banco, junto com as conversas que ficaram vazias.
@@ -803,6 +960,132 @@ router.post('/campaigns/:id/:action', async (req, res) => {
     throw new AppError(404, 'Ação desconhecida.');
   }
   res.json({ campaign: await campaignDto(await ownedCampaign(req.user.id, campaign.id)) });
+});
+
+router.post('/marketing-campaigns', async (req, res) => {
+  const body = req.body || {};
+  const message = String(body.message || '').trim();
+  const media = body.media && typeof body.media === 'object' ? body.media : null;
+  const intervalSeconds = Number(body.intervalSeconds);
+  const instanceId = Number(body.instanceId);
+  if (!Number.isInteger(instanceId) || instanceId < 1) throw new AppError(400, 'Selecione uma instância WhatsApp válida.');
+  if (!NO_AI_INTERVALS.has(intervalSeconds)) throw new AppError(400, 'Escolha um intervalo fixo entre 20 e 120 segundos.');
+  if (body.consentConfirmed !== true) throw new AppError(400, 'Confirme que todos os contatos autorizaram o recebimento das mensagens.');
+  if (media && !MARKETING_MEDIA_TYPES.has(String(media.mimeType || '').toLowerCase())) {
+    throw new AppError(400, 'Escolha uma imagem JPEG, PNG ou WebP, ou um vídeo MP4 ou 3GPP.');
+  }
+  if (media && message.length > 1024) throw new AppError(400, 'A legenda da foto ou vídeo pode ter até 1.024 caracteres.');
+  if (!media && (message.length < 1 || message.length > 4096)) throw new AppError(400, 'A mensagem deve ter entre 1 e 4.096 caracteres.');
+
+  let mediaData = null;
+  let mediaFileName = null;
+  let mediaMimeType = null;
+  if (media) {
+    const encoded = String(media.base64 || '').replace(/^data:[^,]*,/, '');
+    if (!encoded || encoded.length > Math.ceil(NO_AI_MEDIA_MAX_BYTES * 4 / 3) + 4 || !/^[\da-z+/]+={0,2}$/i.test(encoded)) {
+      throw new AppError(400, 'O arquivo está vazio ou excede o limite de 10 MB.');
+    }
+    mediaData = Buffer.from(encoded, 'base64');
+    if (!mediaData.length || mediaData.length > NO_AI_MEDIA_MAX_BYTES) throw new AppError(400, 'O arquivo está vazio ou excede o limite de 10 MB.');
+    mediaMimeType = String(media.mimeType).toLowerCase();
+    mediaFileName = String(media.name || 'midia').split(/[\\/]/).pop().replace(/[^\w.-]/g, '_').slice(0, 120) || 'midia';
+  }
+
+  const selectedPhones = Array.isArray(body.contactPhones) ? [...new Set(body.contactPhones.map(toPhone).filter(Boolean))] : [];
+  if (!selectedPhones.length || selectedPhones.length > NO_AI_CAMPAIGN_LIMIT) {
+    throw new AppError(400, 'Selecione de 1 a 100 contatos para a campanha.');
+  }
+  const folders = await loadFolders(req.user.id);
+  const contactByPhone = new Map();
+  for (const folder of folders) {
+    for (const contact of folder.contacts) {
+      const phone = toPhone(contact.phone);
+      if (phone && !contactByPhone.has(phone)) contactByPhone.set(phone, contact.name || '');
+    }
+  }
+  const unknown = selectedPhones.find((phone) => !contactByPhone.has(phone));
+  if (unknown) throw new AppError(400, 'Um ou mais contatos não pertencem à sua lista. Atualize os contatos e tente novamente.');
+
+  const instance = await prisma.instance.findFirst({
+    where: { id: instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+  });
+  if (!instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
+  if (await getState(instance) !== 'open') throw new AppError(409, 'A instância selecionada está desconectada. Conecte o WhatsApp antes de iniciar.');
+  const active = await prisma.noAiMarketingCampaign.findFirst({
+    where: { userId: req.user.id, status: { in: NO_AI_CAMPAIGN_OPEN } }, select: { id: true },
+  });
+  if (active) throw new AppError(409, 'Você já tem uma campanha ativa. Conclua, pause ou cancele antes de criar outra.');
+
+  const now = new Date();
+  const campaign = await prisma.noAiMarketingCampaign.create({
+    data: {
+      userId: req.user.id, instanceId, message, mediaData, mediaMimeType, mediaFileName,
+      consentConfirmed: true, intervalMs: intervalSeconds * 1000, total: selectedPhones.length,
+      status: 'running', nextRunAt: new Date(now.getTime() + 1000),
+      items: {
+        create: selectedPhones.map((phone, position) => ({
+          position, phone, name: contactByPhone.get(phone) || '',
+        })),
+      },
+    },
+  });
+  res.status(201).json({ campaign: await noAiMarketingCampaignDto(campaign) });
+});
+
+router.get('/marketing-campaigns', async (req, res) => {
+  const campaigns = await prisma.noAiMarketingCampaign.findMany({
+    where: { userId: req.user.id }, orderBy: { createdAt: 'desc' }, take: 5,
+    select: {
+      id: true, userId: true, instanceId: true, message: true, mediaMimeType: true,
+      status: true, intervalMs: true, nextRunAt: true, total: true, lastError: true,
+      createdAt: true, finishedAt: true,
+    },
+  });
+  res.json({ serverNow: new Date(), campaigns: await Promise.all(campaigns.map(noAiMarketingCampaignDto)) });
+});
+
+router.post('/marketing-campaigns/:id/:action', async (req, res) => {
+  const campaignId = Number(req.params.id);
+  const campaign = Number.isInteger(campaignId)
+    ? await prisma.noAiMarketingCampaign.findFirst({ where: { id: campaignId, userId: req.user.id } })
+    : null;
+  if (!campaign) throw new AppError(404, 'Campanha não encontrada.');
+  if (!NO_AI_CAMPAIGN_OPEN.includes(campaign.status)) throw new AppError(409, 'Esta campanha já foi encerrada.');
+
+  const action = req.params.action;
+  if (action === 'pause') {
+    if (campaign.status !== 'running') throw new AppError(409, 'A campanha já está pausada.');
+    await prisma.noAiMarketingCampaign.update({
+      where: { id: campaign.id }, data: { status: 'paused', nextRunAt: null },
+    });
+  } else if (action === 'resume') {
+    if (campaign.status !== 'paused') throw new AppError(409, 'A campanha não está pausada.');
+    const instance = await prisma.instance.findFirst({
+      where: { id: campaign.instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+    });
+    if (!instance || await getState(instance) !== 'open') throw new AppError(409, 'Conecte a instância WhatsApp antes de retomar.');
+    const remaining = await prisma.noAiMarketingCampaignItem.count({
+      where: { campaignId: campaign.id, status: 'pending' },
+    });
+    if (!remaining) await finishNoAiMarketingCampaign(campaign, 'completed');
+    else await prisma.noAiMarketingCampaign.update({
+      where: { id: campaign.id },
+      data: { status: 'running', nextRunAt: new Date(Date.now() + 1000), lastError: '' },
+    });
+  } else if (action === 'cancel') {
+    await finishNoAiMarketingCampaign(campaign, 'cancelled');
+  } else {
+    throw new AppError(404, 'Ação desconhecida.');
+  }
+  const updated = await prisma.noAiMarketingCampaign.findUnique({
+    where: { id: campaign.id },
+    select: {
+      id: true, userId: true, instanceId: true, message: true, mediaMimeType: true,
+      status: true, intervalMs: true, nextRunAt: true, total: true, lastError: true,
+      createdAt: true, finishedAt: true,
+    },
+  });
+  res.json({ campaign: await noAiMarketingCampaignDto(updated) });
 });
 
 router.get('/conversations', async (req, res) => {

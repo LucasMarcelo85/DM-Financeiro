@@ -3,6 +3,7 @@ import { api } from '../api.js';
 import ContactsPanel from '../components/ai/ContactsPanel.jsx';
 import ActionsModal from '../components/ai/ActionsModal.jsx';
 import CampaignModal from '../components/ai/CampaignModal.jsx';
+import NoAiMarketingModal from '../components/ai/NoAiMarketingModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
 import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
@@ -327,6 +328,7 @@ export default function AiService() {
   const [campaignAgent, setCampaignAgent] = useState(null);
   const [testing, setTesting] = useState(null);
   const [actionsAgent, setActionsAgent] = useState(null);
+  const [noAiMarketingOpen, setNoAiMarketingOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -397,7 +399,12 @@ export default function AiService() {
         <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
           <button type="button" className="btn btn-ghost" onClick={refreshUsage}><Icon name="refresh" size={17} /> Atualizar uso</button>
-          {tab === 'agentes' && <button type="button" className="btn btn-primary" onClick={() => setEditor({})}><Icon name="plus" size={18} /> Criar agente</button>}
+          {tab === 'agentes' && (
+            <>
+              <button type="button" className="btn btn-ghost" onClick={() => setNoAiMarketingOpen(true)}><Icon name="send" size={17} /> Marketing sem IA</button>
+              <button type="button" className="btn btn-primary" onClick={() => setEditor({})}><Icon name="plus" size={18} /> Criar agente</button>
+            </>
+          )}
         </div>
       </header>
       <div className="ai-tabs" role="tablist" aria-label="Seções do atendimento com IA">
@@ -473,6 +480,7 @@ export default function AiService() {
       {data && tab === 'prompts' && <PromptsPanel prompts={data.prompts} builtin={data.builtinPrompts} onChanged={load} />}
       {actionsAgent && <ActionsModal agent={actionsAgent} onClose={() => setActionsAgent(null)} />}
       {campaignAgent && <CampaignModal agent={campaignAgent} onClose={() => setCampaignAgent(null)} />}
+      {noAiMarketingOpen && data && <NoAiMarketingModal data={data} onClose={() => setNoAiMarketingOpen(false)} />}
       {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} />}
     </>
   );

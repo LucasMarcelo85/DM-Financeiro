@@ -158,7 +158,7 @@ app.get('/api/public/portfolio-code-frame', (_req, res) => res
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
-const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p === '/api/contacts/import' || p === '/api/catalog/orders/import' || p === '/api/catalog/customers/import' || p === '/api/media' || p.startsWith('/api/media/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
+const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p === '/api/ai' || p.startsWith('/api/ai/') || p === '/api/contacts/import' || p === '/api/catalog/orders/import' || p === '/api/catalog/customers/import' || p === '/api/media' || p.startsWith('/api/media/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
 app.use(cookieParser());
 app.use('/api/contacts/import', express.json({ limit: '5mb' }));
@@ -204,7 +204,7 @@ app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/media', auth, requireAccess, express.json({ limit: '24mb' }), mediaRoutes);
-app.use('/api/ai', auth, requireAccess, pinGuard('ia'), aiRoutes);
+app.use('/api/ai', auth, requireAccess, pinGuard('ia'), express.json({ limit: '16mb' }), aiRoutes);
 app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
 app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '24mb' }), portfolioRoutes);
 app.use('/api/stores', auth, requireAccess, pinGuard('portfolio'), storeRoutes);
