@@ -963,8 +963,65 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .plan-editor { display: grid; gap: 0.9rem; }
 .plan-editor-head { display: flex; justify-content: space-between; align-items: center; gap: 0.5rem; }
 .plan-editor-head .card-title { margin: 0; }
+.admin-plans-content { display: grid; gap: 1.15rem; }
+.admin-plans-intro { display: flex; justify-content: space-between; align-items: end; gap: .75rem; }
+.admin-plans-intro h2 { margin: 0; font-size: 1.15rem; }
+.admin-plans-intro p { margin: .25rem 0 0; }
+.admin-plan-settings { display: grid; gap: .65rem; }
+.admin-plan-card { overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.admin-plan-card > summary { display: grid; grid-template-columns: auto minmax(0, 1fr) auto; align-items: center; gap: .75rem; padding: .8rem 1rem; cursor: pointer; list-style: none; }
+.admin-plan-card > summary::-webkit-details-marker { display: none; }
+.admin-plan-card > summary:hover { background: #f7f9fc; }
+.admin-plan-card > summary > svg { color: var(--muted); transition: transform .15s ease; }
+.admin-plan-card[open] > summary > svg { transform: rotate(90deg); }
+.admin-plan-summary-mark { display: grid; place-items: center; width: 2rem; height: 2rem; border-radius: .6rem; color: white; font-weight: 800; }
+.admin-plan-summary-main { display: grid; min-width: 0; gap: .15rem; }
+.admin-plan-summary-main strong { overflow: hidden; text-overflow: ellipsis; }
+.admin-plan-summary-main small { color: var(--muted); overflow-wrap: anywhere; }
+.admin-plan-card > .plan-editor { margin: 0 .65rem .65rem; border: 1px solid var(--line); border-top-width: 5px !important; box-shadow: none; }
+.admin-plan-group { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.admin-plan-group > summary { padding: .65rem .8rem; cursor: pointer; background: #f7f9fc; list-style: none; }
+.admin-plan-group > summary::-webkit-details-marker { display: none; }
+.admin-plan-group > summary::before { content: '›'; display: inline-block; margin-right: .55rem; color: var(--muted); transition: transform .15s ease; }
+.admin-plan-group[open] > summary::before { transform: rotate(90deg); }
+.admin-plan-group > summary > span { display: inline-grid; vertical-align: middle; gap: .1rem; }
+.admin-plan-group > summary small { color: var(--muted); font-weight: 400; }
+.admin-plan-group-body { display: grid; gap: .8rem; padding: .8rem; }
+.admin-plan-limits { grid-template-columns: repeat(auto-fit, minmax(min(100%, 14rem), 1fr)); }
+.admin-plan-group-body > .field { margin: 0; }
+.admin-plan-group-body > fieldset { min-width: 0; }
+.admin-addon-group { border: 1px solid var(--line); border-radius: var(--r-sm); overflow: hidden; }
+.admin-addon-group > summary { display: grid; gap: .2rem; padding: .7rem .8rem; cursor: pointer; list-style: none; }
+.admin-addon-group > summary::-webkit-details-marker { display: none; }
+.admin-addon-group > summary::before { content: '›'; float: left; margin-right: .4rem; color: var(--muted); }
+.admin-addon-group[open] > summary::before { transform: rotate(90deg); }
+.admin-addon-group > summary small { color: var(--muted); }
+.admin-addon-fields { display: grid; gap: .7rem; padding: .8rem; border-top: 1px solid var(--line); }
+.admin-addon-fields > .field { margin: 0; }
 .check-line { display: flex; align-items: center; gap: 0.55rem; font-weight: 600; font-size: 0.925rem; cursor: pointer; }
 .check-line input { accent-color: var(--ink); width: 1.1rem; height: 1.1rem; }
+.sapp-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; }
+.sapp-step { display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .65rem; text-align: left; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); color: var(--text); cursor: pointer; }
+.sapp-step.is-active { border-color: var(--amber); background: var(--amber-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 18%, transparent); }
+.sapp-step-number, .sapp-section-number { display: grid; flex: none; place-items: center; width: 1.8rem; height: 1.8rem; border-radius: 50%; background: var(--ink); color: #fff; font-size: .82rem; font-weight: 800; }
+.sapp-step.is-active .sapp-step-number { background: var(--amber); color: var(--ink); }
+.sapp-step > span:last-child { display: grid; min-width: 0; gap: .12rem; }
+.sapp-step strong { font-size: .85rem; }
+.sapp-step small { overflow: hidden; color: var(--muted); font-size: .73rem; text-overflow: ellipsis; white-space: nowrap; }
+.sapp-section { display: grid; gap: .85rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
+.sapp-section > header { display: flex; align-items: flex-start; gap: .65rem; padding-bottom: .65rem; border-bottom: 1px solid var(--line); }
+.sapp-section > header h3 { margin: 0; font-size: 1.02rem; }
+.sapp-section > header p { margin: .2rem 0 0; }
+.sapp-user-toolbar, .sapp-create-user-summary { display: flex; justify-content: space-between; align-items: center; gap: .7rem; flex-wrap: wrap; }
+.sapp-user-details, .sapp-create-perms { display: grid; gap: .65rem; padding: .65rem; border: 1px solid var(--line); border-radius: var(--r-sm); }
+.sapp-user-details > summary, .sapp-create-perms > summary { cursor: pointer; font-weight: 700; }
+.sapp-flow-list { display: flex; align-items: center; gap: .4rem 1rem; flex-wrap: wrap; }
+@media (max-width: 580px) {
+  .sapp-steps { grid-template-columns: 1fr; }
+  .sapp-step small { white-space: normal; }
+  .admin-plans-intro { align-items: flex-start; flex-direction: column; }
+  .admin-plan-card > summary { padding: .7rem; }
+}
 
 /* =====================================================================================================
    Portfólio v2: editor livre, catálogo digital, produtos, pedidos, planos

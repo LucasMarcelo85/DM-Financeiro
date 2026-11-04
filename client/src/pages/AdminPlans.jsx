@@ -59,6 +59,9 @@ function PlanFields({ form, setForm, withId }) {
   const cents = moneyToCents(form.price);
   return (
     <>
+      <details className="admin-plan-group" open>
+        <summary><span><strong>1. Nome, identificação e preço</strong><small>Como o plano aparece e quanto custa</small></span></summary>
+        <div className="admin-plan-group-body">
       {withId && (
         <label className="field">
           <span>Identificador (não muda depois)</span>
@@ -78,12 +81,22 @@ function PlanFields({ form, setForm, withId }) {
         </label>
         <label className="field"><span>Ordem na lista</span><input className="input" inputMode="numeric" value={form.sortOrder} onChange={(e) => setForm((f) => ({ ...f, sortOrder: e.target.value.replace(/\D/g, '').slice(0, 4) }))} /></label>
       </div>
+        </div>
+      </details>
+      <details className="admin-plan-group">
+        <summary><span><strong>2. Limites inclusos</strong><small>Conexões, contratos, portfólio, catálogo e lojas</small></span></summary>
+        <div className="admin-plan-group-body admin-plan-limits">
       {FIELDS.map(([k, label]) => (
         <label key={k} className="field">
           <span>{label}</span>
           <input className="input" inputMode="numeric" value={form[k]} onChange={(e) => setForm((f) => ({ ...f, [k]: e.target.value.replace(/\D/g, '').slice(0, 6) }))} />
         </label>
       ))}
+        </div>
+      </details>
+      <details className="admin-plan-group">
+        <summary><span><strong>3. Recursos e abas</strong><small>Permissões, marca e ordem do menu</small></span></summary>
+        <div className="admin-plan-group-body">
       <label className="check-line"><input type="checkbox" checked={form.auditSend} onChange={(e) => setForm((f) => ({ ...f, auditSend: e.target.checked }))} /> Pode responder conversas pela auditoria</label>
       <label className="check-line"><input type="checkbox" checked={form.dmCredit} onChange={(e) => setForm((f) => ({ ...f, dmCredit: e.target.checked }))} /> Mostrar "Desenvolvido por Solução DM" no rodapé dos portfólios</label>
       <fieldset className="field">
@@ -106,6 +119,8 @@ function PlanFields({ form, setForm, withId }) {
         </div>
         <small>Use as setas para ordenar as abas visíveis. Plano e Perfil permanecem sempre disponíveis. Produtos e Pedidos também exigem limite de produtos/serviços maior que 0.</small>
       </fieldset>
+        </div>
+      </details>
     </>
   );
 }
@@ -133,13 +148,38 @@ export default function AdminPlans() {
         <button className="btn btn-primary" onClick={() => setCreating(true)}><Icon name="plus" size={18} /> Novo plano</button>
       </header>
       {plans === null ? <p className="muted">Carregando...</p> : (
-        <>
-          {trial && <TrialEditor trial={trial} onSaved={(nextPlans, nextTrial) => { setPlans(nextPlans); setTrial(nextTrial); }} />}
-          {addons && <AddonsEditor key={JSON.stringify(addons)} addons={addons} onSaved={setAddons} />}
-          <div className="plans-admin">
-            {plans.map((p) => <PlanEditor key={`${p.id}:${p.name}`} plan={p} onSaved={(nextPlans) => setPlans(nextPlans)} onDelete={() => setDeleting(p)} canDelete={plans.length > 1} />)}
+        <div className="admin-plans-content">
+          <section className="admin-plans-intro">
+            <h2>Configurações comerciais</h2>
+            <p className="muted small">Organize primeiro o período de teste e os limites extras; depois revise cada plano.</p>
+          </section>
+          <div className="admin-plan-settings">
+            {trial && <details className="admin-plan-card">
+              <summary><span className="admin-plan-summary-mark" style={{ background: '#4b5563' }}>T</span><span className="admin-plan-summary-main"><strong>Teste grátis</strong><small>{trial.days} dias para novos usuários · vale para qualquer plano</small></span><Icon name="right" size={17} /></summary>
+              <TrialEditor trial={trial} onSaved={(nextPlans, nextTrial) => { setPlans(nextPlans); setTrial(nextTrial); }} />
+            </details>}
+            {addons && <details className="admin-plan-card">
+              <summary><span className="admin-plan-summary-mark" style={{ background: '#0f766e' }}>+</span><span className="admin-plan-summary-main"><strong>Limites extras</strong><small>{addons.filter((item) => item.enabled).length} recurso(s) disponíveis para compra</small></span><Icon name="right" size={17} /></summary>
+              <AddonsEditor key={JSON.stringify(addons)} addons={addons} onSaved={setAddons} />
+            </details>}
           </div>
-        </>
+          <section className="admin-plans-intro">
+            <div><h2>Planos disponíveis</h2><p className="muted small">Abra um plano para editar preço, limites e recursos. Os usuários atuais também são exibidos.</p></div>
+            <span className="badge">{plans.length} plano(s)</span>
+          </section>
+          <div className="admin-plan-settings">
+            {plans.map((p) => (
+              <details className="admin-plan-card" key={`${p.id}:${p.name}`}>
+                <summary>
+                  <span className="admin-plan-summary-mark" style={{ background: p.color || '#6f7c8c' }}>{p.name.slice(0, 1).toUpperCase()}</span>
+                  <span className="admin-plan-summary-main"><strong>{p.name}</strong><small>{brl(p.priceCents)}/mês · {plural(p.userCount, 'usuário', 'usuários')} · {p.instances} WhatsApp(s) · {p.contracts} contrato(s)</small></span>
+                  <Icon name="right" size={17} />
+                </summary>
+                <PlanEditor plan={p} onSaved={(nextPlans) => setPlans(nextPlans)} onDelete={() => setDeleting(p)} canDelete={plans.length > 1} />
+              </details>
+            ))}
+          </div>
+        </div>
       )}
       {creating && <NewPlan count={plans?.length || 0} onClose={() => setCreating(false)} onCreated={(list) => { setPlans(list); setCreating(false); }} />}
       {deleting && <DeletePlan plan={deleting} plans={plans} onClose={() => setDeleting(null)} onDeleted={(list) => { setPlans(list); setDeleting(null); }} />}
@@ -260,13 +300,15 @@ function AddonsEditor({ addons, onSaved }) {
         <small className="muted">O usuário compra pacotes além do plano, por 30 dias, e renova à parte.</small>
       </div>
       {rows.map((r, i) => (
-        <fieldset key={r.resource} className="field">
-          <legend>{r.label}</legend>
-          <label className="check-line"><input type="checkbox" checked={r.enabled} onChange={(e) => set(i, { enabled: e.target.checked })} /> Disponível para compra</label>
-          <label className="field"><span>Unidades por pacote</span><input className="input" inputMode="numeric" value={r.packUnits} onChange={(e) => set(i, { packUnits: e.target.value.replace(/\D/g, '').slice(0, 6) })} /></label>
-          <label className="field"><span>Valor mensal de cada pacote (R$)</span><input className="input" inputMode="decimal" value={r.price} onChange={(e) => set(i, { price: e.target.value.replace(/[^\d,.]/g, '').slice(0, 10) })} /></label>
-          <label className="field"><span>Máximo de pacotes por compra</span><input className="input" inputMode="numeric" value={r.maxPacks} onChange={(e) => set(i, { maxPacks: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></label>
-        </fieldset>
+        <details key={r.resource} className="admin-addon-group">
+          <summary><strong>{r.label}</strong><small>{r.enabled ? 'Disponível para compra' : 'Desativado'} · {r.packUnits} unidades por pacote · R$ {r.price}</small></summary>
+          <div className="admin-addon-fields">
+            <label className="check-line"><input type="checkbox" checked={r.enabled} onChange={(e) => set(i, { enabled: e.target.checked })} /> Disponível para compra</label>
+            <label className="field"><span>Unidades por pacote</span><input className="input" inputMode="numeric" value={r.packUnits} onChange={(e) => set(i, { packUnits: e.target.value.replace(/\D/g, '').slice(0, 6) })} /></label>
+            <label className="field"><span>Valor mensal de cada pacote (R$)</span><input className="input" inputMode="decimal" value={r.price} onChange={(e) => set(i, { price: e.target.value.replace(/[^\d,.]/g, '').slice(0, 10) })} /></label>
+            <label className="field"><span>Máximo de pacotes por compra</span><input className="input" inputMode="numeric" value={r.maxPacks} onChange={(e) => set(i, { maxPacks: e.target.value.replace(/\D/g, '').slice(0, 4) })} /></label>
+          </div>
+        </details>
       ))}
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="btn-row"><button className="btn btn-primary" disabled={busy}>{busy ? 'Salvando...' : 'Salvar limites extras'}</button></div>

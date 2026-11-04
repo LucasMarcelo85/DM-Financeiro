@@ -58,28 +58,31 @@ export default function StoreAppModal({ storeId, onClose }) {
   const [nu, setNu] = useState({ name: '', login: '', perms: ALL_PERMS, actions: {}, stockFlowIds: [], isPrimary: false });
   const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [busy, setBusy] = useState(false);
+  const [step, setStep] = useState(0);
   const initializedFlowsStoreId = useRef(null);
   const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
     && (key !== 'auditoria' || cfg.auditEnabled && Number(cfg.auditInstanceLimit) > 0));
 
-  const load = useCallback(() => Promise.all([
+  const load = useCallback((preserveConfig = false) => Promise.all([
     api.get(`/stores/${storeId}/app`),
     api.get(`/instances?store=${storeId}&includeOwner=1`),
   ]).then(([r, connectionData]) => {
     setData(r);
     setNotificationInstances(connectionData.instances || []);
-    setAppNotifications({
-      enabled: r.appNotifications.enabled,
-      instanceId: r.appNotifications.instanceId,
-      fallbackEnabled: r.appNotifications.fallbackEnabled,
-      fallbackInstanceId: r.appNotifications.fallbackInstanceId,
-    });
-    setCfg({
-      enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
-      userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
-      auditEnabled: r.store.app.auditEnabled, auditInstanceLimit: r.store.app.auditInstanceLimit,
-      limits: r.store.app.limits || {},
-    });
+    if (!preserveConfig) {
+      setAppNotifications({
+        enabled: r.appNotifications.enabled,
+        instanceId: r.appNotifications.instanceId,
+        fallbackEnabled: r.appNotifications.fallbackEnabled,
+        fallbackInstanceId: r.appNotifications.fallbackInstanceId,
+      });
+      setCfg({
+        enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
+        userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
+        auditEnabled: r.store.app.auditEnabled, auditInstanceLimit: r.store.app.auditInstanceLimit,
+        limits: r.store.app.limits || {},
+      });
+    }
     if (initializedFlowsStoreId.current !== storeId) {
       initializedFlowsStoreId.current = storeId;
       setNu((current) => ({ ...current, stockFlowIds: r.flows.map((flow) => flow.id) }));
@@ -87,9 +90,9 @@ export default function StoreAppModal({ storeId, onClose }) {
   }).catch((e) => toast(e.message, 'error')), [storeId, toast]);
   useEffect(() => { load(); }, [load]);
 
-  async function run(fn, ok) {
+  async function run(fn, ok, preserveConfig = true) {
     setBusy(true);
-    try { await fn(); if (ok) toast(ok); await load(); } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
+    try { await fn(); if (ok) toast(ok); await load(preserveConfig); } catch (e) { toast(e.message, 'error'); } finally { setBusy(false); }
   }
 
   const store = data?.store;
@@ -108,7 +111,7 @@ export default function StoreAppModal({ storeId, onClose }) {
     <Modal title="Aplicativo da loja" onClose={onClose} wide>
       {!data ? <p className="muted">Carregando...</p> : (
         <div className="sapp" style={{ display: 'grid', gap: 14 }}>
-          <p className="muted small">O lojista instala este aplicativo no celular. Escolha as áreas que cada acesso poderá usar; os dados e as conexões ficam limitados a este site.</p>
+          <p className="muted small">O lojista instala este aplicativo no celular. Configure o app em etapas; as alterações gerais só são aplicadas ao clicar em “Salvar configuração”.</p>
           {temporaryCredential && <section className="banner" style={{ display: 'grid', gap: 8 }}>
             <strong>Senha provisória de {temporaryCredential.name}</strong>
             <p className="muted small" style={{ margin: 0 }}>Envie esta senha ao usuário. No primeiro acesso, ele precisará cadastrar uma senha nova. Ela não será exibida novamente.</p>
@@ -131,14 +134,34 @@ export default function StoreAppModal({ storeId, onClose }) {
             {!appReady && <small className="muted">{!data.appAvailable ? 'O plano atual não disponibiliza o aplicativo.' : cfg.enabled ? 'Salve o aplicativo para ativar este link.' : 'Ative e salve o aplicativo para poder enviar este link.'}</small>}
           </section>
 
+          <nav className="sapp-steps" aria-label="Etapas da configuração do aplicativo">
+            {[
+              ['Configuração', 'Nome, notificações e limites'],
+              ['Acessos', `${data.users.length} usuário(s) cadastrado(s)`],
+              ['Novo acesso', 'Criar usuário e permissões'],
+            ].map(([label, hint], index) => (
+              <button type="button" className={`sapp-step${step === index ? ' is-active' : ''}`} key={label} onClick={() => setStep(index)} aria-current={step === index ? 'step' : undefined}>
+                <span className="sapp-step-number">{index + 1}</span>
+                <span><strong>{label}</strong><small>{hint}</small></span>
+              </button>
+            ))}
+          </nav>
+
+          {step === 0 && <>
+          <section className="sapp-section">
+            <header><span className="sapp-section-number">1</span><div><h3>Configuração do aplicativo</h3><p className="muted small">Defina a aparência, notificações e os limites disponíveis para esta loja.</p></div></header>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
             <input type="checkbox" checked={cfg.enabled} disabled={!data.appAvailable} onChange={(e) => setCfg({ ...cfg, enabled: e.target.checked })} /> Aplicativo ativo
           </label>
           {!data.appAvailable && <p className="muted small">O plano atual não inclui lojas com aplicativo.</p>}
-          <input className="input" value={cfg.name} onChange={(e) => setCfg({ ...cfg, name: e.target.value })} placeholder={`Nome do app (padrão: ${store.name})`} maxLength={40} aria-label="Nome do app" />
+          <label className="field"><span>Nome exibido no aplicativo</span><input className="input" value={cfg.name} onChange={(e) => setCfg({ ...cfg, name: e.target.value })} placeholder={`Padrão: ${store.name}`} maxLength={40} /></label>
           <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-            Cor <input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
+            <span>Cor principal do aplicativo</span><input type="color" value={cfg.color} onChange={(e) => setCfg({ ...cfg, color: e.target.value })} />
           </label>
+          </section>
+
+          <section className="sapp-section">
+            <header><span className="sapp-section-number">2</span><div><h3>Notificações de pedidos</h3><p className="muted small">Configure qual WhatsApp receberá os avisos de novos pedidos do app.</p></div></header>
           <section className="banner" style={{ display: 'grid', gap: 10 }}>
             <strong>Notificações de pedidos do app</strong>
             <small className="muted">O destino é o WhatsApp cadastrado nas configurações de entrega da loja.</small>
@@ -192,8 +215,12 @@ export default function StoreAppModal({ storeId, onClose }) {
                 && <small className="muted">Conecte uma instância de envio nesta loja para receber notificações.</small>}
             </>}
           </section>
+          </section>
+
+          <section className="sapp-section">
+            <header><span className="sapp-section-number">3</span><div><h3>Limites e recursos do app</h3><p className="muted small">Os valores abaixo são reservados dentro dos limites do seu plano.</p></div></header>
           <label style={{ display: 'grid', gap: 4 }}>
-            <span>Quantidade de acessos permitidos nesta loja</span>
+            <span>Quantidade máxima de acessos nesta loja</span>
             <input className="input" type="number" min="1" max={data.maxAppUsers} step="1" value={cfg.userLimit}
               onChange={(e) => setCfg({ ...cfg, userLimit: e.target.value === '' ? '' : Number(e.target.value) })} aria-label="Quantidade de acessos permitidos nesta loja" />
             <small className="muted">Seu plano permite até {data.maxAppUsers} acessos por aplicativo. Acessos desativados também ocupam uma vaga.</small>
@@ -240,9 +267,14 @@ export default function StoreAppModal({ storeId, onClose }) {
             })}
           </section>
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
-          <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, { ...cfg, appNotifications }), 'Aplicativo salvo.')}>Salvar aplicativo</button>
+          <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, { ...cfg, appNotifications }), 'Configuração do app salva.', false)}>Salvar configuração</button>
+          </section>
+          </>}
 
-          <h3 style={{ margin: '8px 0 0' }}>Acessos de lojistas ({data.users.length}/{Math.min(cfg.userLimit || 0, data.maxAppUsers)})</h3>
+          {step === 1 && <>
+          <section className="sapp-section">
+            <header><span className="sapp-section-number">2</span><div><h3>Acessos de lojistas</h3><p className="muted small">{data.users.length} cadastrados · limite desta loja: {Math.min(cfg.userLimit || 0, data.maxAppUsers)}. Gerencie contas, permissões e fluxos de estoque.</p></div></header>
+          <div className="sapp-user-toolbar"><span className="muted small">Cada usuário só pode acessar as áreas e operações liberadas.</span><button type="button" className="btn btn-primary btn-sm" onClick={() => setStep(2)} disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers)}>Criar novo acesso</button></div>
           {!data.users.length && <p className="muted small">Nenhum acesso criado.</p>}
           <ul style={{ listStyle: 'none', padding: 0, margin: 0, display: 'grid', gap: 8 }}>
             {data.users.map((u) => (
@@ -265,41 +297,55 @@ export default function StoreAppModal({ storeId, onClose }) {
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
-                <PermMatrix labels={permissionLabels} perms={u.perms} disabled={busy}
-                  onChange={({ perms, actions }) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms, actions }), 'Permissões salvas.')} />
-                <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
-                  <strong className="small">Fluxos de estoque</strong>
-                  {data.flows.map((flow) => <label key={flow.id} className="small">
-                    <input type="checkbox" checked={u.stockFlowIds.includes(flow.id)} disabled={busy}
-                      onChange={(e) => {
-                        const stockFlowIds = e.target.checked ? [...u.stockFlowIds, flow.id] : u.stockFlowIds.filter((id) => id !== flow.id);
-                        run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { stockFlowIds }), 'Fluxos atualizados.');
-                      }} /> {flow.name}{flow.isDefault ? ' (padrão)' : ''}
-                  </label>)}
-                </div>
-                <button className="btn btn-ghost btn-sm" disabled={busy}
-                  onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { isPrimary: !u.isPrimary }), u.isPrimary ? 'Usuário principal removido.' : 'Usuário principal atualizado.')}>
-                  {u.isPrimary ? 'Remover principal' : 'Definir como principal'}
-                </button>
+                <details className="sapp-user-details">
+                  <summary>Permissões, estoque e usuário principal</summary>
+                  <PermMatrix labels={permissionLabels} perms={u.perms} disabled={busy}
+                    onChange={({ perms, actions }) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms, actions }), 'Permissões salvas.')} />
+                  <div className="sapp-flow-list">
+                    <strong className="small">Fluxos de estoque permitidos</strong>
+                    {data.flows.map((flow) => <label key={flow.id} className="small">
+                      <input type="checkbox" checked={u.stockFlowIds.includes(flow.id)} disabled={busy}
+                        onChange={(e) => {
+                          const stockFlowIds = e.target.checked ? [...u.stockFlowIds, flow.id] : u.stockFlowIds.filter((id) => id !== flow.id);
+                          run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { stockFlowIds }), 'Fluxos atualizados.');
+                        }} /> {flow.name}{flow.isDefault ? ' (padrão)' : ''}
+                    </label>)}
+                  </div>
+                  <button className="btn btn-ghost btn-sm" disabled={busy}
+                    onClick={() => run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { isPrimary: !u.isPrimary }), u.isPrimary ? 'Usuário principal removido.' : 'Usuário principal atualizado.')}>
+                    {u.isPrimary ? 'Remover principal' : 'Definir como principal'}
+                  </button>
+                </details>
               </li>
             ))}
           </ul>
+          {!data.users.length && <button type="button" className="btn btn-primary" onClick={() => setStep(2)} disabled={busy || data.users.length >= Math.min(cfg.userLimit || 0, data.maxAppUsers)}>Criar primeiro acesso</button>}
+          </section>
+          </>}
 
+          {step === 2 && <>
+          <section className="sapp-section">
+            <header><span className="sapp-section-number">3</span><div><h3>Criar acesso de lojista</h3><p className="muted small">Defina a conta e escolha exatamente o que essa pessoa poderá acessar.</p></div></header>
+            <div className="sapp-create-user-summary"><strong>{data.users.length} de {Math.min(cfg.userLimit || 0, data.maxAppUsers)} acessos usados</strong><button type="button" className="btn btn-ghost btn-sm" onClick={() => setStep(1)}>Ver acessos existentes</button></div>
           <div style={{ display: 'grid', gap: 8 }}>
-            <input className="input" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="Nome do lojista" maxLength={80} aria-label="Nome do lojista" />
-            <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
+            <label className="field"><span>Nome da pessoa</span><input className="input" value={nu.name} onChange={(e) => setNu({ ...nu, name: e.target.value })} placeholder="Ex.: Maria Silva" maxLength={80} /></label>
+            <label className="field"><span>Nome de usuário para entrar</span><input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Ex.: maria.loja" maxLength={80} autoCapitalize="none" /></label>
             <p className="muted small" style={{ margin: 0 }}>Uma senha provisória será gerada após criar o acesso. O usuário deverá cadastrar uma senha nova ao entrar.</p>
-            <strong className="small">O que este acesso pode usar:</strong>
-            <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))}
-              onChange={({ perms, actions }) => setNu({ ...nu, perms, actions })} />
-            <strong className="small">Fluxos de estoque permitidos:</strong>
-            <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
+            <details className="sapp-create-perms" open>
+              <summary>Áreas que esta pessoa poderá usar ({nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm)).length} selecionadas)</summary>
+              <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))}
+                onChange={({ perms, actions }) => setNu({ ...nu, perms, actions })} />
+            </details>
+            <details className="sapp-create-perms">
+              <summary>Fluxos de estoque permitidos ({nu.stockFlowIds.length})</summary>
+              <div className="sapp-flow-list">
               {data.flows.map((flow) => <label key={flow.id} className="small">
                 <input type="checkbox" checked={nu.stockFlowIds.includes(flow.id)}
                   onChange={(e) => setNu({ ...nu, stockFlowIds: e.target.checked ? [...nu.stockFlowIds, flow.id] : nu.stockFlowIds.filter((id) => id !== flow.id) })} />
                 {' '}{flow.name}{flow.isDefault ? ' (padrão)' : ''}
               </label>)}
-            </div>
+              </div>
+            </details>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input type="checkbox" checked={nu.isPrimary} onChange={(e) => setNu({ ...nu, isPrimary: e.target.checked })} />
               Este será o usuário principal e poderá delegar apenas os acessos que recebeu
@@ -312,6 +358,8 @@ export default function StoreAppModal({ storeId, onClose }) {
                 setNu({ name: '', login: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), actions: {}, stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
               }, 'Acesso criado.')}>Criar acesso</button>
           </div>
+          </section>
+          </>}
         </div>
       )}
     </Modal>
