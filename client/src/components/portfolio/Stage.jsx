@@ -23,6 +23,8 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
   const selected = selectedId ? doc.elements.find((e) => e.id === selectedId) : null;
   const sbox = selected ? boxes.get(selected.id) : null;
   const interactive = selected && !selected.locked && !sbox?.hide;
+  const fixedHeaderMenu = selected?.t === 'menu' && selected.region === 'header';
+  const handles = fixedHeaderMenu ? ['n', 's'] : HANDLES;
 
   // posição do ponteiro em pixels do projeto
   const toDesign = useCallback((e) => {
@@ -99,7 +101,7 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
     const el = doc.elements.find((x) => x.id === node.dataset.el);
     if (!el) return;
     onSelect(el.id);
-    if (!el.locked) begin('move', el, e);
+    if (!el.locked && !(el.t === 'menu' && el.region === 'header')) begin('move', el, e);
   }
 
   function onDragOver(e) { if ([...e.dataTransfer.types].some((t) => t === 'text/pv-type' || t === 'Files')) { e.preventDefault(); e.dataTransfer.dropEffect = 'copy'; } }
@@ -124,12 +126,12 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
         {sbox && (
           <div className={`pe-sel${selected.locked ? ' is-locked' : ''}`}
             style={{ left: sbox.x, top: sbox.y, width: sbox.w, height: selected.t === 'products' ? sbox.h : sbox.h, transform: sbox.r ? `rotate(${sbox.r}deg)` : undefined, outline: `${bw}px solid ${accent}`, zIndex: 9999, pointerEvents: 'none' }}>
-            {interactive && HANDLES.map((h) => (
+            {interactive && handles.map((h) => (
               <b key={h} className="pe-handle" role="presentation"
                 style={{ left: `${HANDLE_POS[h][0]}%`, top: `${HANDLE_POS[h][1]}%`, width: hs, height: hs, marginLeft: -hs / 2, marginTop: -hs / 2, cursor: HANDLE_CURSOR[h], borderWidth: bw, borderColor: accent, pointerEvents: 'auto' }}
                 onPointerDown={(e) => begin('resize', selected, e, h)} />
             ))}
-            {interactive && (
+            {interactive && !fixedHeaderMenu && (
               <>
                 <i className="pe-rot-line" style={{ top: -26 / zoom, height: 26 / zoom, width: bw, background: accent }} />
                 <b className="pe-handle pe-rot" role="presentation" title="Girar"

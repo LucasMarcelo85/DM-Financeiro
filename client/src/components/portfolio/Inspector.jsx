@@ -4,7 +4,7 @@ import { Check, ColorField, GalleryField, ImageField, LinkFields, RangeField, Se
 import IconPicker from './IconPicker.jsx';
 import { fillBackground } from './Canvas.jsx';
 import {
-  BTN_STYLES, CARD_STYLES, CATALOG_DISPLAY, DESIGN_W, ELEMENT_LABELS, ENTER_OPTIONS, FILL_ANIM_OPTIONS, HOVER_OPTIONS, LOOP_OPTIONS, SHADOW_OPTIONS,
+  BTN_STYLES, CARD_STYLES, CATALOG_DISPLAY, DESIGN_W, ELEMENT_LABELS, ENTER_OPTIONS, FILL_ANIM_OPTIONS, HOVER_OPTIONS, LOOP_OPTIONS, PAGE_REGIONS, SHADOW_OPTIONS,
   TEXT_SHADOW_OPTIONS, WEIGHT_OPTIONS, autoHeight,
 } from '../../lib/portfolio/doc.js';
 import { FONTS, FONT_GROUPS, THEME_PRESETS, pageUrl, parseVideo } from '../../lib/portfolio/model.js';
@@ -17,7 +17,6 @@ const VALIGN = [['top', 'Topo'], ['middle', 'Meio'], ['bottom', 'Base']];
 const FIT = [['cover', 'Preencher'], ['contain', 'Caber'], ['fill', 'Esticar']];
 const BORDER_STYLE = [['solid', 'Contínua'], ['dashed', 'Tracejada'], ['dotted', 'Pontilhada']];
 const ICON_BG = [['none', 'Sem fundo'], ['circle', 'Círculo'], ['rounded', 'Arredondado'], ['square', 'Quadrado']];
-const FIXED_ANCHORS = [['top-left', 'Superior esquerdo'], ['top-right', 'Superior direito'], ['bottom-left', 'Inferior esquerdo'], ['bottom-right', 'Inferior direito']];
 const SCROLL_ACTIONS = [['none', 'Nenhuma'], ['top', 'Rolar para o topo'], ['bottom', 'Rolar para o fim da página']];
 const TEXT_COLOR_STYLES = new Set(['solid', 'gradient', 'flow', 'glass', 'threed', 'lift', 'retro', 'shine']);
 const TWO_COLOR_STYLES = new Set(['gradient', 'flow']);
@@ -87,22 +86,23 @@ function PositionSection({ el, device, api, layoutBox }) {
   const W = DESIGN_W[device];
   const set = (k) => (v) => api.box({ [k]: Math.round(v) }, `box:${k}`);
   const hasFont = el.t === 'text' || el.t === 'button';
+  const fullWidthHeader = el.t === 'menu' && el.region === 'header';
   return (
     <Section title={`Posição e tamanho · ${{ desktop: 'Computador', tablet: 'Tablet', mobile: 'Celular' }[device]}`}>
-      <p className="muted small">Cada dispositivo tem a sua própria posição e tamanho. O que você muda aqui vale só para este.</p>
+      <p className="muted small">{fullWidthHeader ? 'O menu do cabeçalho ocupa toda a largura e permanece alinhado ao topo.' : 'Cada dispositivo tem a sua própria posição e tamanho. O que você muda aqui vale só para este.'}</p>
       <div className="pe-grid4">
-        <NumField label="X" value={Math.round(b.x)} min={-1000} max={4000} onChange={set('x')} />
-        <NumField label="Y" value={Math.round(b.y)} min={-200} max={30000} onChange={set('y')} />
-        <NumField label="Largura" value={Math.round(b.w)} min={4} max={W * 3} onChange={set('w')} />
-        {!autoHeight(el) && <NumField label="Altura" value={Math.round(b.h)} min={4} max={8000} onChange={set('h')} />}
+        {!fullWidthHeader && <NumField label="X" value={Math.round(b.x)} min={-1000} max={4000} onChange={set('x')} />}
+        {!fullWidthHeader && <NumField label="Y" value={Math.round(b.y)} min={-200} max={30000} onChange={set('y')} />}
+        {!fullWidthHeader && <NumField label="Largura" value={Math.round(b.w)} min={4} max={W * 3} onChange={set('w')} />}
+        {!autoHeight(el) && <NumField label="Altura" value={Math.round(b.h)} min={fullWidthHeader ? 48 : 4} max={8000} onChange={set('h')} />}
       </div>
       {hasFont && <NumField label="Tamanho da letra" value={b.fs} min={6} max={400} suffix="px" onChange={set('fs')} />}
-      <RangeField label="Girar" value={b.r} min={-180} max={180} step={1} suffix="°" onChange={(v) => api.box({ r: Math.round(v) }, 'box:r')} id="rot" />
-      <div className="pe-align" role="group" aria-label="Alinhar na página">
+      {!fullWidthHeader && <RangeField label="Girar" value={b.r} min={-180} max={180} step={1} suffix="°" onChange={(v) => api.box({ r: Math.round(v) }, 'box:r')} id="rot" />}
+      {!fullWidthHeader && <div className="pe-align" role="group" aria-label="Alinhar na página">
         {[['left', 'align-left', 'Esquerda'], ['hcenter', 'align-center', 'Centro'], ['right', 'align-right', 'Direita'], ['top', 'align-top', 'Topo'], ['vcenter', 'align-middle', 'Meio'], ['bottom', 'align-bottom', 'Base']].map(([k, ic, t]) => (
           <button key={k} type="button" className="ce-mini" title={`Alinhar: ${t}`} aria-label={`Alinhar: ${t}`} onClick={() => api.act(`align:${k}`)}><EIcon name={ic} size={16} /></button>
         ))}
-      </div>
+      </div>}
       <Check label="Esconder neste dispositivo" checked={Boolean(b.hide)} onChange={(v) => api.box({ hide: v })} />
       {device !== 'desktop' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => api.act('copy-from-desktop')}>Copiar posição do computador</button>}
     </Section>
@@ -206,7 +206,7 @@ function IconSection({ el, api }) {
         </>
       )}
       <Check label="Manter fixo na tela durante a rolagem" checked={el.fixed} onChange={f('fixed')} />
-      {el.fixed && <Select label="Canto da tela" value={el.fixedAnchor} options={FIXED_ANCHORS} onChange={f('fixedAnchor')} />}
+      {el.fixed && <p className="muted small">A posição do canvas será mantida na página publicada.</p>}
       <Select label="Ação ao clicar" value={el.scrollAction} options={SCROLL_ACTIONS} onChange={f('scrollAction')} />
     </Section>
   );
@@ -295,7 +295,7 @@ function ShapeSection({ el, device, api }) {
       <Select label="Sombra" value={el.shadow} options={SHADOW_OPTIONS} onChange={f('shadow')} />
       <RangeField label="Opacidade" value={el.opacity} min={5} max={100} suffix="%" onChange={f('opacity')} id="sh-op" />
       <Check label="Manter fixa na tela durante a rolagem" checked={el.fixed} onChange={f('fixed')} />
-      {el.fixed && <Select label="Canto da tela" value={el.fixedAnchor} options={FIXED_ANCHORS} onChange={f('fixedAnchor')} />}
+      {el.fixed && <p className="muted small">A posição do canvas será mantida na página publicada.</p>}
       <Select label="Ação ao clicar" value={el.scrollAction} options={SCROLL_ACTIONS} onChange={f('scrollAction')} />
       <div className="pe-fillprev" style={{ background: fillBackground(el.fill) }} aria-hidden="true" />
     </Section>
@@ -567,6 +567,10 @@ export function ElementInspector({ el, device, api, products, layoutBox }) {
       {el.t === 'custom' && <CustomCodeSection el={el} api={api} />}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}
+      <Section title="Estrutura da página">
+        <Select label="Área" value={el.region || (el.t === 'menu' ? 'header' : 'body')} options={PAGE_REGIONS} onChange={api.setRegion} />
+        <p className="muted small">{el.region === 'footer' ? 'O rodapé acompanha o final do conteúdo quando a página aumenta.' : el.region === 'header' ? 'O cabeçalho fica no início da página. Menus ocupam toda a largura.' : 'O corpo contém o conteúdo principal da página.'}</p>
+      </Section>
       {linkable && (
         <Section title={el.t === 'button' ? 'Link do botão' : 'Link ao clicar'}>
           <LinkFields link={el.link} onChange={(link, key) => api.patch({ link }, key || 'el:link')} id={`link-${el.id}`} />

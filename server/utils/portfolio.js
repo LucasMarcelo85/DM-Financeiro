@@ -317,10 +317,16 @@ function cleanAnim(raw) {
 function cleanElement(raw) {
   if (!isObj(raw) || !EL_TYPES.has(raw.t)) return null;
   const withFont = raw.t === 'text' || raw.t === 'button';
-  const el = { id: typeof raw.id === 'string' && ID.test(raw.id) ? raw.id : newId(), t: raw.t, name: line(raw.name, 60), locked: bool(raw.locked, false) };
+  const region = pick(raw.region, new Set(['header', 'body', 'footer']), raw.t === 'menu' ? 'header' : 'body');
+  const el = { id: typeof raw.id === 'string' && ID.test(raw.id) ? raw.id : newId(), t: raw.t, name: line(raw.name, 60), locked: bool(raw.locked, false), region };
   const boxes = isObj(raw.box) ? raw.box : {};
   const desktop = cleanBox(boxes.desktop, null, withFont);
   el.box = { desktop, tablet: cleanBox(boxes.tablet, desktop, withFont), mobile: cleanBox(boxes.mobile, desktop, withFont) };
+  if (raw.t === 'menu' && region === 'header') {
+    for (const [device, width] of [['desktop', 1200], ['tablet', 768], ['mobile', 375]]) {
+      el.box[device] = { ...el.box[device], x: 0, y: 0, w: width, h: Math.max(48, el.box[device].h) };
+    }
+  }
   el.anim = cleanAnim(raw.anim);
 
   switch (raw.t) {

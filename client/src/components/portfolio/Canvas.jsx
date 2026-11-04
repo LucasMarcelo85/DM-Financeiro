@@ -229,7 +229,8 @@ function MenuView({ el, device, mode }) {
   const [open, setOpen] = useState(false);
   const items = el.items || [];
   const burger = el.variant === 'hamburger' || (el.variant === 'auto' && device === 'mobile');
-  const style = { '--mc': el.color, '--mbg': el.bg, '--mr': `${el.radius}px` };
+  const isHeader = el.region === 'header';
+  const style = { '--mc': el.color, '--mbg': el.bg, '--mr': `${isHeader ? 0 : el.radius}px`, ...(isHeader ? { background: el.bg } : {}) };
   const link = (it) => {
     const href = mode === 'public' ? linkHref(it.link) : '';
     return href
@@ -496,7 +497,7 @@ function PortfolioCodeFrame({ code, mode, title }) {
   );
 }
 
-function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle }) {
+function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle, fixedContainer }) {
   const box = layoutBox || boxOf(el, device);
   const ref = useRef(null);
   const a = el.anim;
@@ -555,7 +556,7 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
 
   const bleed = el.full && (el.t === 'shape' || el.t === 'spacer') && (el.shape || 'rect') === 'rect';
   const style = fixedStyle
-    ? { ...fixedStyle, width: box.w, height: box.h, zIndex: z + 1000 }
+    ? { ...fixedStyle, width: fixedStyle.width, height: fixedStyle.height }
     : bleed
     ? { left: -FULL_BLEED, top: box.y, width: DESIGN_W[device] + FULL_BLEED * 2, height: box.h, zIndex: z }
     : { left: box.x, top: box.y, width: box.w, height: el.t === 'products' ? 'auto' : box.h, zIndex: z, transform: box.r ? `rotate(${box.r}deg)` : undefined };
@@ -570,7 +571,7 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
       </div>
     </div>
   );
-  return fixedStyle ? createPortal(element, document.body, `fixed-${el.id}`) : element;
+  return fixedStyle ? createPortal(element, fixedContainer || document.body, `fixed-${el.id}`) : element;
 }
 
 export const ElementView = memo(ElementViewBase);
@@ -594,12 +595,15 @@ export function PageCredit({ theme }) {
 }
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
-export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight, viewportFixed = true }) {
+export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight, viewportFixed = true, fixedContainer = null }) {
   setCatalogContext(products, doc.catalog);
   const W = DESIGN_W[device];
   const H = Math.max(minHeight || 0, pageHeight(doc, device, products, doc.catalog));
   const boxes = layoutBoxes(doc, device, products, doc.catalog);
-  const offsetX = typeof window === 'undefined' ? 0 : Math.max(0, (window.innerWidth - W * scale) / 2);
+  const viewportWidth = typeof document === 'undefined' ? 0 : document.documentElement.clientWidth;
+  const offsetX = fixedContainer
+    ? Math.max(0, (fixedContainer.clientWidth - W * scale) / 2)
+    : Math.max(0, (viewportWidth - W * scale) / 2);
   const themeStyle = {
     '--bg': doc.theme.bg, '--tx': doc.theme.text, '--p': doc.theme.primary, '--on-p': readableOn(doc.theme.primary),
     '--bf': fontCss(doc.theme.bodyFont), '--hf': fontCss(doc.theme.headingFont),
@@ -607,23 +611,30 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
   const body = (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
       <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
-        {doc.elements.map((el, i) => {
-          const box = boxes.get(el.id) || boxOf(el, device, products, doc.catalog);
-          const fixed = mode === 'public' && viewportFixed && el.fixed && !box.hide;
-          const anchor = el.fixedAnchor || 'bottom-right';
-          const fixedStyle = fixed ? {
-            position: 'fixed',
-            left: anchor.endsWith('left') ? offsetX + box.x * scale : undefined,
-            right: anchor.endsWith('right') ? offsetX + box.x * scale : undefined,
-            top: anchor.startsWith('top') ? box.y * scale : undefined,
-            bottom: anchor.startsWith('bottom') ? box.y * scale : undefined,
-            transform: `scale(${scale})${box.r ? ` rotate(${box.r}deg)` : ''}`,
-            transformOrigin: `${anchor.startsWith('top') ? 'top' : 'bottom'} ${anchor.endsWith('left') ? 'left' : 'right'}`,
-            ...themeStyle,
-          } : null;
+        {['header', 'body', 'footer'].map((region) => {
+          const RegionTag = region === 'header' ? 'header' : region === 'footer' ? 'footer' : 'section';
           return (
-            <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} shop={shop} z={i + 1}
-              onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} layoutBox={box} fixedStyle={fixedStyle} />
+            <RegionTag key={region} className={`pv-region pv-region-${region}`} data-region={region} aria-label={region === 'body' ? 'Conteúdo principal' : undefined}>
+              {doc.elements.map((el, i) => {
+                if ((el.region || (el.t === 'menu' ? 'header' : 'body')) !== region) return null;
+                const box = boxes.get(el.id) || boxOf(el, device, products, doc.catalog);
+                const fixed = mode === 'public' && viewportFixed && el.fixed && !box.hide;
+                const fixedStyle = fixed ? {
+                  position: fixedContainer ? 'absolute' : 'fixed',
+                  left: offsetX + box.x * scale,
+                  top: box.y * scale,
+                  width: box.w * scale,
+                  height: box.h * scale,
+                  transform: box.r ? `rotate(${box.r}deg)` : undefined,
+                  zIndex: i + 1001,
+                  ...themeStyle,
+                } : null;
+                return (
+                  <ElementView key={el.id} el={el} device={device} mode={mode} animate={animate} products={products} shop={shop} z={i + 1}
+                    onLink={onLink} onCart={onCart} cartCount={cartCount} replay={replay} layoutBox={box} fixedStyle={fixedStyle} fixedContainer={fixedContainer} />
+                );
+              })}
+            </RegionTag>
           );
         })}
         {children}

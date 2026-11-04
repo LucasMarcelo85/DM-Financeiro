@@ -15,10 +15,15 @@ export const DEVICES = [
   { id: 'mobile', label: 'Celular', short: 'Celular', w: 375 },
 ];
 export const DESIGN_W = { desktop: 1200, tablet: 768, mobile: 375 };
+const HEADER_MENU_MIN_HEIGHT = 48;
+const headerMenuBox = (box, device) => ({
+  ...box, x: 0, y: 0, w: DESIGN_W[device], h: Math.max(HEADER_MENU_MIN_HEIGHT, box.h),
+});
 export const MAX_ELEMENTS = 200;
 export const MAX_PAGE_H = 30000;
 
 export const ELEMENT_LABELS = { text: 'Texto', image: 'Imagem', icon: 'Ícone', button: 'Botão', shape: 'Forma', spacer: 'Espaçador', video: 'Vídeo', carousel: 'Carrossel', menu: 'Menu', products: 'Produtos', modal: 'Modal por etapas', custom: 'HTML personalizado', catsearch: 'Busca e categorias', catgrid: 'Produtos do catálogo' };
+export const PAGE_REGIONS = [['header', 'Cabeçalho'], ['body', 'Corpo'], ['footer', 'Rodapé']];
 // Elementos que podem ocupar a largura inteira da tela (barra de topo, rodapé, faixas de fundo).
 export const canBeFull = (el) => el.t === 'spacer' || el.t === 'shape';
 export const CATALOG_ELEMENTS = new Set(['catsearch', 'catgrid']);
@@ -65,7 +70,7 @@ const TYPE_DEFAULTS = {
   spacer: (th) => ({ fill: FILL0({ c1: th.primary }), full: true, opacity: 0, borderW: 0, borderColor: '#14202e', shadow: 'none' }),
   video: () => ({ url: '', radius: 12 }),
   carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
-  menu: (th) => ({ items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
+  menu: (th) => ({ region: 'header', items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
   products: () => ({ ids: [], cols: { desktop: 4, tablet: 3, mobile: 2 }, whatsapp: '', buttonLabel: 'Pedir no WhatsApp', showPrice: true, cardStyle: 'soft' }),
   modal: () => ({
     trigger: 'Saiba mais', title: 'Mais informações',
@@ -76,7 +81,7 @@ const TYPE_DEFAULTS = {
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };
-const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], spacer: [1200, 120], video: [480, 270], carousel: [640, 360], menu: [360, 56], products: [720, 300], modal: [260, 56], custom: [640, 360], catsearch: [1080, 104], catgrid: [1080, 400] };
+const SIZES = { text: [360, 80], image: [320, 240], icon: [56, 56], button: [230, 56], shape: [220, 220], spacer: [1200, 120], video: [480, 270], carousel: [640, 360], menu: [1200, 72], products: [720, 300], modal: [260, 56], custom: [640, 360], catsearch: [1080, 104], catgrid: [1080, 400] };
 const FONT_SIZES = { text: [24, 20, 17], button: [18, 17, 16] };
 
 export const emptyBox = (t) => ({ x: t === 'spacer' ? 0 : 60, y: 60, w: SIZES[t][0], h: SIZES[t][1], r: 0, hide: false, ...(FONT_SIZES[t] ? { fs: FONT_SIZES[t][0] } : {}) });
@@ -95,11 +100,14 @@ export function newElement(t, theme = THEME_DEFAULTS, over = {}) {
   const { box: boxOver, ...props } = over;
   const desktop = { ...emptyBox(t), ...(boxOver?.desktop || boxOver || {}) };
   const el = {
-    id: uid(), t, name: '', locked: false, ...TYPE_DEFAULTS[t]({ ...THEME_DEFAULTS, ...theme }), ...props, anim: { ...ANIM0(), ...(props.anim || {}) },
+    id: uid(), t, name: '', locked: false, region: t === 'menu' ? 'header' : 'body', ...TYPE_DEFAULTS[t]({ ...THEME_DEFAULTS, ...theme }), ...props, anim: { ...ANIM0(), ...(props.anim || {}) },
     box: { desktop, tablet: scaleBox(desktop, 'desktop', 'tablet', t), mobile: scaleBox(desktop, 'desktop', 'mobile', t) },
   };
   if (boxOver?.tablet) el.box.tablet = { ...el.box.tablet, ...boxOver.tablet };
   if (boxOver?.mobile) el.box.mobile = { ...el.box.mobile, ...boxOver.mobile };
+  if (t === 'menu' && el.region === 'header') {
+    for (const { id } of DEVICES) el.box[id] = headerMenuBox({ ...el.box[id], h: Math.max(id === 'desktop' ? 72 : 56, el.box[id].h) }, id);
+  }
   if (hasFont(t) && FONT_SIZES[t]) { el.box.tablet.fs = el.box.tablet.fs ?? FONT_SIZES[t][1]; el.box.mobile.fs = el.box.mobile.fs ?? FONT_SIZES[t][2]; }
   if (CATALOG_ELEMENTS.has(t)) fullWidthBoxes(el, boxOver);
   return el;
@@ -125,7 +133,8 @@ const isObj = (v) => v && typeof v === 'object' && !Array.isArray(v);
 function fixElement(raw, theme) {
   if (!isObj(raw) || !TYPE_DEFAULTS[raw.t]) return null;
   const d = TYPE_DEFAULTS[raw.t](theme);
-  const el = { ...d, ...raw, id: typeof raw.id === 'string' && raw.id ? raw.id : uid(), name: raw.name || '', locked: Boolean(raw.locked) };
+  const region = PAGE_REGIONS.some(([value]) => value === raw.region) ? raw.region : (raw.t === 'menu' ? 'header' : 'body');
+  const el = { ...d, ...raw, id: typeof raw.id === 'string' && raw.id ? raw.id : uid(), name: raw.name || '', locked: Boolean(raw.locked), region };
   if (raw.t === 'custom') {
     const code = isObj(raw.code) ? raw.code : { html: typeof raw.code === 'string' ? raw.code : '' };
     el.code = {
@@ -138,6 +147,9 @@ function fixElement(raw, theme) {
   el.anim = { ...ANIM0(), ...(isObj(raw.anim) ? raw.anim : {}) };
   const base = { ...emptyBox(raw.t), ...(isObj(raw.box?.desktop) ? raw.box.desktop : {}) };
   el.box = { desktop: base, tablet: { ...scaleBox(base, 'desktop', 'tablet', raw.t), ...(isObj(raw.box?.tablet) ? raw.box.tablet : {}) }, mobile: { ...scaleBox(base, 'desktop', 'mobile', raw.t), ...(isObj(raw.box?.mobile) ? raw.box.mobile : {}) } };
+  if (raw.t === 'menu' && region === 'header') {
+    for (const { id } of DEVICES) el.box[id] = headerMenuBox(el.box[id], id);
+  }
   return el;
 }
 
@@ -263,9 +275,10 @@ export const boxOf = (el, device, products = CAT.products, catalog = CAT.catalog
 
 export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) {
   const base = new Map(doc.elements.map((el) => [el.id, boxOf(el, device, products, catalog)]));
+  const footerIds = new Set(doc.elements.filter((el) => el.region === 'footer').map((el) => el.id));
   const expansions = [];
   const grids = doc.elements
-    .filter((el) => el.t === 'catgrid' && !el.box[device].hide)
+    .filter((el) => el.t === 'catgrid' && el.region !== 'footer' && !el.box[device].hide)
     .sort((a, b) => a.box[device].y - b.box[device].y);
 
   for (const el of grids) {
@@ -278,15 +291,31 @@ export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.
   }
 
   for (const el of doc.elements) {
-    if (el.t === 'catgrid' || el.box[device].hide) continue;
+    if (el.t === 'catgrid' || el.region === 'footer' || el.box[device].hide) continue;
     const original = el.box[device];
     const shift = expansions.reduce((sum, item) => sum + (original.y >= item.bottom ? item.delta : 0), 0);
     if (shift) base.set(el.id, { ...base.get(el.id), y: original.y + shift });
+  }
+  if (footerIds.size) {
+    const bodyBoxes = doc.elements
+      .filter((el) => !footerIds.has(el.id) && !el.box[device].hide)
+      .map((el) => base.get(el.id));
+    const footerTop = Math.max(doc.heights[device] || 700, bottomOf(bodyBoxes)) + 24;
+    for (const el of doc.elements) {
+      if (!footerIds.has(el.id)) continue;
+      const box = base.get(el.id);
+      base.set(el.id, { ...box, y: footerTop + el.box[device].y });
+    }
   }
   return base;
 }
 
 export const pageHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) => Math.max(doc.heights[device] || 700, bottomOf([...layoutBoxes(doc, device, products, catalog).values()]) + 24);
+export const contentHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) => {
+  const boxes = layoutBoxes(doc, device, products, catalog);
+  const content = doc.elements.filter((el) => el.region !== 'footer' && !el.box[device].hide).map((el) => boxes.get(el.id));
+  return Math.max(doc.heights[device] || 700, bottomOf(content) + 24);
+};
 
 // Estimativa da altura de um texto (usada ao empilhar para o celular).
 export function estimateTextHeight(text, fs, width, lineHeight = 1.3) {
@@ -313,7 +342,11 @@ export function duplicateElement(doc, id) {
   copy.id = uid();
   copy.name = copy.name ? `${copy.name} (cópia)` : '';
   copy.locked = false;
-  for (const d of Object.keys(copy.box)) { copy.box[d].x += 24; copy.box[d].y += 24; }
+  for (const d of Object.keys(copy.box)) {
+    copy.box[d].x += 24;
+    copy.box[d].y += 24;
+    if (copy.t === 'menu' && copy.region === 'header') copy.box[d] = headerMenuBox(copy.box[d], d);
+  }
   const elements = [...doc.elements];
   elements.splice(i + 1, 0, copy);
   return { doc: { ...doc, elements }, element: copy };
@@ -335,12 +368,16 @@ export function moveLayer(doc, id, where) {
 export function alignElement(doc, id, device, how) {
   const el = findElement(doc, id);
   if (!el) return doc;
-  const b = boxOf(el, device);
+  if (el.t === 'menu' && el.region === 'header') return doc;
+  const b = layoutBoxes(doc, device).get(id) || boxOf(el, device);
   const W = DESIGN_W[device];
   const H = pageHeight(doc, device);
+  const footerStart = el.region === 'footer' ? b.y - el.box[device].y : 0;
   const patch = {
     left: { x: 0 }, hcenter: { x: Math.round((W - b.w) / 2) }, right: { x: W - b.w },
-    top: { y: 0 }, vcenter: { y: Math.round((H - b.h) / 2) }, bottom: { y: Math.max(0, H - b.h) },
+    top: { y: 0 },
+    vcenter: { y: Math.max(0, Math.round((H - footerStart - b.h) / 2)) },
+    bottom: { y: Math.max(0, H - footerStart - b.h) },
   }[how];
   return patch ? patchBox(doc, id, device, patch) : doc;
 }
@@ -349,8 +386,11 @@ export function alignElement(doc, id, device, how) {
 export function adaptDevice(doc, from, to) {
   return {
     ...doc,
-    heights: { ...doc.heights, [to]: Math.round(pageHeight(doc, from) * (DESIGN_W[to] / DESIGN_W[from])) },
-    elements: doc.elements.map((e) => ({ ...e, box: { ...e.box, [to]: scaleBox(boxOf(e, from), from, to, e.t) } })),
+    heights: { ...doc.heights, [to]: Math.round(contentHeight(doc, from) * (DESIGN_W[to] / DESIGN_W[from])) },
+    elements: doc.elements.map((e) => {
+      const box = scaleBox(e.region === 'footer' ? e.box[from] : boxOf(e, from), from, to, e.t);
+      return { ...e, box: { ...e.box, [to]: e.t === 'menu' && e.region === 'header' ? headerMenuBox(box, to) : box } };
+    }),
   };
 }
 
@@ -359,10 +399,24 @@ export function stackDevice(doc, device, from = 'desktop') {
   const W = DESIGN_W[device];
   const m = Math.round(W * 0.055);
   const full = W - m * 2;
-  const order = [...doc.elements].filter((e) => !e.box[from].hide).sort((a, b) => a.box[from].y - b.box[from].y || a.box[from].x - b.box[from].x);
+  const regionOf = (element) => element.region || (element.t === 'menu' ? 'header' : 'body');
+  const order = [...doc.elements].filter((e) => regionOf(e) === 'body' && !e.box[from].hide).sort((a, b) => a.box[from].y - b.box[from].y || a.box[from].x - b.box[from].x);
   const k = W / DESIGN_W[from];
-  let y = m;
   const boxes = new Map();
+  for (const element of doc.elements.filter((item) => regionOf(item) !== 'body')) {
+    const source = regionOf(element) === 'footer' ? element.box[from] : boxOf(element, from);
+    const scaled = scaleBox(source, from, device, element.t);
+    if (element.t === 'menu' && regionOf(element) === 'header') Object.assign(scaled, headerMenuBox(scaled, device));
+    boxes.set(element.id, scaled);
+  }
+  const headerBottom = Math.max(0, ...doc.elements
+    .filter((element) => regionOf(element) === 'header' && !element.box[from].hide)
+    .map((element) => {
+      const source = boxOf(element, from);
+      const box = element.t === 'menu' ? headerMenuBox(scaleBox(source, from, device, element.t), device) : scaleBox(source, from, device, element.t);
+      return box.y + box.h;
+    }));
+  let y = Math.max(m, headerBottom + 14);
   for (const e of order) {
     const b = boxOf(e, from);
     let w = full;

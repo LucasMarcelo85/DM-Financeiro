@@ -11,7 +11,7 @@ import ImageEditor from '../components/portfolio/ImageEditor.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
-  DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, alignElement, boxOf, duplicateElement, findElement, moveLayer, newElement, normalizeDoc, pageHeight,
+  DESIGN_W, DEVICES, ELEMENT_LABELS, MAX_ELEMENTS, addElement, alignElement, boxOf, contentHeight, duplicateElement, findElement, moveLayer, newElement, normalizeDoc, pageHeight,
   layoutBoxes, patchBox, patchCatalog, patchElement, patchPixel, patchSeo, patchTheme, removeElement, scaleBox, markManual, syncDevices,
 } from '../lib/portfolio/doc.js';
 import { pageUrl } from '../lib/portfolio/model.js';
@@ -44,6 +44,7 @@ export default function PortfolioEditor() {
   const [manualZoom, setManualZoom] = useState(null);
   const [avail, setAvail] = useState(900);
   const [preview, setPreview] = useState(false);
+  const [fixedPreviewHost, setFixedPreviewHost] = useState(null);
   const [animate, setAnimate] = useState(false);
   const [replay, setReplay] = useState(0);
   const [share, setShare] = useState(false);
@@ -247,10 +248,16 @@ export default function PortfolioEditor() {
     const W = DESIGN_W[dv];
     let b = { ...el.box[dv] };
     if (el.t === 'text' || el.t === 'button' || el.t === 'icon') b = { ...el.box.desktop, ...(dv !== 'desktop' ? el.box[dv] : {}) };
-    if (b.w > W - 40 && el.t !== 'spacer') { b.h = Math.round(b.h * ((W - 40) / b.w)); b.w = W - 40; }
-    b.x = el.t === 'spacer' ? 0 : Math.max(0, Math.round(x ?? (W - b.w) / 2));
+    if (el.t === 'menu' && el.region === 'header') {
+      b.x = 0;
+      b.w = W;
+      b.y = 0;
+    } else {
+      if (b.w > W - 40 && el.t !== 'spacer') { b.h = Math.round(b.h * ((W - 40) / b.w)); b.w = W - 40; }
+      b.x = el.t === 'spacer' ? 0 : Math.max(0, Math.round(x ?? (W - b.w) / 2));
+      b.y = Math.max(0, Math.round(y ?? 60));
+    }
     if (el.t === 'spacer') b.w = W;
-    b.y = Math.max(0, Math.round(y ?? 60));
     const next = { ...el, box: { ...el.box, [dv]: b } };
     for (const d of DEVICES.map((v) => v.id)) if (d !== dv) next.box[d] = { ...next.box[d], ...scaleBox(b, dv, d, el.t), hide: false };
     return next;
@@ -259,7 +266,13 @@ export default function PortfolioEditor() {
   function topOfView() {
     const sc = stageRef.current;
     const z = manualZoom ?? Math.min(1, Math.max(0.2, ((sc?.clientWidth || 900) - 40) / DESIGN_W[deviceRef.current]));
-    return Math.max(40, Math.round(((sc?.scrollTop || 0) + 24) / z + 40));
+    const headerBottom = Math.max(0, ...docRef.current.elements
+      .filter((element) => element.region === 'header' && !element.box[deviceRef.current].hide)
+      .map((element) => {
+        const box = layoutBoxes(docRef.current, deviceRef.current, products, docRef.current.catalog).get(element.id);
+        return box ? box.y + box.h : 0;
+      }));
+    return Math.max(headerBottom + 24, Math.round(((sc?.scrollTop || 0) + 24) / z + 40));
   }
 
   function addNew(t, over = {}, at) {
@@ -278,15 +291,12 @@ export default function PortfolioEditor() {
   function addFooter() {
     const d = docRef.current;
     if (d.elements.length + 3 > MAX_ELEMENTS) { toast(`A página aceita até ${MAX_ELEMENTS} elementos.`, 'error'); return; }
-    const boxes = Object.fromEntries(DEVICES.map(({ id, w }) => {
-      const y = pageHeight(d, id, products, d.catalog) + 24;
-      return [id, { x: 0, y, w, h: 144, r: 0, hide: false }];
-    }));
-    const bg = newElement('shape', d.theme, { name: 'Fundo do rodapé', shape: 'rect', full: true, fill: { type: 'solid', c1: '#0f2238', c2: '#0f2238', angle: 135, animate: 'none' }, box: boxes });
-    const textBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: 24, y: boxes[id].y + 28, w: w - 48, h: 30, fs: 15, r: 0, hide: false }]));
-    const text = newElement('text', d.theme, { name: 'Texto do rodapé', text: `© ${nameRef.current} · Todos os direitos reservados`, color: '#ffffff', align: 'center', box: textBoxes });
-    const buttonBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: Math.round((w - 220) / 2), y: boxes[id].y + 76, w: 220, h: 48, fs: 15, r: 0, hide: false }]));
-    const button = newElement('button', d.theme, { name: 'Contato do rodapé', label: 'Fale conosco', style: 'outline', color: '#ffffff', textColor: '#ffffff', radius: 999, link: { kind: 'whatsapp', url: '', phone: '', message: 'Olá! Gostaria de saber mais.' }, box: buttonBoxes });
+    const boxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: 0, y: 0, w, h: 144, r: 0, hide: false }]));
+    const bg = newElement('shape', d.theme, { name: 'Fundo do rodapé', region: 'footer', shape: 'rect', full: true, fill: { type: 'solid', c1: '#0f2238', c2: '#0f2238', angle: 135, animate: 'none' }, box: boxes });
+    const textBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: 24, y: 28, w: w - 48, h: 30, fs: 15, r: 0, hide: false }]));
+    const text = newElement('text', d.theme, { name: 'Texto do rodapé', region: 'footer', text: `© ${nameRef.current} · Todos os direitos reservados`, color: '#ffffff', align: 'center', box: textBoxes });
+    const buttonBoxes = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: Math.round((w - 220) / 2), y: 76, w: 220, h: 48, fs: 15, r: 0, hide: false }]));
+    const button = newElement('button', d.theme, { name: 'Contato do rodapé', region: 'footer', label: 'Fale conosco', style: 'outline', color: '#ffffff', textColor: '#ffffff', radius: 999, link: { kind: 'whatsapp', url: '', phone: '', message: 'Olá! Gostaria de saber mais.' }, box: buttonBoxes });
     commit({ ...d, manual: { ...d.manual, tablet: true, mobile: true }, elements: [...d.elements, bg, text, button] });
     setSelectedId(text.id);
     setPreview(false);
@@ -318,7 +328,7 @@ export default function PortfolioEditor() {
   const addProductsIndividually = useCallback((ids) => {
     for (const productId of ids) {
       const current = docRef.current;
-      const bottom = pageHeight(current, deviceRef.current, products, current.catalog);
+      const bottom = contentHeight(current, deviceRef.current, products, current.catalog);
       if (!addNew('products', { ids: [productId] }, { x: 40, y: bottom + 24 })) break;
     }
   }, [products]);
@@ -333,9 +343,13 @@ export default function PortfolioEditor() {
     const device = deviceRef.current;
     const element = findElement(current, elId);
     const effective = layoutBoxes(current, device, products, current.catalog).get(elId);
-    const normalized = patch.y !== undefined && element && effective
+    let normalized = patch.y !== undefined && element && effective
       ? { ...patch, y: patch.y - (effective.y - element.box[device].y) }
       : patch;
+    if (element?.t === 'menu' && element.region === 'header') normalized = {
+      ...normalized, x: 0, y: 0, w: DESIGN_W[device],
+      ...(normalized.h !== undefined ? { h: Math.max(48, normalized.h) } : {}),
+    };
     commit(markManual(patchBox(current, elId, device, normalized), device), `${elId}:${device}:${key || Object.keys(patch).join(',')}`);
   }, [commit, products]);
 
@@ -352,12 +366,33 @@ export default function PortfolioEditor() {
     else if (action.startsWith('align:')) commit(alignElement(d, sel, deviceRef.current, action.slice(6)));
     else if (action === 'copy-from-desktop') {
       const el = findElement(d, sel);
-      if (el) commit(markManual(patchBox(d, sel, deviceRef.current, scaleBox(boxOf(el, 'desktop'), 'desktop', deviceRef.current, el.t)), deviceRef.current));
+      if (el) {
+        const target = deviceRef.current;
+        const box = scaleBox(boxOf(el, 'desktop'), 'desktop', target, el.t);
+        if (el.t === 'menu' && el.region === 'header') Object.assign(box, { x: 0, y: 0, w: DESIGN_W[target], h: Math.max(48, box.h) });
+        commit(markManual(patchBox(d, sel, target, box), target));
+      }
     }
   }
 
   const inspectorApi = useMemo(() => ({
     patch: patchSelected,
+    setRegion: (region) => {
+      const selected = selectedRef.current;
+      const current = docRef.current;
+      const element = selected && findElement(current, selected);
+      if (!element) return;
+      const boxes = { ...element.box };
+      for (const { id: targetDevice, w } of DEVICES) {
+        const oldBox = layoutBoxes(current, targetDevice, products, current.catalog).get(element.id) || element.box[targetDevice];
+        const nextBox = { ...element.box[targetDevice] };
+        if (region === 'footer' && element.region !== 'footer') nextBox.y = 0;
+        else if (element.region === 'footer' && region !== 'footer') nextBox.y = oldBox.y;
+        if (element.t === 'menu' && region === 'header') Object.assign(nextBox, { x: 0, y: 0, w, h: Math.max(48, nextBox.h) });
+        boxes[targetDevice] = nextBox;
+      }
+      commit({ ...current, elements: current.elements.map((item) => item.id === element.id ? { ...item, region, box: boxes } : item) }, `${element.id}:region:${region}`);
+    },
     box: (p, key) => { const sel = selectedRef.current; if (sel) setBox(sel, p, key); },
     patchTheme: (p, key) => commit(patchTheme(docRef.current, p), key || 'theme'),
     patchSeo: (p, key) => commit(patchSeo(docRef.current, p), key || 'seo'),
@@ -369,7 +404,7 @@ export default function PortfolioEditor() {
     imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
     play: () => { setAnimate(true); setReplay((r) => r + 1); },
     openCatalogSettings: () => setCatalogCfg(true),
-  }), [patchSelected, setBox, commit, toast, addProductsIndividually, meta?.path]); // eslint-disable-line react-hooks/exhaustive-deps
+  }), [patchSelected, setBox, commit, toast, addProductsIndividually, meta?.path, products]); // eslint-disable-line react-hooks/exhaustive-deps
 
   // ---------------------------------------------------------------- atalhos
   useEffect(() => {
@@ -483,13 +518,14 @@ export default function PortfolioEditor() {
           )}
         </nav>
 
-        <main className="ce-stage pe-stage2" ref={stageRef}>
+        <main className={`ce-stage pe-stage2${preview ? ' is-preview' : ''}`} ref={stageRef}>
+          {preview && <div ref={setFixedPreviewHost} className="pe-fixed-preview-host" aria-hidden="true" />}
           <div className="pe-frame" style={{ width: W * zoom, ...pvVars(doc.theme) }}>
             <PageBackground theme={doc.theme} />
             {preview ? (
               <>
                 <ClipDefs />
-                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} viewportFixed={false} />
+                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} fixedContainer={fixedPreviewHost} />
               </>
             ) : (
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
