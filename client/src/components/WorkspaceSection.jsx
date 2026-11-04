@@ -49,7 +49,7 @@ function Workspace({ area }) {
   }, []);
 
   const auth = useMemo(() => ({
-    user, loading: false, setUser, refresh: async () => user, pinUnlocked: true, pinUntil: null,
+    user, appMode: true, loading: false, setUser, refresh: async () => user, pinUnlocked: true, pinUntil: null,
     unlockPin: async () => {}, lockPin: async () => {}, applyPin: () => {},
   }), [user]);
 

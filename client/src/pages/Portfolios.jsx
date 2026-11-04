@@ -79,7 +79,7 @@ function DomainCard({ domain, onChange, locked }) {
 export default function Portfolios() {
   const toast = useToast();
   const nav = useNavigate();
-  const { user } = useAuth();
+  const { user, appMode } = useAuth();
   const [data, setData] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
   const [appOpen, setAppOpen] = useState(false);
@@ -206,24 +206,24 @@ export default function Portfolios() {
     <>
       <header className="page-head head-row">
         <div>
-          <h1>Portfólio</h1>
+          <h1>{appMode ? 'Minha página' : 'Portfólio'}</h1>
           <p className="muted">
-            Crie páginas profissionais com a sua marca e envie o link para clientes.
-            {data ? ` Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}
+            {appMode ? 'Edite a página do seu aplicativo.' : <>Crie páginas profissionais com a sua marca e envie o link para clientes.
+            {data ? ` Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}</>}
           </p>
         </div>
-        {getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
-        <label className={`btn btn-ghost ${!data || full || busy ? 'is-disabled' : ''}`} aria-disabled={!data || full || !!busy}>
+        {!appMode && getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
+        {!appMode && <label className={`btn btn-ghost ${!data || full || busy ? 'is-disabled' : ''}`} aria-disabled={!data || full || !!busy}>
           Importar
           <input type="file" accept=".json,application/json" hidden onChange={importFile} disabled={!data || full || !!busy} />
-        </label>
-        <button className="btn btn-primary" onClick={() => setNewOpen(true)} disabled={!data || full || !!busy}><Icon name="plus" size={18} /> Nova página</button>
+        </label>}
+        {!appMode && <button className="btn btn-primary" onClick={() => setNewOpen(true)} disabled={!data || full || !!busy}><Icon name="plus" size={18} /> Nova página</button>}
       </header>
 
-      <StoreBar manage />
+      {!appMode && <StoreBar manage />}
       {appOpen && <StoreAppModal storeId={getActiveStore()} onClose={() => setAppOpen(false)} />}
 
-      {full && (
+      {full && !appMode && (
         <div className="banner banner-amber">
           <div><strong>Você usou todas as páginas do seu plano.</strong><span>Exclua uma página, adquira limite extra ou mude de plano para criar mais.</span></div>
           <BuyMore resource="portfolios" />
@@ -241,9 +241,11 @@ export default function Portfolios() {
           </div>
         </div>
       )}
-      {data && <DomainCard domain={data.domain} onChange={load} locked={false} />}
+      {data && !appMode && <DomainCard domain={data.domain} onChange={load} locked={false} />}
 
-      {data === null ? <p className="muted">Carregando...</p> : count === 0 ? (
+      {data === null ? <p className="muted">Carregando...</p> : count === 0 && appMode ? (
+        <p className="muted">Nenhuma página disponível para este aplicativo.</p>
+      ) : count === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="globe" size={32} /></span>
           <h2>Crie sua primeira página</h2>
@@ -270,13 +272,13 @@ export default function Portfolios() {
                 <Link className="btn btn-primary btn-sm" to={`/portfolio/${p.id}`}><Icon name="edit" size={16} /> Editar</Link>
                 <button className="btn btn-ghost btn-sm" onClick={() => copy(p)}><Icon name="copy" size={16} /> Copiar link</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSharing(p)}><Icon name="share" size={16} /> Compartilhar</button>
-                <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={18} /></button>
+                {!appMode && <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={18} /></button>}
               </div>
               <div className="pl-more">
                 {p.published && <a className="link-btn" href={pageUrl(p.path, p.customUrl)} target="_blank" rel="noopener noreferrer">Abrir página</a>}
-                <button className="link-btn" onClick={() => duplicate(p)} disabled={full}>Duplicar</button>
-                <button className="link-btn" onClick={() => exportPage(p)}>Exportar</button>
-                {!p.isMain && <button className="link-btn" onClick={() => makeMain(p)}>Tornar principal</button>}
+                {!appMode && <button className="link-btn" onClick={() => duplicate(p)} disabled={full}>Duplicar</button>}
+                {!appMode && <button className="link-btn" onClick={() => exportPage(p)}>Exportar</button>}
+                {!appMode && !p.isMain && <button className="link-btn" onClick={() => makeMain(p)}>Tornar principal</button>}
               </div>
             </li>
           ))}

@@ -14,6 +14,30 @@ import { storeScope } from '../utils/store.js';
 // Endereço: dominio/<portfolioSlug do usuário> = página principal; dominio/<portfolioSlug>/<slug da página> = as demais.
 const router = Router();
 
+// No app da loja (req.owner existe) o usuário só edita a página que já existe: nada de criar, duplicar, excluir ou mudar domínio.
+// A página do app nasce como cópia da página da loja (ou do portfólio do dono) no primeiro acesso.
+router.use(async (req, res, next) => {
+  if (!req.owner) return next();
+  if (req.method !== 'GET' && req.method !== 'PATCH') {
+    throw new AppError(403, 'No aplicativo você só pode editar a página existente.', 'FORBIDDEN');
+  }
+  if (req.method === 'GET' && req.path === '/') {
+    const has = await prisma.portfolio.count({ where: { userId: req.user.id } });
+    if (!has) {
+      const storeId = req.shopUser?.store?.id;
+      const source = (storeId && await prisma.portfolio.findFirst({ where: { userId: req.owner.id, storeId }, orderBy: [{ isMain: 'desc' }, { id: 'asc' }] }))
+        || await prisma.portfolio.findFirst({ where: { userId: req.owner.id, storeId: null }, orderBy: [{ isMain: 'desc' }, { id: 'asc' }] });
+      const kind = source?.kind || 'site';
+      await createPage(req.user, {
+        name: (source?.name || req.shopUser?.store?.name || 'Minha página').slice(0, 120),
+        data: source ? source.data : emptyPortfolioDoc(kind),
+        count: 0, kind, published: Boolean(source?.published),
+      });
+    }
+  }
+  next();
+});
+
 const ms = (d) => (d ? d.getTime() : null);
 const pagePath = (userSlug, p) => (p.isMain ? `/${userSlug}` : `/${userSlug}/${p.slug}`);
 const customBase = (user) => (user?.customDomain && user.customDomainVerifiedAt ? `https://${user.customDomain}` : '');
