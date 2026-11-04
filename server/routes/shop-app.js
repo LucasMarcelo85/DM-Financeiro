@@ -50,7 +50,6 @@ const allowedPerms = (user, permissions, store) => {
     if (perm === 'ia') return tabs.includes('ia');
     if (perm === 'whatsapp') return tabs.includes('whatsapp') && limits.instances > 0;
     if (perm === 'contatos') return tabs.includes('clientes');
-    if (perm === 'lembretes') return tabs.includes('lembretes');
     if (perm === 'cobrancas') return tabs.includes('cobrancas');
     if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
     if (perm === 'portfolio') return tabs.includes('portfolio') && limits.portfolios > 0;
@@ -312,7 +311,7 @@ async function useWorkspace(req, _res, next) {
   next();
 }
 const workspaceArea = (path, areas, handler) => router.use(`/ws/${path}`, shopAuth, needAnyPerm(...areas), useWorkspace, handler);
-const SCHEDULING = ['lembretes', 'cobrancas'];
+const SCHEDULING = ['cobrancas'];
 workspaceArea('instances', ['whatsapp', ...SCHEDULING, 'ia'], instanceRouter('envio'));
 workspaceArea('contacts', ['contatos', ...SCHEDULING], contactRoutes);
 workspaceArea('schedules', SCHEDULING, scheduleRoutes);

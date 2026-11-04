@@ -145,7 +145,7 @@ export default function Contacts() {
                 <strong title={c.name}>{c.name}</strong>
                 <span>{formatStoredPhone(c.phone)}</span>
                 {c.email && <span className="muted small">{c.email}</span>}
-                <span className="tag">{plural(c.scheduleCount, 'cobrança/lembrete', 'cobranças/lembretes')}</span>
+                <span className="tag">{plural(c.scheduleCount, 'cobrança', 'cobranças')}</span>
               </div>
               <div className="contact-actions">
                 <Link className="btn btn-ghost btn-sm" to={`/cobrancas/nova?cliente=${c.id}`}>Cobrar</Link>
@@ -163,7 +163,7 @@ export default function Contacts() {
         <Modal title="Excluir este cliente?" onClose={() => setConfirmDel(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
           <p><strong>{confirmDel.name}</strong> será removido.{' '}
-            {confirmDel.scheduleCount > 0 ? `As ${plural(confirmDel.scheduleCount, 'cobrança/lembrete', 'cobranças/lembretes')} deste cliente também serão apagadas.` : 'Ele não tem cobranças nem lembretes.'}</p>
+            {confirmDel.scheduleCount > 0 ? `As ${plural(confirmDel.scheduleCount, 'cobrança', 'cobranças')} deste cliente também serão apagadas.` : 'Ele não tem cobranças.'}</p>
         </Modal>
       )}
     </>

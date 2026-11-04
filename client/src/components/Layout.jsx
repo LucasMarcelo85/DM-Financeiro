@@ -12,7 +12,6 @@ const NAV = [
   { to: '/whatsapp', label: 'WhatsApp', icon: 'chat' },
   { to: '/clientes', label: 'Clientes', icon: 'user' },
   { to: '/cobrancas', label: 'Cobranças', icon: 'money' },
-  { to: '/lembretes', label: 'Lembretes', icon: 'bell' },
   { to: '/contratos', label: 'Contratos', icon: 'file' },
   { to: '/auditoria', label: 'Auditoria', icon: 'eye' },
   { to: '/portfolio', label: 'Portfólio', icon: 'globe' },

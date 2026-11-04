@@ -179,7 +179,7 @@ router.post('/:id/domain/check', async (req, res) => {
 });
 
 // ---------- Aplicativo do lojista ----------
-const APP_PERMS = ['whatsapp', 'contatos', 'lembretes', 'cobrancas', 'contratos', 'auditoria', 'portfolio', 'produtos', 'estoque', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'ia'];
+const APP_PERMS = ['whatsapp', 'contatos', 'cobrancas', 'contratos', 'auditoria', 'portfolio', 'produtos', 'estoque', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'ia'];
 const availablePerms = (user) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;

@@ -98,11 +98,8 @@ export default function App() {
         <Route path="cobrancas" element={<Schedules key="c" kind="cobranca" />} />
         <Route path="cobrancas/nova" element={<ScheduleForm key="c-new" kind="cobranca" />} />
         <Route path="cobrancas/:id" element={<ScheduleForm key="c-edit" kind="cobranca" />} />
-        <Route path="lembretes" element={<Schedules key="l" kind="lembrete" />} />
-        <Route path="lembretes/novo" element={<ScheduleForm key="l-new" kind="lembrete" />} />
-        <Route path="lembretes/:id" element={<ScheduleForm key="l-edit" kind="lembrete" />} />
         <Route path="cobranca" element={<Navigate to="/cobrancas" replace />} />
-        <Route path="lembrete" element={<Navigate to="/lembretes" replace />} />
+        <Route path="lembrete" element={<Navigate to="/cobrancas" replace />} />
         <Route path="contratos" element={<Contracts />} />
         <Route path="auditoria" element={<Audit />} />
         <Route path="portfolio" element={<Portfolios />} />

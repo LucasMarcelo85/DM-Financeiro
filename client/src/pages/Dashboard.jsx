@@ -60,7 +60,7 @@ export default function Dashboard() {
             {loading
               ? 'Só um instante.'
               : connected
-                ? 'Tudo pronto para enviar cobranças e lembretes.'
+                ? 'Tudo pronto para enviar cobranças.'
                 : data?.evolutionConfigured === false
                   ? 'A integração com o WhatsApp ainda não foi configurada. Avise o administrador.'
                   : 'Conecte lendo um QR Code com o celular. Leva cerca de um minuto.'}
@@ -115,11 +115,6 @@ export default function Dashboard() {
           <strong>Nova cobrança</strong>
           <span>Avulsa ou mensal, enviada no horário que você escolher.</span>
         </Link>
-        <Link to="/lembretes/novo" className="action-card">
-          <span className="action-icon"><Icon name="bell" size={24} /></span>
-          <strong>Novo lembrete</strong>
-          <span>Avise o cliente antes do vencimento.</span>
-        </Link>
         <Link to="/clientes?novo=1" className="action-card">
           <span className="action-icon"><Icon name="user" size={24} /></span>
           <strong>Novo cliente</strong>
@@ -131,7 +126,7 @@ export default function Dashboard() {
         <section className="card">
           <h2 className="card-title">Próximos envios</h2>
           {stats === null ? <p className="muted">Carregando...</p> : stats.upcoming.length === 0 ? (
-            <p className="empty">Nada agendado. Crie uma <Link to="/cobrancas/nova">cobrança</Link> ou um <Link to="/lembretes/novo">lembrete</Link>.</p>
+            <p className="empty">Nada agendado. Crie uma <Link to="/cobrancas/nova">cobrança</Link>.</p>
           ) : (
             <ul className="history">
               {stats.upcoming.map((u) => (

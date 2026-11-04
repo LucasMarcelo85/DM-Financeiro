@@ -1,4 +1,4 @@
-﻿import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useState } from 'react';
 import { api } from '../api.js';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
@@ -8,7 +8,7 @@ import { PLAN_TABS, tabLabel } from '../lib/pin.js';
 
 // Gerir planos: o administrador cria, edita e exclui planos (valor mensal e o que cada um oferece). Fica no banco, não no .env.
 const FIELDS = [
-  ['instances', 'WhatsApps para cobranças e lembretes'],
+  ['instances', 'WhatsApps para cobranças'],
   ['auditInstances', 'Números na auditoria'],
   ['contracts', 'Modelos de contrato'],
   ['portfolios', 'Páginas de portfólio'],
@@ -217,7 +217,7 @@ function TrialEditor({ trial, onSaved }) {
       <label className="field">
         <span>Dias do teste grátis para novos usuários</span>
         <input className="input" inputMode="numeric" value={days} onChange={(e) => setDays(e.target.value.replace(/\D/g, '').slice(0, 2))} />
-        <small>O usuário escolhe o plano no cadastro e, durante o teste, tem todo o acesso desse plano. Cobranças e lembretes saem com a mensagem "teste DM Digital".</small>
+        <small>O usuário escolhe o plano no cadastro e, durante o teste, tem todo o acesso desse plano. Cobranças saem com a mensagem "teste DM Digital".</small>
       </label>
       {error && <p className="form-error" role="alert">{error}</p>}
       <div className="btn-row">

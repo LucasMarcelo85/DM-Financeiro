@@ -9,7 +9,6 @@ import { brl, plural } from '../lib/format.js';
 const FEATURES = [
   { key: 'whatsapp', icon: 'chat', title: 'WhatsApp', text: 'Visualize conversas e use suas conexões para se comunicar com clientes.' },
   { key: 'cobrancas', icon: 'money', title: 'Cobranças', text: 'Acompanhe valores, vencimentos e notificações de cobrança.' },
-  { key: 'lembretes', icon: 'bell', title: 'Lembretes', text: 'Programe retornos e mensagens para não perder acompanhamentos.' },
   { key: 'clientes', icon: 'user', title: 'Clientes', text: 'Consulte cadastros, histórico e oportunidades de relacionamento.' },
   { key: 'contratos', icon: 'file', title: 'Contratos', text: 'Gere documentos usando modelos personalizados e dados do cliente.' },
   { key: 'auditoria', icon: 'eye', title: 'Auditoria WhatsApp', text: 'Supervisione conversas das conexões autorizadas pela sua equipe.' },
@@ -21,7 +20,7 @@ const FEATURES = [
 ];
 
 const PLAN_FEATURES = [
-  ['instances', 'conexão WhatsApp para cobranças e lembretes', 'conexões WhatsApp para cobranças e lembretes'],
+  ['instances', 'conexão WhatsApp para cobranças', 'conexões WhatsApp para cobranças'],
   ['auditInstances', 'conexão para auditoria de conversas', 'conexões para auditoria de conversas'],
   ['contracts', 'modelo de contrato', 'modelos de contrato'],
   ['portfolios', 'página de portfólio', 'páginas de portfólio'],
@@ -112,7 +111,7 @@ export default function Landing() {
               <span className="mt-2 block text-amber-300">Seu próximo passo mais perto.</span>
             </h1>
             <p className="mt-6 max-w-xl text-base leading-7 text-slate-300 sm:text-lg">
-              Do primeiro atendimento ao pedido pago: centralize clientes, cobranças e lembretes pelo WhatsApp, contratos, presença digital, vendas e automações em uma só plataforma.
+              Do primeiro atendimento ao pedido pago: centralize clientes e cobranças pelo WhatsApp, contratos, presença digital, vendas e automações em uma só plataforma.
             </p>
             <div className="mt-8 flex flex-col gap-3 sm:flex-row">
               <a href="#planos" className="inline-flex min-h-14 items-center justify-center gap-2 rounded-2xl bg-amber-400 px-6 text-base font-bold text-slate-950 no-underline shadow-lg shadow-amber-950/25 transition hover:-translate-y-0.5 hover:bg-amber-300">
@@ -144,7 +143,7 @@ export default function Landing() {
               <h3 className="mt-1 text-xl font-bold">Lojas e prestadores de serviços</h3>
               <p className="mt-2 leading-7 text-slate-600">Para lojas, clínicas, escritórios de advocacia e profissionais que querem organizar a rotina, vender e atender melhor sem depender de várias ferramentas.</p>
               <ul className="mt-5 grid gap-2 text-sm text-slate-700 sm:grid-cols-2">
-                {['Cobranças e lembretes', 'Contratos estilizados', 'Auditoria WhatsApp', 'Sites e catálogos', 'Produtos, pedidos e PDV', 'APIs e webhooks'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
+                {['Cobranças', 'Contratos estilizados', 'Auditoria WhatsApp', 'Sites e catálogos', 'Produtos, pedidos e PDV', 'APIs e webhooks'].map((item) => <li key={item} className="flex items-center gap-2"><Icon name="check" size={16} />{item}</li>)}
               </ul>
               <Link to="/solucoes/lojas" className="mt-6 inline-flex items-center gap-2 font-bold text-slate-900 no-underline hover:text-amber-700">Saiba mais sobre o plano <Icon name="right" size={16} /></Link>
             </article>

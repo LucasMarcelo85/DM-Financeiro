@@ -73,7 +73,7 @@ export async function deliver(instance, number, text, extra, media = null) {
     } catch (e) {
       return { status: 'partial', error: `O texto foi enviado, mas o link/Pix não: ${e.message}` };
     }
-  })();
+  });
   queue.tail = current.then(() => undefined, () => undefined);
   deliveryQueues.set(key, queue);
   return current;

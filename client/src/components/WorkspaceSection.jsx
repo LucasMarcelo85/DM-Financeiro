@@ -12,9 +12,9 @@ import Portfolios from '../pages/Portfolios.jsx';
 import PortfolioEditor from '../pages/PortfolioEditor.jsx';
 import AiService from '../pages/AiService.jsx';
 
-export const WORKSPACE_TABS = ['whatsapp', 'contatos', 'lembretes', 'cobrancas', 'contratos', 'portfolio', 'ia'];
+export const WORKSPACE_TABS = ['whatsapp', 'contatos', 'cobrancas', 'contratos', 'portfolio', 'ia'];
 
-const START = { whatsapp: '/whatsapp', contatos: '/clientes', lembretes: '/lembretes', cobrancas: '/cobrancas', contratos: '/contratos', portfolio: '/portfolio', ia: '/ia' };
+const START = { whatsapp: '/whatsapp', contatos: '/clientes', cobrancas: '/cobrancas', contratos: '/contratos', portfolio: '/portfolio', ia: '/ia' };
 
 // Editores precisam da tela inteira, como no painel.
 const Full = ({ children }) => <div className="ws-fullscreen">{children}</div>;
@@ -49,9 +49,6 @@ export default function WorkspaceSection({ area }) {
           <Route path="/cobrancas" element={<Schedules key="c" kind="cobranca" />} />
           <Route path="/cobrancas/nova" element={<ScheduleForm key="c-new" kind="cobranca" />} />
           <Route path="/cobrancas/:id" element={<ScheduleForm key="c-edit" kind="cobranca" />} />
-          <Route path="/lembretes" element={<Schedules key="l" kind="lembrete" />} />
-          <Route path="/lembretes/novo" element={<ScheduleForm key="l-new" kind="lembrete" />} />
-          <Route path="/lembretes/:id" element={<ScheduleForm key="l-edit" kind="lembrete" />} />
           <Route path="/contratos" element={<Contracts />} />
           <Route path="/contratos/:id" element={<Full><ContractEditor /></Full>} />
           <Route path="/portfolio" element={<Portfolios />} />

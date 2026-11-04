@@ -6,7 +6,7 @@ import { billingPaymentDTO, scheduleDTO } from '../utils/serialize.js';
 import { deliver, instanceCandidates, loadMedia, logMessage, pickOpenInstance, renderFor } from '../services/dispatcher.js';
 
 const router = Router();
-const KINDS = ['cobranca', 'lembrete'];
+const KINDS = ['cobranca'];
 const NAMES = { cobranca: 'cobrança', lembrete: 'lembrete' };
 const PAST_MSG = 'Esse dia e horário de envio já passaram. Escolha uma data futura ou use "Enviar agora".';
 // Junto com cada item vão os pagamentos marcados (os 24 vencimentos mais recentes).

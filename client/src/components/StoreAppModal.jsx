@@ -7,7 +7,6 @@ import { copyText } from '../lib/portfolio/share.js';
 const PERM_LABELS = [
   ['whatsapp', 'WhatsApp (conexões do app)'],
   ['contatos', 'Clientes (contatos)'],
-  ['lembretes', 'Lembretes'],
   ['cobrancas', 'Cobranças'],
   ['contratos', 'Contratos'],
   ['auditoria', 'Auditoria e conversas WhatsApp'],
@@ -25,7 +24,7 @@ const PERM_LABELS = [
 ];
 const ALL_PERMS = PERM_LABELS.map(([k]) => k);
 const LIMIT_FIELDS = [
-  ['wsInstances', 'Conexões de WhatsApp do app (menus WhatsApp, lembretes e cobranças)'],
+  ['wsInstances', 'Conexões de WhatsApp do app (menus WhatsApp e cobranças)'],
   ['contracts', 'Contratos'],
   ['portfolios', 'Páginas de portfólio'],
   ['apiTokens', 'Tokens de API'],

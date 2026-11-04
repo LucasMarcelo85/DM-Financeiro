@@ -6,7 +6,6 @@ const SCREENS = [
   { key: 'whatsapp', label: 'WhatsApp', icon: 'chat', title: 'WhatsApp conectado', caption: 'Centralize conversas e comunicações.' },
   { key: 'clientes', label: 'Clientes', icon: 'user', title: 'Clientes', caption: 'Consulte contatos e histórico de atendimento.' },
   { key: 'cobrancas', label: 'Cobranças', icon: 'money', title: 'Cobranças', caption: 'Organize vencimentos e próximos envios.' },
-  { key: 'lembretes', label: 'Lembretes', icon: 'bell', title: 'Lembretes', caption: 'Programe acompanhamentos e mensagens.' },
   { key: 'contratos', label: 'Contratos', icon: 'file', title: 'Contratos', caption: 'Gerencie seus modelos e documentos.' },
   { key: 'auditoria', label: 'Auditoria', icon: 'eye', title: 'Auditoria WhatsApp', caption: 'Acompanhe conversas das conexões autorizadas.' },
   { key: 'portfolio', label: 'Portfólio', icon: 'globe', title: 'Portfólio digital', caption: 'Apresente seus produtos e serviços online.' },
@@ -69,9 +68,6 @@ function ScreenContent({ screen }) {
         {['Plano mensal · vence hoje', 'Consulta · vence amanhã', 'Serviço contratado · 04 nov'].map((row, i) => <div key={row} className="flex items-center justify-between rounded-xl border border-slate-200 bg-white px-3 py-2 text-[9px] text-slate-700"><span className="flex items-center gap-2"><i className={`h-2 w-2 rounded-full ${i === 0 ? 'bg-amber-500' : 'bg-emerald-500'}`} />{row}</span><strong>R$ {['180,00', '250,00', '490,00'][i]}</strong></div>)}
       </div>
     </>
-  );
-  if (screen.key === 'lembretes') return (
-    <div className="mt-3 grid gap-2">{[['Retorno para cliente', 'Hoje · 14:30', 'bg-amber-100'], ['Confirmar agendamento', 'Amanhã · 09:00', 'bg-blue-100'], ['Enviar lembrete', '04 nov · 10:00', 'bg-emerald-100']].map(([title, when, tone]) => <div key={title} className="flex items-center gap-2 rounded-xl border border-slate-200 bg-white p-2.5"><span className={`grid h-7 w-7 place-items-center rounded-lg ${tone} text-slate-700`}><Icon name="bell" size={14} /></span><span><strong className="block text-[9px] text-slate-700">{title}</strong><small className="text-[8px] text-slate-500">{when}</small></span></div>)}</div>
   );
   if (screen.key === 'clientes') return (
     <>
