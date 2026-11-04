@@ -5,8 +5,8 @@ import Modal from '../Modal.jsx';
 import { useToast } from '../Toast.jsx';
 import { formatStoredPhone } from '../../lib/format.js';
 
-const MAX_CONTACTS = 100;
-const MAX_FILE_BYTES = 10 * 1024 * 1024;
+const MAX_CONTACTS = 3000;
+const MAX_FILE_BYTES = 100 * 1024 * 1024;
 const ALLOWED_TYPES = new Set(['image/jpeg', 'image/png', 'image/webp', 'video/mp4', 'video/3gpp']);
 const OPEN = ['running', 'paused'];
 const CAMPAIGN_STATUS = { running: 'Em andamento', paused: 'Pausada', completed: 'Concluída', cancelled: 'Cancelada' };
