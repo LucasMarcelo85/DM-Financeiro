@@ -4,7 +4,7 @@ import { decrypt, safeEqual } from '../utils/secret.js';
 import { evolutionTokenFor } from '../utils/webhooks.js';
 import * as meta from '../services/meta.js';
 import { fromEvolution, ingestEvolution, ingestMeta } from '../services/audit.js';
-import { receiveAiMessage } from './ai.js';
+import { receiveAiMessage, receiveOwnMessage } from './ai.js';
 
 const lastTouch = new Map(); // grava "último evento recebido" no máximo a cada 10 s por conexão
 
@@ -29,8 +29,11 @@ router.post('/evolution/:name', express.json({ limit: '40mb' }), async (req, res
       const items = Array.isArray(req.body?.data) ? req.body.data : req.body?.data ? [req.body.data] : [];
       for (const item of items) {
         const message = fromEvolution(item);
-        if (message && !message.fromMe && !message.isGroup && message.type === 'text') {
-          await receiveAiMessage(inst, { phone: message.phone, name: message.chatName, text: message.body, externalId: message.externalId });
+        if (message && message.fromMe && !message.isGroup) {
+          await receiveOwnMessage(inst, { phone: message.phone, text: message.body, externalId: message.externalId, type: message.type });
+        }
+        if (message && !message.fromMe && !message.isGroup && ['text', 'image', 'audio', 'document'].includes(message.type)) {
+          await receiveAiMessage(inst, { phone: message.phone, name: message.chatName, text: message.body, externalId: message.externalId, type: message.type, media: message.media, jid: message.jid });
         }
       }
     }
@@ -59,8 +62,8 @@ router.post('/meta', async (req, res) => {
         if (!meta.verifySignature(req.rawBody, req.get('x-hub-signature-256'), decrypt(inst.metaAppSecret))) continue;
         if (inst.purpose === 'auditoria') await ingestMeta(inst, ev);
         for (const message of ev.messages || []) {
-          if (!message.fromMe && message.type === 'text') {
-            await receiveAiMessage(inst, { phone: message.jid, name: message.pushName, text: message.body, externalId: message.externalId });
+          if (!message.fromMe && ['text', 'image', 'audio', 'document'].includes(message.type)) {
+            await receiveAiMessage(inst, { phone: message.jid, name: message.pushName, text: message.body, externalId: message.externalId, type: message.type, media: message.media, jid: message.jid });
           }
         }
       }

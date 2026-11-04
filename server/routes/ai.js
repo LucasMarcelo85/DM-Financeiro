@@ -5,6 +5,9 @@ import { AppError, onlyDigits } from '../utils/helpers.js';
 import { decrypt, encrypt } from '../utils/secret.js';
 import { appUrlIsPublic, evolutionWebhookUrl } from '../utils/webhooks.js';
 import { complete } from '../services/ai.js';
+import { BUILTIN_PROMPTS, DEFAULT_PROMPTS } from '../services/ai-templates.js';
+import { isWithinSchedule, normalizeSchedule } from '../services/ai-schedule.js';
+import { buildActionsPrompt, extractActionCalls, renderActionMessage } from '../services/ai-actions.js';
 import { sendText } from '../services/whatsapp.js';
 import * as evo from '../services/evolution.js';
 import * as meta from '../services/meta.js';
@@ -16,10 +19,9 @@ const PROVIDER_MODELS = {
   openai: 'gpt-4o-mini',
   claude: 'claude-3-5-haiku-latest',
 };
-const TEMPLATES = {
-  marketing: 'Você é um assistente de marketing cordial e objetivo. Escreva mensagens curtas, personalizadas e sem promessas não confirmadas. Respeite pedidos para não receber mensagens.',
-  atendimento: 'Você é um atendente cordial, claro e prestativo. Responda somente com informações confirmadas no contexto. Se não souber, diga que um atendente humano irá ajudar. Nunca invente preços, status ou dados de pedidos.',
-};
+const TEMPLATES = DEFAULT_PROMPTS;
+const MEDIA_LABELS = { image: 'Imagem', audio: 'Áudio', document: 'Arquivo' };
+const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
 const monthStart = () => {
   const date = new Date();
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
@@ -28,10 +30,77 @@ const safeAgent = (agent, usage = {}) => ({
   id: agent.id, name: agent.name, provider: agent.provider, model: agent.model, mode: agent.mode,
   prompt: agent.prompt, monthlyLimit: agent.monthlyLimit, active: agent.active,
   instanceId: agent.instanceId, contactIds: Array.isArray(agent.contactIds) ? agent.contactIds : [],
+  schedule: agent.schedule || {}, withinSchedule: isWithinSchedule(agent.schedule),
   hasKey: Boolean(agent.apiKey), createdAt: agent.createdAt.getTime(), updatedAt: agent.updatedAt.getTime(),
   usage,
 });
 const cleanPhone = (value) => onlyDigits(value).slice(-20);
+// Números digitados à mão: 10-11 dígitos recebem o 55 do Brasil; os demais precisam trazer o código do país.
+function toPhone(value) {
+  let digits = onlyDigits(value);
+  if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
+  return digits.length >= 12 && digits.length <= 15 ? digits : null;
+}
+const cleanPhoneList = (list, limit) => [...new Set((Array.isArray(list) ? list : []).map((item) => (typeof item === 'string' ? cleanPhone(item) : '')).filter((phone) => phone.length >= 10))].slice(0, limit);
+
+// Pastas de contatos: as duas primeiras são automáticas (pedidos do site e clientes das cobranças); o restante é do usuário.
+async function loadFolders(userId) {
+  const [contacts, orders, custom] = await Promise.all([
+    prisma.contact.findMany({ where: { userId }, select: { name: true, phone: true }, orderBy: { name: 'asc' } }),
+    prisma.order.findMany({ where: { userId, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 2000, select: { customerName: true, customerPhone: true } }),
+    prisma.aiContactFolder.findMany({ where: { userId }, orderBy: { name: 'asc' }, include: { contacts: { orderBy: { name: 'asc' } } } }),
+  ]);
+  const billing = new Map();
+  for (const contact of contacts) {
+    const phone = cleanPhone(contact.phone);
+    if (phone) billing.set(phone, { id: phone, name: contact.name, phone });
+  }
+  const ordered = new Map();
+  for (const order of orders) {
+    const phone = cleanPhone(order.customerPhone);
+    if (phone && !ordered.has(phone)) ordered.set(phone, { id: phone, name: order.customerName || 'Cliente de pedido', phone });
+  }
+  return [
+    { id: 'pedidos', name: 'Contatos de pedidos', system: true, contacts: [...ordered.values()] },
+    { id: 'cobrancas', name: 'Contatos de cobranças', system: true, contacts: [...billing.values()] },
+    ...custom.map((folder) => ({
+      id: `f${folder.id}`, folderId: folder.id, name: folder.name, system: false,
+      contacts: folder.contacts.map((contact) => ({ id: contact.phone, name: contact.name || 'Sem nome', phone: contact.phone })),
+    })),
+  ];
+}
+
+async function ownedFolder(userId, id) {
+  const folderId = Number(id);
+  const folder = Number.isInteger(folderId) ? await prisma.aiContactFolder.findFirst({ where: { id: folderId, userId } }) : null;
+  if (!folder) throw new AppError(404, 'Pasta não encontrada.');
+  return folder;
+}
+
+// Baixa a mídia recebida (imagem, áudio ou arquivo) para a IA ler. Devolve null se não for possível.
+async function loadAttachment(instance, message) {
+  const kind = message.type;
+  if (!['image', 'audio', 'document'].includes(kind) || !message.media) return null;
+  try {
+    let buffer;
+    let mime = message.media.mime;
+    if (message.media.base64) buffer = Buffer.from(String(message.media.base64).replace(/^data:[^,]*,/, ''), 'base64');
+    else if (instance.provider === 'meta') {
+      const file = await meta.fetchMedia(instance, message.media.ref);
+      buffer = file.buffer;
+      mime = mime || file.mime;
+    } else {
+      const file = await evo.getMediaBase64(instance.name, { id: message.externalId, remoteJid: message.jid, fromMe: false });
+      buffer = Buffer.from(String(file.base64).replace(/^data:[^,]*,/, ''), 'base64');
+      mime = mime || file.mimetype;
+    }
+    if (!buffer?.length || buffer.length > MEDIA_MAX_BYTES) return null;
+    return { kind, mime: mime || (kind === 'image' ? 'image/jpeg' : kind === 'audio' ? 'audio/ogg' : 'application/octet-stream'), name: message.media.name || '', base64: buffer.toString('base64'), size: buffer.length };
+  } catch (error) {
+    console.warn(`[ia] não foi possível baixar a mídia da mensagem ${message.externalId}: ${error.message}`);
+    return null;
+  }
+}
 
 async function ownedAgent(userId, id) {
   const agentId = Number(id);
@@ -94,53 +163,102 @@ async function saveMessage(conversationId, data) {
   return prisma.aiMessage.create({ data: { conversationId, ...data } });
 }
 
-async function sendAiReply(agent, conversation, input, externalId) {
+const ACTION_COOLDOWN_MS = 30 * 60 * 1000;
+const ECHO_WINDOW_MS = 3 * 60 * 1000;
+
+const conversationInfo = (agent) => ({ agentName: agent.name, agentMode: agent.mode });
+
+async function interruptConversation(conversationId) {
+  await prisma.aiConversation.updateMany({ where: { id: conversationId, status: { not: 'interrupted' } }, data: { status: 'interrupted', interruptedAt: new Date() } });
+}
+
+async function runActions(agent, conversation, calls) {
+  if (!calls.length) return 0;
+  const actions = await prisma.aiAction.findMany({ where: { agentId: agent.id, active: true } });
+  let executed = 0;
+  for (const call of calls.slice(0, 3)) {
+    const action = actions.find((item) => item.id === call.id);
+    if (!action) continue;
+    const recent = await prisma.aiMessage.findFirst({
+      where: { conversationId: conversation.id, role: 'action', externalId: { startsWith: `action:${action.id}:` }, createdAt: { gt: new Date(Date.now() - ACTION_COOLDOWN_MS) } },
+      select: { id: true },
+    });
+    if (recent) continue;
+    const text = renderActionMessage(action.message, {
+      cliente: conversation.name || 'Cliente', telefone: conversation.phone, resumo: call.summary || 'sem detalhes', agente: agent.name,
+    });
+    try {
+      await sendText(agent.instance, action.targetPhone, text);
+      await saveMessage(conversation.id, { role: 'action', content: `Função "${action.name}" executada: aviso enviado para ${action.targetPhone}.${call.summary ? ` Motivo: ${call.summary}` : ''}`, externalId: `action:${action.id}:${Date.now()}` });
+      executed += 1;
+      if (action.pauseAfter) await interruptConversation(conversation.id);
+    } catch (error) {
+      await saveMessage(conversation.id, { role: 'error', content: `A função "${action.name}" não conseguiu enviar o aviso: ${error.message}` });
+    }
+  }
+  return executed;
+}
+
+async function sendAiReply(agent, conversation, input, externalId, attachments = []) {
   const exists = externalId
     ? await prisma.aiMessage.findFirst({ where: { conversationId: conversation.id, externalId, role: 'user' }, select: { id: true } })
     : null;
   if (exists) return null;
-  await saveMessage(conversation.id, { role: 'user', content: input.slice(0, 8000), externalId: externalId || null });
+  const labels = attachments.map((item) => `[${MEDIA_LABELS[item.kind] || 'Arquivo'}${item.name ? `: ${item.name}` : ''}]`).join(' ');
+  await saveMessage(conversation.id, { role: 'user', content: [labels, input].filter(Boolean).join(' ').slice(0, 8000), externalId: externalId || null });
+  // Conversa interrompida (um humano assumiu) ou fora do horário do agente: a mensagem fica salva, sem resposta automática.
+  if (conversation.status === 'interrupted') return null;
+  if (!isWithinSchedule(agent.schedule)) return null;
   const usage = await usageFor(agent.id);
   if (usage.requests >= agent.monthlyLimit) {
     console.warn(`[ia] limite mensal atingido para o agente ${agent.id}; mensagem recebida não respondida automaticamente.`);
     await saveMessage(conversation.id, { role: 'error', content: 'O limite mensal de respostas deste agente foi atingido. Um atendente pode responder manualmente.' });
     return null;
   }
-  const [history, context] = await Promise.all([
+  const [history, context, actions] = await Promise.all([
     prisma.aiMessage.findMany({
       where: { conversationId: conversation.id, role: { in: ['user', 'assistant'] } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 16,
     }),
     createContext(agent, conversation.phone, conversation.name),
+    prisma.aiAction.findMany({ where: { agentId: agent.id, active: true }, orderBy: { id: 'asc' } }),
   ]);
   let answer;
   try {
     answer = await complete({
       provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
-      prompt: `${agent.prompt}${context}`,
+      prompt: `${agent.prompt}${context}${buildActionsPrompt(actions)}`,
       history: history.reverse().slice(0, -1).map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })),
       input: input.slice(0, 8000),
+      attachments,
     });
   } catch (error) {
     await saveMessage(conversation.id, { role: 'error', content: `Não foi possível gerar uma resposta automática: ${error.message}` });
     throw error;
   }
-  const text = answer.text.slice(0, 6000);
-  if (!text) throw new AppError(502, 'O provedor de IA retornou uma resposta vazia.', 'AI_EMPTY_RESPONSE');
-  await saveMessage(conversation.id, {
-    role: 'assistant', content: text, inputTokens: answer.inputTokens, outputTokens: answer.outputTokens,
-  });
-  try {
-    await sendText(agent.instance, conversation.phone, text);
-  } catch (error) {
-    await saveMessage(conversation.id, { role: 'error', content: `A resposta foi gerada, mas não foi possível enviá-la pelo WhatsApp: ${error.message}` });
-    throw error;
+  const { text: replyText, calls } = extractActionCalls(answer.text);
+  const text = replyText.slice(0, 6000);
+  if (!text && !calls.length) throw new AppError(502, 'O provedor de IA retornou uma resposta vazia.', 'AI_EMPTY_RESPONSE');
+  // Um humano pode ter assumido enquanto a IA pensava: nesse caso a resposta é descartada.
+  const fresh = await prisma.aiConversation.findUnique({ where: { id: conversation.id }, select: { status: true } });
+  if (fresh?.status === 'interrupted') return null;
+  if (text) {
+    await saveMessage(conversation.id, {
+      role: 'assistant', content: text, inputTokens: answer.inputTokens, outputTokens: answer.outputTokens,
+    });
+    try {
+      await sendText(agent.instance, conversation.phone, text);
+    } catch (error) {
+      await saveMessage(conversation.id, { role: 'error', content: `A resposta foi gerada, mas não foi possível enviá-la pelo WhatsApp: ${error.message}` });
+      throw error;
+    }
   }
+  await runActions(agent, conversation, calls);
   return text;
 }
 
-export async function receiveAiMessage(instance, { phone, name, text, externalId }) {
-  if (!phone || !text || !instance) return;
+export async function receiveAiMessage(instance, { phone, name, text, externalId, type = 'text', media = null, jid = '' }) {
+  if (!phone || !instance) return;
   const agent = await prisma.aiAgent.findFirst({
     where: { userId: instance.userId, instanceId: instance.id, active: true, mode: 'atendimento' },
     include: { instance: true },
@@ -148,43 +266,60 @@ export async function receiveAiMessage(instance, { phone, name, text, externalId
   if (!agent) return;
   const normalizedPhone = cleanPhone(phone);
   if (!normalizedPhone) return;
+  const isMedia = type !== 'text';
+  const caption = String(text || '').trim();
+  if (!caption && !isMedia) return;
   const conversation = await prisma.aiConversation.upsert({
     where: { agentId_phone: { agentId: agent.id, phone: normalizedPhone } },
-    create: { agentId: agent.id, phone: normalizedPhone, name: String(name || '').slice(0, 120) },
-    update: { ...(name ? { name: String(name).slice(0, 120) } : {}), updatedAt: new Date() },
+    create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: normalizedPhone, name: String(name || '').slice(0, 120) },
+    update: { ...conversationInfo(agent), ...(name ? { name: String(name).slice(0, 120) } : {}), updatedAt: new Date() },
   });
-  await sendAiReply(agent, conversation, text, externalId);
+  // Só baixa a mídia se o agente realmente vai responder.
+  const willReply = conversation.status !== 'interrupted' && isWithinSchedule(agent.schedule);
+  const attachment = isMedia && willReply ? await loadAttachment(instance, { type, media, externalId, jid }) : null;
+  const unreadable = isMedia && willReply && !attachment;
+  const input = caption || (unreadable ? `O cliente enviou ${type === 'image' ? 'uma imagem' : type === 'audio' ? 'um áudio' : 'um arquivo'}, mas não foi possível abri-lo. Peça para enviar novamente ou escrever a dúvida.` : '');
+  await sendAiReply(agent, conversation, input || `[${MEDIA_LABELS[type] || 'Arquivo'}]`, externalId, attachment ? [attachment] : []);
+}
+
+// Mensagem enviada pelo próprio dono no WhatsApp (celular/WhatsApp Web): o agente para nessa conversa.
+export async function receiveOwnMessage(instance, { phone, text, externalId, type = 'text' }) {
+  const normalizedPhone = cleanPhone(phone);
+  if (!normalizedPhone || !instance) return;
+  const conversation = await prisma.aiConversation.findFirst({
+    where: { userId: instance.userId, phone: normalizedPhone, agent: { is: { instanceId: instance.id, mode: 'atendimento' } } },
+  });
+  if (!conversation) return;
+  const body = String(text || '').trim() || `[${MEDIA_LABELS[type] || 'Mensagem'}]`;
+  // O WhatsApp devolve também o que o próprio agente ou o painel enviaram: isso não é uma intervenção humana.
+  const echo = await prisma.aiMessage.findFirst({
+    where: { conversationId: conversation.id, role: { in: ['assistant', 'human', 'action'] }, content: body, createdAt: { gt: new Date(Date.now() - ECHO_WINDOW_MS) } },
+    select: { id: true },
+  });
+  if (echo) return;
+  if (externalId && await prisma.aiMessage.findFirst({ where: { conversationId: conversation.id, externalId }, select: { id: true } })) return;
+  await saveMessage(conversation.id, { role: 'human', content: body.slice(0, 6000), externalId: externalId || null });
+  await prisma.aiConversation.update({ where: { id: conversation.id }, data: { status: 'interrupted', interruptedAt: new Date() } });
 }
 
 router.get('/', async (req, res) => {
-  const [agents, instances, contacts, orders] = await Promise.all([
+  const [agents, instances, folders, prompts] = await Promise.all([
     prisma.aiAgent.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' } }),
     prisma.instance.findMany({
       where: { userId: req.user.id, purpose: 'envio', storeId: null },
       select: { id: true, label: true, name: true, provider: true, metaPhoneDisplay: true, metaVerifyToken: true },
       orderBy: { id: 'asc' },
     }),
-    prisma.contact.findMany({ where: { userId: req.user.id }, select: { id: true, name: true, phone: true }, orderBy: { name: 'asc' } }),
-    prisma.order.findMany({
-      where: { userId: req.user.id, deletedAt: null },
-      orderBy: { createdAt: 'desc' }, take: 500,
-      select: { customerName: true, customerPhone: true },
-    }),
+    loadFolders(req.user.id),
+    prisma.aiPrompt.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' } }),
   ]);
-  const contactMap = new Map(contacts.map((contact) => [cleanPhone(contact.phone), {
-    id: cleanPhone(contact.phone), name: contact.name, phone: cleanPhone(contact.phone), source: 'cliente',
-  }]));
-  for (const order of orders) {
-    const phone = cleanPhone(order.customerPhone);
-    if (phone && !contactMap.has(phone)) contactMap.set(phone, {
-      id: phone, name: order.customerName || 'Cliente de pedido', phone, source: 'pedido',
-    });
-  }
   const enriched = await Promise.all(agents.map(async (agent) => safeAgent(agent, await usageFor(agent.id))));
   res.json({
     agents: enriched,
     instances: instances.map((instance) => ({ ...instance, displayName: instance.label || instance.metaPhoneDisplay || instance.name })),
-    contacts: [...contactMap.values()].sort((a, b) => a.name.localeCompare(b.name, 'pt-BR')),
+    folders,
+    prompts: prompts.map(promptDTO),
+    builtinPrompts: BUILTIN_PROMPTS,
     webhook: `${config.appUrl}/api/webhooks/meta`,
     webhookPublic: appUrlIsPublic(),
     templates: TEMPLATES,
@@ -197,6 +332,103 @@ router.get('/', async (req, res) => {
   });
 });
 
+const promptDTO = (prompt) => ({ id: prompt.id, name: prompt.name, mode: prompt.mode, content: prompt.content, updatedAt: prompt.updatedAt.getTime() });
+function promptData(body) {
+  const name = String(body?.name || '').trim();
+  const mode = String(body?.mode || '');
+  const content = String(body?.content || '').trim();
+  if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome do prompt deve ter entre 2 e 80 caracteres.');
+  if (!['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Marque o prompt como marketing ou atendimento.');
+  if (content.length < 20 || content.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
+  return { name, mode, content };
+}
+async function ownedPrompt(userId, id) {
+  const promptId = Number(id);
+  const prompt = Number.isInteger(promptId) ? await prisma.aiPrompt.findFirst({ where: { id: promptId, userId } }) : null;
+  if (!prompt) throw new AppError(404, 'Prompt não encontrado.');
+  return prompt;
+}
+
+router.post('/prompts', async (req, res) => {
+  if ((await prisma.aiPrompt.count({ where: { userId: req.user.id } })) >= 100) throw new AppError(400, 'Limite de 100 prompts atingido.');
+  const prompt = await prisma.aiPrompt.create({ data: { userId: req.user.id, ...promptData(req.body) } });
+  res.status(201).json({ prompt: promptDTO(prompt) });
+});
+
+router.put('/prompts/:id', async (req, res) => {
+  const current = await ownedPrompt(req.user.id, req.params.id);
+  const prompt = await prisma.aiPrompt.update({ where: { id: current.id }, data: promptData(req.body) });
+  res.json({ prompt: promptDTO(prompt) });
+});
+
+router.delete('/prompts/:id', async (req, res) => {
+  const current = await ownedPrompt(req.user.id, req.params.id);
+  await prisma.aiPrompt.delete({ where: { id: current.id } });
+  res.json({ ok: true });
+});
+
+function folderName(value) {
+  const name = String(value || '').trim();
+  if (name.length < 2 || name.length > 60) throw new AppError(400, 'O nome da pasta deve ter entre 2 e 60 caracteres.');
+  return name;
+}
+const isDuplicate = (error) => error?.code === 'P2002';
+
+router.post('/folders', async (req, res) => {
+  if ((await prisma.aiContactFolder.count({ where: { userId: req.user.id } })) >= 50) throw new AppError(400, 'Limite de 50 pastas atingido.');
+  try {
+    const folder = await prisma.aiContactFolder.create({ data: { userId: req.user.id, name: folderName(req.body?.name) } });
+    res.status(201).json({ folder: { id: folder.id, name: folder.name } });
+  } catch (error) {
+    if (isDuplicate(error)) throw new AppError(409, 'Já existe uma pasta com este nome.');
+    throw error;
+  }
+});
+
+router.put('/folders/:id', async (req, res) => {
+  const folder = await ownedFolder(req.user.id, req.params.id);
+  try {
+    await prisma.aiContactFolder.update({ where: { id: folder.id }, data: { name: folderName(req.body?.name) } });
+  } catch (error) {
+    if (isDuplicate(error)) throw new AppError(409, 'Já existe uma pasta com este nome.');
+    throw error;
+  }
+  res.json({ ok: true });
+});
+
+router.delete('/folders/:id', async (req, res) => {
+  const folder = await ownedFolder(req.user.id, req.params.id);
+  await prisma.aiContactFolder.delete({ where: { id: folder.id } });
+  res.json({ ok: true });
+});
+
+// Adiciona (ou atualiza o nome de) contatos na pasta: números digitados ou copiados de outras pastas.
+router.post('/folders/:id/contacts', async (req, res) => {
+  const folder = await ownedFolder(req.user.id, req.params.id);
+  const input = Array.isArray(req.body?.contacts) ? req.body.contacts.slice(0, 500) : [];
+  const rows = new Map();
+  const invalid = [];
+  for (const item of input) {
+    const phone = toPhone(item?.phone);
+    if (!phone) { invalid.push(String(item?.phone || '').slice(0, 30)); continue; }
+    rows.set(phone, String(item?.name || '').trim().slice(0, 120));
+  }
+  if (!rows.size) throw new AppError(400, invalid.length ? `Telefone inválido: ${invalid[0]}. Use DDD + número, por exemplo (85) 99999-9999.` : 'Informe ao menos um contato.');
+  if ((await prisma.aiFolderContact.count({ where: { folderId: folder.id } })) + rows.size > 5000) throw new AppError(400, 'Cada pasta pode ter até 5.000 contatos.');
+  await prisma.$transaction([...rows].map(([phone, name]) => prisma.aiFolderContact.upsert({
+    where: { folderId_phone: { folderId: folder.id, phone } },
+    create: { folderId: folder.id, phone, name },
+    update: name ? { name } : {},
+  })));
+  res.status(201).json({ added: rows.size, invalid });
+});
+
+router.delete('/folders/:id/contacts/:phone', async (req, res) => {
+  const folder = await ownedFolder(req.user.id, req.params.id);
+  await prisma.aiFolderContact.deleteMany({ where: { folderId: folder.id, phone: cleanPhone(req.params.phone) } });
+  res.json({ ok: true });
+});
+
 router.post('/agents', async (req, res) => {
   const body = req.body || {};
   const name = String(body.name || '').trim();
@@ -207,7 +439,7 @@ router.post('/agents', async (req, res) => {
   const monthlyLimit = Number(body.monthlyLimit);
   const active = body.active === undefined ? true : body.active;
   const apiKey = String(body.apiKey || '').trim();
-  const contactIds = Array.isArray(body.contactIds) ? [...new Set(body.contactIds.filter((id) => typeof id === 'string').slice(0, 500))] : [];
+  const contactIds = cleanPhoneList(body.contactIds, 500);
   if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome do agente deve ter entre 2 e 80 caracteres.');
   if (!PROVIDERS.has(provider)) throw new AppError(400, 'Escolha Gemini, ChatGPT ou Claude.');
   if (!['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Escolha marketing ou atendimento.');
@@ -231,8 +463,10 @@ router.post('/agents', async (req, res) => {
     const conflict = await prisma.aiAgent.findFirst({ where: { userId: req.user.id, instanceId, mode, active: true } });
     if (conflict) throw new AppError(409, 'Esta instância já está vinculada a outro agente de atendimento ativo.');
   }
+  const schedule = normalizeSchedule(body.schedule);
+  if (schedule?.error) throw new AppError(400, schedule.error);
   const data = {
-    userId: req.user.id, name, provider, model, mode, prompt, monthlyLimit, active, contactIds, instanceId,
+    userId: req.user.id, name, provider, model, mode, prompt, monthlyLimit, active, contactIds, instanceId, schedule,
     ...(apiKey ? { apiKey: encrypt(apiKey) } : {}),
   };
   if (!apiKey) throw new AppError(400, 'Informe a credencial do provedor de IA para criar o agente.');
@@ -261,7 +495,7 @@ router.put('/agents/:id', async (req, res) => {
   const model = String(body.model ?? current.model).trim();
   const monthlyLimit = Number(body.monthlyLimit ?? current.monthlyLimit);
   const apiKey = String(body.apiKey || '').trim();
-  const contactIds = Array.isArray(body.contactIds) ? [...new Set(body.contactIds.filter((id) => typeof id === 'string').slice(0, 500))] : current.contactIds;
+  const contactIds = Array.isArray(body.contactIds) ? cleanPhoneList(body.contactIds, 500) : current.contactIds;
   if (name.length < 2 || name.length > 80 || !PROVIDERS.has(provider) || !['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Confira o nome, provedor e tipo do agente.');
   if (prompt.length < 20 || prompt.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
   if (!/^[\w.-]{2,100}$/.test(model)) throw new AppError(400, 'Informe um identificador de modelo válido.');
@@ -280,14 +514,17 @@ router.put('/agents/:id', async (req, res) => {
     const conflict = await prisma.aiAgent.findFirst({ where: { userId: req.user.id, instanceId, mode, active: true, NOT: { id: current.id } } });
     if (conflict) throw new AppError(409, 'Esta instância já está vinculada a outro agente de atendimento ativo.');
   }
+  const schedule = body.schedule === undefined ? current.schedule : normalizeSchedule(body.schedule);
+  if (schedule?.error) throw new AppError(400, schedule.error);
   const updated = await prisma.aiAgent.update({
     where: { id: current.id },
     data: {
       name, provider, model, mode, prompt, monthlyLimit, contactIds, instanceId,
-      active,
+      active, schedule,
       ...(apiKey ? { apiKey: encrypt(apiKey) } : {}),
     },
   });
+  await prisma.aiConversation.updateMany({ where: { agentId: updated.id }, data: { agentName: name, agentMode: mode } });
   if (mode === 'atendimento' && instance?.provider === 'evolution') {
     try { await evo.setWebhook(instance.name, evolutionWebhookUrl(instance.name)); } catch (error) {
       console.error(`[ia] webhook do agente ${updated.id} não foi configurado: ${error.message}`);
@@ -302,6 +539,8 @@ router.put('/agents/:id', async (req, res) => {
 
 router.delete('/agents/:id', async (req, res) => {
   const agent = await ownedAgent(req.user.id, req.params.id);
+  // As conversas permanecem (agentId vira nulo); só o teste de conexão é descartado.
+  await prisma.aiConversation.deleteMany({ where: { agentId: agent.id, phone: '__teste__' } });
   await prisma.aiAgent.delete({ where: { id: agent.id } });
   res.json({ ok: true });
 });
@@ -317,7 +556,7 @@ router.post('/agents/:id/test', async (req, res) => {
   });
   const conversation = await prisma.aiConversation.upsert({
     where: { agentId_phone: { agentId: agent.id, phone: '__teste__' } },
-    create: { agentId: agent.id, phone: '__teste__', name: 'Teste de conexão' },
+    create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: '__teste__', name: 'Teste de conexão' },
     update: {},
   });
   await saveMessage(conversation.id, {
@@ -331,19 +570,15 @@ router.post('/agents/:id/campaign', async (req, res) => {
   const agent = await ownedAgent(req.user.id, req.params.id);
   if (agent.mode !== 'marketing') throw new AppError(400, 'Envios em lote estão disponíveis apenas para agentes de marketing.');
   if (!agent.active || !agent.instance) throw new AppError(400, 'Ative o agente e selecione uma instância WhatsApp.');
+  if (!isWithinSchedule(agent.schedule)) throw new AppError(400, 'Este agente está fora do horário de funcionamento configurado.');
   const ids = Array.isArray(agent.contactIds) ? agent.contactIds : [];
   const selectedPhones = ids.filter(Boolean);
-  const savedContacts = await prisma.contact.findMany({ where: { userId: req.user.id }, select: { id: true, name: true, phone: true } });
-  const orders = await prisma.order.findMany({ where: { userId: req.user.id, deletedAt: null }, orderBy: { createdAt: 'desc' }, take: 500, select: { customerName: true, customerPhone: true } });
+  const folders = await loadFolders(req.user.id);
   const contactByPhone = new Map();
-  for (const contact of savedContacts) contactByPhone.set(cleanPhone(contact.phone), { name: contact.name, phone: cleanPhone(contact.phone) });
-  for (const order of orders) {
-    const phone = cleanPhone(order.customerPhone);
-    if (phone && !contactByPhone.has(phone)) contactByPhone.set(phone, { name: order.customerName, phone });
-  }
+  for (const folder of folders) for (const contact of folder.contacts) if (!contactByPhone.has(contact.phone)) contactByPhone.set(contact.phone, { name: contact.name, phone: contact.phone });
   if (selectedPhones.length > 100) throw new AppError(400, 'Cada campanha pode ter até 100 contatos.');
-  const recipients = selectedPhones.map((phone) => contactByPhone.get(phone)).filter(Boolean);
-  if (!recipients.length) throw new AppError(400, 'Os contatos selecionados não estão mais disponíveis.');
+  const recipients = selectedPhones.map((phone) => contactByPhone.get(phone) || { name: '', phone });
+  if (!recipients.length) throw new AppError(400, 'Selecione ao menos um contato.');
   if (agent.instance.provider === 'evolution') {
     const state = await evo.getState(agent.instance.name);
     if (state !== 'open') throw new AppError(400, 'A instância WhatsApp está desconectada.');
@@ -357,7 +592,7 @@ router.post('/agents/:id/campaign', async (req, res) => {
     }
     const conversation = await prisma.aiConversation.upsert({
       where: { agentId_phone: { agentId: agent.id, phone: contact.phone } },
-      create: { agentId: agent.id, phone: contact.phone, name: contact.name || '' },
+      create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: contact.phone, name: contact.name || '' },
       update: { name: contact.name || '' },
     });
     try {
@@ -381,17 +616,19 @@ router.post('/agents/:id/campaign', async (req, res) => {
 });
 
 router.get('/conversations', async (req, res) => {
-  const agentId = req.query.agentId ? Number(req.query.agentId) : undefined;
+  const deletedOnly = req.query.agentId === 'deleted';
+  const agentId = !deletedOnly && req.query.agentId ? Number(req.query.agentId) : undefined;
   if (agentId && !(await prisma.aiAgent.findFirst({ where: { id: agentId, userId: req.user.id }, select: { id: true } }))) {
     throw new AppError(404, 'Agente não encontrado.');
   }
   const rows = await prisma.aiConversation.findMany({
-    where: { agent: { is: { userId: req.user.id } }, phone: { not: '__teste__' }, ...(agentId ? { agentId } : {}) },
+    where: { userId: req.user.id, phone: { not: '__teste__' }, ...(deletedOnly ? { agentId: null } : agentId ? { agentId } : {}) },
     orderBy: { updatedAt: 'desc' }, take: 200,
-    include: { agent: { select: { id: true, name: true, mode: true } }, messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
+    include: { messages: { orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   res.json({ conversations: rows.map((row) => ({
-    id: row.id, agentId: row.agentId, agentName: row.agent.name, mode: row.agent.mode,
+    id: row.id, agentId: row.agentId, agentName: row.agentName, mode: row.agentMode, agentDeleted: row.agentId === null,
+    status: row.status, interruptedAt: row.interruptedAt ? row.interruptedAt.getTime() : null,
     phone: row.phone, name: row.name, updatedAt: row.updatedAt.getTime(),
     lastMessage: row.messages[0] ? { role: row.messages[0].role, content: row.messages[0].content, createdAt: row.messages[0].createdAt.getTime() } : null,
   })) });
@@ -400,7 +637,7 @@ router.get('/conversations', async (req, res) => {
 router.get('/conversations/:id/messages', async (req, res) => {
   const conversationId = Number(req.params.id);
   const conversation = Number.isInteger(conversationId)
-    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, agent: { is: { userId: req.user.id } } } })
+    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: req.user.id } })
     : null;
   if (!conversation) throw new AppError(404, 'Conversa não encontrada.');
   const messages = await prisma.aiMessage.findMany({ where: { conversationId },   orderBy: [{ createdAt: 'asc' }, { id: 'asc' }], take: 500 });
@@ -412,14 +649,89 @@ router.get('/conversations/:id/messages', async (req, res) => {
 router.post('/conversations/:id/send', async (req, res) => {
   const conversationId = Number(req.params.id);
   const conversation = Number.isInteger(conversationId)
-    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, agent: { is: { userId: req.user.id } } }, include: { agent: { include: { instance: true } } } })
+    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: req.user.id }, include: { agent: { include: { instance: true } } } })
     : null;
-  if (!conversation?.agent.instance) throw new AppError(404, 'Conversa ou instância não encontrada.');
+  if (!conversation) throw new AppError(404, 'Conversa não encontrada.');
+  if (!conversation.agent?.instance) throw new AppError(400, 'O agente desta conversa foi excluído; não é possível enviar mensagens por ela.');
   const text = String(req.body?.text || '').trim();
   if (!text || text.length > 6000) throw new AppError(400, 'A mensagem deve ter entre 1 e 6.000 caracteres.');
   await sendText(conversation.agent.instance, conversation.phone, text);
   await saveMessage(conversation.id, { role: 'human', content: text });
-  await prisma.aiConversation.update({ where: { id: conversation.id }, data: { updatedAt: new Date() } });
+  // Quem responde pelo painel assume o atendimento: o agente para até ser retomado.
+  await prisma.aiConversation.update({
+    where: { id: conversation.id },
+    data: { updatedAt: new Date(), ...(conversation.status !== 'interrupted' ? { status: 'interrupted', interruptedAt: new Date() } : {}) },
+  });
+  res.json({ ok: true });
+});
+
+async function ownedConversation(userId, id) {
+  const conversationId = Number(id);
+  const conversation = Number.isInteger(conversationId) ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId } }) : null;
+  if (!conversation) throw new AppError(404, 'Conversa não encontrada.');
+  return conversation;
+}
+
+router.post('/conversations/:id/resume', async (req, res) => {
+  const conversation = await ownedConversation(req.user.id, req.params.id);
+  if (!conversation.agentId) throw new AppError(400, 'O agente desta conversa foi excluído.');
+  await prisma.aiConversation.update({ where: { id: conversation.id }, data: { status: 'active', interruptedAt: null } });
+  res.json({ ok: true });
+});
+
+router.post('/conversations/:id/interrupt', async (req, res) => {
+  const conversation = await ownedConversation(req.user.id, req.params.id);
+  await interruptConversation(conversation.id);
+  res.json({ ok: true });
+});
+
+router.delete('/conversations', async (req, res) => {
+  if (req.query.orphans !== '1') throw new AppError(400, 'Informe orphans=1 para apagar conversas de agentes excluídos.');
+  const result = await prisma.aiConversation.deleteMany({ where: { userId: req.user.id, agentId: null } });
+  res.json({ ok: true, deleted: result.count });
+});
+
+router.delete('/conversations/:id', async (req, res) => {
+  const conversation = await ownedConversation(req.user.id, req.params.id);
+  await prisma.aiConversation.delete({ where: { id: conversation.id } });
+  res.json({ ok: true });
+});
+
+router.get('/agents/:id/actions', async (req, res) => {
+  const agent = await ownedAgent(req.user.id, req.params.id);
+  res.json({ actions: await prisma.aiAction.findMany({ where: { agentId: agent.id }, orderBy: { id: 'asc' } }) });
+});
+
+function actionData(body) {
+  const name = String(body?.name || '').trim();
+  const trigger = String(body?.trigger || '').trim();
+  const message = String(body?.message || '').trim();
+  const targetPhone = toPhone(body?.targetPhone);
+  if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome da função deve ter entre 2 e 80 caracteres.');
+  if (trigger.length < 5 || trigger.length > 500) throw new AppError(400, 'Descreva quando a função deve ser executada (5 a 500 caracteres).');
+  if (!targetPhone) throw new AppError(400, 'Informe o número que receberá o aviso, com DDD.');
+  if (message.length > 1500) throw new AppError(400, 'A mensagem do aviso pode ter até 1.500 caracteres.');
+  return { name, trigger, targetPhone, message, pauseAfter: Boolean(body?.pauseAfter), active: body?.active === undefined ? true : Boolean(body.active) };
+}
+
+router.post('/agents/:id/actions', async (req, res) => {
+  const agent = await ownedAgent(req.user.id, req.params.id);
+  if (agent.mode !== 'atendimento') throw new AppError(400, 'Funções estão disponíveis apenas para agentes de atendimento.');
+  if ((await prisma.aiAction.count({ where: { agentId: agent.id } })) >= 10) throw new AppError(400, 'Cada agente pode ter até 10 funções.');
+  const action = await prisma.aiAction.create({ data: { agentId: agent.id, ...actionData(req.body) } });
+  res.status(201).json({ action });
+});
+
+router.put('/agents/:id/actions/:actionId', async (req, res) => {
+  const agent = await ownedAgent(req.user.id, req.params.id);
+  const existing = await prisma.aiAction.findFirst({ where: { id: Number(req.params.actionId) || 0, agentId: agent.id } });
+  if (!existing) throw new AppError(404, 'Função não encontrada.');
+  res.json({ action: await prisma.aiAction.update({ where: { id: existing.id }, data: actionData(req.body) }) });
+});
+
+router.delete('/agents/:id/actions/:actionId', async (req, res) => {
+  const agent = await ownedAgent(req.user.id, req.params.id);
+  await prisma.aiAction.deleteMany({ where: { id: Number(req.params.actionId) || 0, agentId: agent.id } });
   res.json({ ok: true });
 });
 

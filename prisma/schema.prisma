@@ -112,6 +112,9 @@ model User {
   apiTokens          ApiToken[]
   webhookEndpoints   ApiWebhookEndpoint[]
   aiAgents           AiAgent[]
+  aiConversations    AiConversation[]
+  aiPrompts          AiPrompt[]
+  aiContactFolders   AiContactFolder[]
 
   @@map("users")
 }
@@ -906,31 +909,100 @@ model AiAgent {
   monthlyLimit    Int      @default(100) @map("monthly_limit")
   active          Boolean  @default(true)
   contactIds      Json     @default("[]") @map("contact_ids")
+  schedule        Json     @default("{}")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance     Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
   conversations AiConversation[]
+  actions      AiAction[]
 
   @@index([userId, mode])
   @@index([instanceId, active])
   @@map("ai_agents")
 }
 
-model AiConversation {
+// Funções que o agente executa fora da conversa (ex.: avisar um especialista por WhatsApp).
+model AiAction {
+  id          Int      @id @default(autoincrement())
+  agentId     Int      @map("agent_id")
+  name        String
+  trigger     String
+  targetPhone String   @map("target_phone")
+  message     String   @default("")
+  pauseAfter  Boolean  @default(false) @map("pause_after")
+  active      Boolean  @default(true)
+  createdAt   DateTime @default(now()) @map("created_at")
+  updatedAt   DateTime @updatedAt @map("updated_at")
+
+  agent AiAgent @relation(fields: [agentId], references: [id], onDelete: Cascade)
+
+  @@index([agentId])
+  @@map("ai_actions")
+}
+
+model AiPrompt {
   id        Int      @id @default(autoincrement())
-  agentId   Int      @map("agent_id")
+  userId    Int      @map("user_id")
+  name      String
+  mode      String   @default("atendimento")
+  content   String
+  createdAt DateTime @default(now()) @map("created_at")
+  updatedAt DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, mode])
+  @@map("ai_prompts")
+}
+
+model AiContactFolder {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  name      String
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user     User               @relation(fields: [userId], references: [id], onDelete: Cascade)
+  contacts AiFolderContact[]
+
+  @@unique([userId, name])
+  @@map("ai_contact_folders")
+}
+
+model AiFolderContact {
+  id        Int      @id @default(autoincrement())
+  folderId  Int      @map("folder_id")
   phone     String
   name      String   @default("")
+  createdAt DateTime @default(now()) @map("created_at")
+
+  folder AiContactFolder @relation(fields: [folderId], references: [id], onDelete: Cascade)
+
+  @@unique([folderId, phone])
+  @@map("ai_folder_contacts")
+}
+
+model AiConversation {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  agentId   Int?     @map("agent_id")
+  agentName String   @default("") @map("agent_name")
+  agentMode String   @default("atendimento") @map("agent_mode")
+  phone     String
+  name      String   @default("")
+  status    String   @default("active")
+  interruptedAt DateTime? @map("interrupted_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   createdAt DateTime @default(now()) @map("created_at")
 
-  agent    AiAgent     @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  user     User        @relation(fields: [userId], references: [id], onDelete: Cascade)
+  agent    AiAgent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages AiMessage[]
 
   @@unique([agentId, phone])
   @@index([agentId, updatedAt])
+  @@index([userId, updatedAt])
   @@map("ai_conversations")
 }
 
