@@ -1,5 +1,5 @@
 import { formatStoredPhone } from './format.js';
-import { getShopToken, isShopMode } from '../api.js';
+import { getShopToken, isShopMode, shopSlug } from '../api.js';
 
 // Texto sem acentos e em minúsculas, mantendo o MESMO tamanho (para achar a posição no texto original).
 export function foldSameLength(s) {
@@ -67,7 +67,7 @@ export const mediaUrl = (id, query = '') => {
 
 export async function fetchAuditMedia(url) {
   const token = getShopToken();
-  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}` } : {} });
+  const response = await fetch(url, { headers: token ? { Authorization: `Bearer ${token}`, 'X-Shop-Slug': shopSlug() } : {} });
   if (!response.ok) throw new Error('Não foi possível carregar esta mídia.');
   return URL.createObjectURL(await response.blob());
 }

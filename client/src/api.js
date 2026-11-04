@@ -36,8 +36,11 @@ const scoped = (url) => {
 // Aplicativo do lojista (/app): o login é outro e as telas de Produtos e Pedidos reaproveitam as mesmas chamadas, redirecionadas para /shop-app.
 const SHOP_KEY = 'dm:shop-token';
 export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
-export const getShopToken = () => localStorage.getItem(SHOP_KEY);
-export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
+// Cada loja tem sua própria sessão: o token fica guardado por endereço do app, para não misturar lojas no mesmo navegador.
+export const shopSlug = () => decodeURIComponent(/^\/app\/([^/?#]+)/.exec(window.location.pathname)?.[1] || '').toLowerCase();
+const shopKey = () => `${SHOP_KEY}:${shopSlug() || 'domain'}`;
+export const getShopToken = () => localStorage.getItem(shopKey());
+export const setShopToken = (t) => { if (t) localStorage.setItem(shopKey(), t); else localStorage.removeItem(shopKey()); };
 const SHOP_ROUTES = /^\/(products|catalog|inventory|portfolios|instances|tokens|audit|team)(\/|\?|$)/;
 // Menus com dados próprios do app (WhatsApp, clientes, lembretes, contratos, portfólio e IA) usam /shop-app/ws.
 const WORKSPACE_ROUTES = /^\/(instances|contacts|schedules|receipts|messages|media|contracts|ai|stores)(\/|\?|$)/;
@@ -50,7 +53,7 @@ async function request(method, url, body) {
   const target = shop
     ? (workspaceMode && WORKSPACE_ROUTES.test(url) ? `/shop-app/ws${url}` : SHOP_ROUTES.test(url) ? `/shop-app${url}` : url)
     : scoped(url);
-  const auth = shop && getShopToken() ? { Authorization: `Bearer ${getShopToken()}` } : {};
+  const auth = shop && getShopToken() ? { Authorization: `Bearer ${getShopToken()}`, 'X-Shop-Slug': shopSlug() } : {};
   try {
     res = await fetch(`/api${target}`, {
       method,

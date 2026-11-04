@@ -118,6 +118,9 @@ async function shopAuth(req, _res, next) {
   }
   const su = await prisma.storeUser.findUnique({ where: { id }, include: { store: { include: { user: true } } } });
   if (!su || !su.active || !su.store.appEnabled || limitsFor(su.store.user).stores < 1) throw new AppError(401, 'Acesso desativado. Fale com a loja.', 'UNAUTHENTICATED');
+  // O token só vale no app da loja que o emitiu (endereço /app/:slug ou domínio próprio).
+  const askedSlug = String(req.get('x-shop-slug') || req.customDomain?.slug || '').toLowerCase();
+  if (askedSlug && askedSlug !== su.store.slug) throw new AppError(401, 'Entre novamente no aplicativo.', 'UNAUTHENTICATED');
   if (!computeAccess(su.store.user).hasAccess) throw new AppError(402, 'A licença desta loja expirou.', 'PAYMENT_REQUIRED');
   if (su.mustChangePassword
     && !((req.method === 'GET' && req.path === '/me') || (req.method === 'POST' && req.path === '/password'))) {
