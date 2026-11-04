@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
 import { api, getActiveStore } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import StoreAppModal from '../components/StoreAppModal.jsx';
 import { useAuth } from '../auth.jsx';
