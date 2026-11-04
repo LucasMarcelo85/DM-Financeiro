@@ -1787,6 +1787,26 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .inventory-transfer h3, .inventory-transfer > p, .inventory-transfer > button { grid-column: 1 / -1; margin: 0; }
 .inventory-transfer h3 { font-size: 1rem; }
 .inventory-transfer .input { min-width: 0; }
+.modal-wide:has(.inv-board) { width: min(96vw, 90rem); max-width: none; height: min(94vh, 60rem); grid-template-rows: auto minmax(0, 1fr); overflow: hidden; }
+.modal-wide:has(.inv-board) .modal-body { min-height: 0; overflow: hidden; }
+.inv-board { min-width: 0; height: 100%; display: flex; flex-direction: column; gap: .7rem; }
+.inv-board > * { flex: 0 0 auto; }
+.inv-board > .inv-table-wrap { flex: 1 1 auto; }
+.inv-route { display: grid; grid-template-columns: minmax(0, 1fr) auto minmax(0, 1fr); gap: .6rem; align-items: end; }
+.inv-route label { display: grid; gap: .3rem; font-size: .84rem; font-weight: 650; }
+.inv-toolbar { display: flex; flex-wrap: wrap; gap: .6rem; align-items: center; }
+.inv-toolbar .input { flex: 1; min-width: 12rem; }
+.inv-table-wrap { min-height: 0; overflow: auto; border: 1px solid var(--line); border-radius: 10px; }
+.inv-table { width: 100%; border-collapse: collapse; font-size: .9rem; }
+.inv-table th { position: sticky; top: 0; background: #f8fafc; text-align: left; padding: .5rem .7rem; z-index: 1; }
+.inv-table td { padding: .4rem .7rem; border-top: 1px solid var(--line); }
+.inv-table tr.is-picked { background: #eff6ff; }
+.inv-table tr.is-empty { color: #94a3b8; }
+.inv-qty { width: 5.5rem; padding: .3rem .5rem; }
+.inv-actionbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .7rem .9rem; border: 1px solid color-mix(in srgb, var(--brand, #f2a33a) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--brand, #f2a33a) 5%, #fff); }
+.inv-flows { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; max-height: 40vh; overflow: auto; }
+.inv-flows summary { cursor: pointer; font-weight: 650; }
+.inv-flows[open] > * + * { margin-top: .6rem; }
 .shop-team { display: grid; gap: 1rem; }
 .shop-team > header h1 { margin: 0; }
 .shop-team > header p { margin: 0.35rem 0 0; }
