@@ -8,6 +8,7 @@ import { computeAccess } from '../services/access.js';
 import { orderDTO } from '../services/orders.js';
 import { encrypt } from '../utils/secret.js';
 import { API_WEBHOOK_EVENTS, resolveWebhookTarget } from '../services/api-webhooks.js';
+import { readLimits } from '../services/app-access.js';
 
 const hash = (t) => crypto.createHash('sha256').update(t).digest('hex');
 
@@ -128,6 +129,13 @@ tokenRoutes.post('/', async (req, res) => {
   if (!name) throw new AppError(400, 'Dê um nome ao token.');
   const storeId = await storeScope(req, req.body?.storeId);
   if ((await prisma.apiToken.count({ where: { userId: req.user.id } })) >= MAX_TOKENS) throw new AppError(403, `Limite de ${MAX_TOKENS} tokens. Revogue algum para criar outro.`);
+  if (storeId) {
+    const store = await prisma.store.findFirst({ where: { id: storeId, userId: req.user.id }, select: { appLimits: true } });
+    const cap = readLimits(store).apiTokens;
+    if (cap !== undefined && await prisma.apiToken.count({ where: { userId: req.user.id, storeId } }) >= cap) {
+      throw new AppError(403, `Este app liberou ${cap} ${cap === 1 ? 'token' : 'tokens'} de API. Revogue algum ou peça mais ao administrador.`, 'LIMIT_REACHED');
+    }
+  }
   const token = `dmk_${crypto.randomBytes(24).toString('hex')}`;
   const row = await prisma.apiToken.create({ data: { userId: req.user.id, storeId, name, prefix: token.slice(0, 10), tokenHash: hash(token) } });
   res.status(201).json({ token, item: tokenDTO(row, new Map()) });

@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { api } from '../api.js';
 import Modal from './Modal.jsx';
 import Icon from './Icon.jsx';
@@ -50,6 +50,17 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
   const [scanning, setScanning] = useState(false);
+  const pageRef = useRef(null);
+  const [fullscreen, setFullscreen] = useState(false);
+  useEffect(() => {
+    const sync = () => setFullscreen(Boolean(document.fullscreenElement));
+    document.addEventListener('fullscreenchange', sync);
+    return () => { document.removeEventListener('fullscreenchange', sync); if (document.fullscreenElement) document.exitFullscreen().catch(() => {}); };
+  }, []);
+  function toggleFullscreen() {
+    if (document.fullscreenElement) document.exitFullscreen().catch(() => {});
+    else pageRef.current?.requestFullscreen?.().catch(() => toast('Seu navegador não permitiu a tela cheia.', 'error'));
+  }
   const [selection, setSelection] = useState(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -289,10 +300,10 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   }
 
   return (
-    <section className="pos-page">
+    <section className="pos-page" ref={pageRef}>
       <header className="pos-header">
         <div>{onClose && <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>← Voltar</button>}<div><h1>Frente de caixa</h1><p className="muted">Venda rápida, estoque atualizado automaticamente.</p></div></div>
-        <div className="pos-header-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setReceiptForm({ ...receipt })}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
+        <div className="pos-header-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>{fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setReceiptForm({ ...receipt })}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
       </header>
       <div className="pos-layout">
         <section className="pos-products-panel">

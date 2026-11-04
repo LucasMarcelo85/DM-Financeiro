@@ -10,6 +10,7 @@ import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { isReservedSlug, isValidSlug, slugify } from '../utils/slug.js';
 import { ensureDefaultStockFlow } from '../services/inventory.js';
 import * as whatsapp from '../services/whatsapp.js';
+import { cleanActions, readLimits, LIMIT_KEYS, MAX_LIMIT } from '../services/app-access.js';
 
 // Lojas extras da conta. Cada loja tem site, produtos, pedidos e domínio próprios.
 const router = Router();
@@ -23,7 +24,7 @@ const dto = (s) => ({
   app: {
     enabled: s.appEnabled, name: s.appName || '', color: s.appColor || '',
     userLimit: s.appUserLimit, productLimit: s.appProductLimit, auditEnabled: s.appAuditEnabled,
-    auditInstanceLimit: s.appAuditInstanceLimit,
+    auditInstanceLimit: s.appAuditInstanceLimit, limits: readLimits(s),
   },
   createdAt: s.createdAt,
 });
@@ -203,11 +204,24 @@ const cleanPerms = (v, user, store) => {
   if (!out.length) throw new AppError(400, 'Escolha pelo menos uma área que o lojista poderá usar.');
   return out.join(',');
 };
-const userDTO = (u) => ({
-  id: u.id, name: u.name, login: u.login, active: u.active,
-  isPrimary: u.isPrimary, stockFlowIds: u.stockFlowIds, mustChangePassword: u.mustChangePassword,
-  perms: u.perms.split(',').filter(Boolean), createdAt: u.createdAt,
-});
+const userDTO = (u) => {
+  const perms = u.perms.split(',').filter(Boolean);
+  return {
+    id: u.id, name: u.name, login: u.login, active: u.active,
+    isPrimary: u.isPrimary, stockFlowIds: u.stockFlowIds, mustChangePassword: u.mustChangePassword,
+    perms, actions: cleanActions(u.permActions, perms), createdAt: u.createdAt,
+  };
+};
+
+// Vagas de WhatsApp de envio que o plano ainda permite repartir com este app.
+async function instanceRoom(db, user, store) {
+  const [others, mainCount] = await Promise.all([
+    db.store.findMany({ where: { userId: user.id, id: { not: store.id } }, select: { appLimits: true } }),
+    db.instance.count({ where: { userId: user.id, purpose: 'envio', storeId: null } }),
+  ]);
+  const allocated = others.reduce((sum, s) => sum + (readLimits(s).instances || 0), 0);
+  return Math.max(readLimits(store).instances || 0, limitsFor(user).instances - allocated - mainCount);
+}
 router.get('/:id/app', async (req, res) => {
   const store = await owned(req);
   const [users, limits] = await Promise.all([
@@ -245,6 +259,7 @@ router.get('/:id/app', async (req, res) => {
     flows,
     maxAppUsers: limits.appUsers,
     maxAppProducts: Math.min(limits.catalogProducts, MAX_APP_PRODUCTS),
+    maxAppInstances: await instanceRoom(prisma, req.user, store),
     maxAppAuditInstances: Math.min(MAX_APP_AUDIT_INSTANCES, Math.max(store.appAuditInstanceLimit, auditAvailable)),
     appAvailable: limits.stores > 0 && limits.appUsers > 0 && availablePerms(req.user).length > 0,
   });
@@ -281,6 +296,17 @@ router.put('/:id/app', async (req, res) => {
     throw new AppError(403, 'A auditoria não está disponível no plano ou nos adicionais desta conta.', 'LIMIT_REACHED');
   }
   let appNotifications;
+  let extraLimits;
+  if (req.body?.limits !== undefined) {
+    const raw = req.body.limits && typeof req.body.limits === 'object' ? req.body.limits : {};
+    extraLimits = {};
+    for (const key of LIMIT_KEYS) {
+      if (raw[key] === undefined || raw[key] === null || raw[key] === '') continue;
+      const n = Number(raw[key]);
+      if (!Number.isInteger(n) || n < 0 || n > MAX_LIMIT) throw new AppError(400, 'Os limites do app precisam ser números inteiros maiores ou iguais a zero.');
+      extraLimits[key] = n;
+    }
+  }
   if (req.body?.appNotifications !== undefined) {
     const raw = req.body.appNotifications || {};
     appNotifications = {
@@ -348,12 +374,21 @@ router.put('/:id/app', async (req, res) => {
         throw new AppError(400, `Você pode liberar até ${availableAuditLimit} conexões de auditoria para este app. O limite é compartilhado com os demais apps e com a conta principal.`);
       }
       const currentConfig = store.config && typeof store.config === 'object' ? store.config : {};
+      if (extraLimits?.instances !== undefined) {
+        const room = await instanceRoom(tx, req.user, store);
+        const used = await tx.instance.count({ where: { userId: req.user.id, purpose: 'envio', storeId: store.id } });
+        if (extraLimits.instances > room) {
+          throw new AppError(400, `Você pode liberar até ${room} WhatsApps de envio para este app. Cada vaga é descontada do limite do seu plano e dos outros apps.`);
+        }
+        if (extraLimits.instances < used) throw new AppError(400, `Este app já usa ${used} WhatsApps de envio. Remova conexões antes de reduzir o limite.`);
+      }
       return tx.store.update({
         where: { id: store.id },
         data: {
           appEnabled: Boolean(req.body?.enabled), appName: String(req.body?.name ?? '').trim().slice(0, 40) || null,
           appColor: color || null, appUserLimit: userLimit, appProductLimit: productLimit, appAuditEnabled: auditEnabled,
           appAuditInstanceLimit: auditInstanceLimit,
+          ...(extraLimits ? { appLimits: extraLimits } : {}),
           ...(appNotifications ? {
             config: {
               ...currentConfig,
@@ -383,6 +418,7 @@ router.post('/:id/app/users', async (req, res) => {
   if (limits.appUsers < 1 || limits.stores < 1) throw new AppError(403, 'O plano atual não inclui acessos ao aplicativo da loja.', 'LIMIT_REACHED');
   const maxUsers = Math.min(store.appUserLimit, limits.appUsers);
   const perms = cleanPerms(req.body?.perms ?? availablePerms(req.user), req.user, store);
+  const permActions = cleanActions(req.body?.actions, perms.split(','));
   const flows = await prisma.stockFlow.findMany({ where: { userId: req.user.id, storeId: store.id }, select: { id: true } });
   const availableFlowIds = flows.map((flow) => flow.id);
   const requestedFlowIds = req.body?.stockFlowIds === undefined ? availableFlowIds : req.body.stockFlowIds;
@@ -398,7 +434,7 @@ router.post('/:id/app/users', async (req, res) => {
       if (req.body?.isPrimary) await tx.storeUser.updateMany({ where: { storeId: store.id, isPrimary: true }, data: { isPrimary: false } });
       return tx.storeUser.create({
         data: {
-          storeId: store.id, name, login, passwordHash, perms,
+          storeId: store.id, name, login, passwordHash, perms, permActions,
           stockFlowIds: [...new Set(requestedFlowIds.map(Number))],
           isPrimary: Boolean(req.body?.isPrimary),
           mustChangePassword: true,
@@ -422,6 +458,9 @@ router.patch('/:id/app/users/:uid', async (req, res) => {
   if (req.body?.name !== undefined) data.name = String(req.body.name).trim().slice(0, 80) || undefined;
   if (typeof req.body?.active === 'boolean') data.active = req.body.active;
   if (req.body?.perms !== undefined) data.perms = cleanPerms(req.body.perms, req.user, store);
+  if (req.body?.perms !== undefined || req.body?.actions !== undefined) {
+    data.permActions = cleanActions(req.body.actions ?? current.permActions, (data.perms ?? current.perms).split(',').filter(Boolean));
+  }
   if (typeof req.body?.isPrimary === 'boolean') data.isPrimary = req.body.isPrimary;
   if (req.body?.stockFlowIds !== undefined) {
     const flows = await prisma.stockFlow.findMany({ where: { userId: req.user.id, storeId: store.id }, select: { id: true } });

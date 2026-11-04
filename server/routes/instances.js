@@ -12,6 +12,7 @@ import * as wa from '../services/whatsapp.js';
 import { syncInstance, syncState } from '../services/audit.js';
 import { publish as publishAudit } from '../services/audit-hub.js';
 import { storeScope } from '../utils/store.js';
+import { readLimits } from '../services/app-access.js';
 
 const SELECT = { id: true, name: true, label: true, provider: true, auditScope: true, storeId: true, metaPhoneNumberId: true, metaBusinessId: true, metaPhoneDisplay: true, metaVerifyToken: true, metaAccessToken: true, metaAppSecret: true, lastSyncAt: true, lastEventAt: true };
 const MAX_AUDIT_LABELS = 40;
@@ -124,9 +125,28 @@ export function instanceRouter(purpose) {
     return Math.max(ownCount, limitOf(user) - (allocated._sum.appAuditInstanceLimit || 0));
   }
 
-  async function assertCanAdd(user, req, auditScope) {
+  // Vagas de envio repartidas com os apps: o app respeita o próprio teto e a conta principal fica com o restante do plano.
+  async function assertEnvioRoom(user, storeId, total, globalLimit) {
+    const stores = await prisma.store.findMany({ where: { userId: user.id }, select: { id: true, appLimits: true } });
+    if (storeId) {
+      const cap = readLimits(stores.find((s) => s.id === storeId)).instances;
+      if (cap !== undefined && await prisma.instance.count({ where: { userId: user.id, purpose, storeId } }) >= cap) {
+        throw new AppError(403, `Este app liberou ${cap} ${cap === 1 ? 'WhatsApp de envio' : 'WhatsApps de envio'}. Peça ao administrador para ampliar o limite.`, 'LIMIT_REACHED');
+      }
+      return;
+    }
+    const allocated = stores.reduce((sum, s) => sum + (readLimits(s).instances || 0), 0);
+    if (!allocated) return;
+    const own = await prisma.instance.count({ where: { userId: user.id, purpose, storeId: null } });
+    if (own >= Math.max(0, globalLimit - allocated)) {
+      throw new AppError(403, `${allocated} ${allocated === 1 ? 'vaga está reservada' : 'vagas estão reservadas'} para os apps das lojas. Reduza o limite de um app para criar outra conexão na conta principal.`, 'LIMIT_REACHED');
+    }
+  }
+
+  async function assertCanAdd(user, req, auditScope, storeId = null) {
     const total = await prisma.instance.count({ where: { userId: user.id, purpose } });
     const globalLimit = limitOf(user);
+    if (!audit) await assertEnvioRoom(user, storeId, total, globalLimit);
     const scopeLimit = await auditScopeLimit(user, req, auditScope);
     const scopeCount = audit
       ? await prisma.instance.count({ where: { userId: user.id, purpose, auditScope } })
@@ -229,11 +249,11 @@ export function instanceRouter(purpose) {
     const label = cleanLabel(b.label);
     if (audit) req.auditStores = await auditStores(req.user, req);
     const auditScope = audit ? cleanAuditScope(b.auditScope, req.user, req) : 'main';
-    await assertCanAdd(req.user, req, auditScope);
     const storeId = req.forcedStore !== undefined
       ? req.forcedStore
       : audit && auditScope.startsWith('store:') ? Number(auditScope.slice('store:'.length))
         : !audit && req.query.store !== undefined ? await storeScope(req) : null;
+    await assertCanAdd(req.user, req, auditScope, storeId);
     const name = await nextName(req.user);
 
     if (b.provider === 'meta') {

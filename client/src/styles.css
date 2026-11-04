@@ -1714,6 +1714,13 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 }
 /* Point of sale */
 .pos-page { min-width: 0; }
+/* O PDV ocupa toda a largura disponível, sem o limite de largura das outras páginas */
+.page:has(> .pos-page), .page:has(.pos-page) { max-width: none; padding: 0.75rem clamp(0.6rem, 1.5vw, 1.25rem); }
+.pos-page { min-height: calc(100dvh - 1.5rem); display: flex; flex-direction: column; }
+.pos-page .pos-layout { flex: 1; grid-template-columns: minmax(0, 1fr) minmax(360px, 30vw); }
+.pos-page .pos-cart-panel { max-height: calc(100dvh - 1.5rem); }
+.pos-page .pos-product-grid { grid-template-columns: repeat(auto-fill, minmax(170px, 1fr)); }
+.pos-page:fullscreen { background: var(--bg, #f8fafc); padding: 0.75rem; overflow: auto; }
 .pos-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 16px; margin-bottom: 18px; }
 .pos-header > div, .pos-header-actions { display: flex; align-items: center; gap: 12px; }
 .pos-header h1 { margin: 0; }

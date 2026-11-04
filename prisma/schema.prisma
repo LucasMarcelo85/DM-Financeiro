@@ -759,6 +759,7 @@ model Store {
   appProductLimit        Int       @default(0) @map("app_product_limit")
   appAuditEnabled        Boolean   @default(false) @map("app_audit_enabled")
   appAuditInstanceLimit  Int       @default(0) @map("app_audit_instance_limit")
+  appLimits              Json      @default("{}") @map("app_limits") // instances, apiTokens, aiAgents, aiResponses, aiContacts
   appUsers               StoreUser[]
   stockFlows             StockFlow[]
   strategyRecords        OrderStrategyRecord[]
@@ -782,6 +783,7 @@ model StoreUser {
   mustChangePassword Boolean @default(false) @map("must_change_password")
   active       Boolean  @default(true)
   perms        String   @default("produtos,pedidos,clientes,arquivados,estrategia,pdv,api,entregas,auditoria")
+  permActions  Json     @default("{}") @map("perm_actions") // área -> ações (ver, criar, editar, excluir); área ausente = todas
   isPrimary    Boolean  @default(false) @map("is_primary")
   stockFlowIds Int[]    @default([]) @map("stock_flow_ids")
   createdAt    DateTime @default(now()) @map("created_at")

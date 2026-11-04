@@ -17,16 +17,47 @@ const PERM_LABELS = [
   ['auditoria', 'Auditoria e conversas WhatsApp'],
 ];
 const ALL_PERMS = PERM_LABELS.map(([k]) => k);
+const ACTION_LABELS = [['ver', 'Ver'], ['criar', 'Criar'], ['editar', 'Editar'], ['excluir', 'Excluir']];
+const LIMIT_FIELDS = [
+  ['apiTokens', 'Tokens de API'],
+  ['aiAgents', 'Agentes de IA'],
+  ['aiResponses', 'Respostas de IA por mês'],
+  ['aiContacts', 'Contatos de IA'],
+];
 
-function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
+// Cada menu liberado tem suas ações; "Ver" liga/desliga o menu e as demais ações dependem dele.
+function PermMatrix({ labels, perms, actions, disabled, onChange }) {
+  const current = (key) => (perms.includes(key) ? (actions?.[key] || ACTION_LABELS.map(([a]) => a)) : []);
+  function toggle(key, action, on) {
+    let list = current(key);
+    if (action === 'ver') list = on ? ['ver'] : [];
+    else list = on ? [...new Set([...list, 'ver', action])] : list.filter((a) => a !== action);
+    const next = {};
+    const nextPerms = [];
+    labels.forEach(([k]) => {
+      const l = k === key ? list : current(k);
+      if (l.length) { nextPerms.push(k); next[k] = l; }
+    });
+    onChange({ perms: nextPerms, actions: next });
+  }
   return (
-    <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
-      {labels.map(([key, label]) => (
-        <label key={key} style={{ display: 'flex', gap: 6, alignItems: 'center', fontSize: 13 }}>
-          <input type="checkbox" disabled={disabled} checked={value.includes(key)}
-            onChange={(e) => onChange(e.target.checked ? [...value, key] : value.filter((k) => k !== key))} /> {label}
-        </label>
-      ))}
+    <div style={{ overflowX: 'auto' }}>
+      <table className="table" style={{ width: '100%', fontSize: 13 }}>
+        <thead><tr><th style={{ textAlign: 'left' }}>Menu</th>{ACTION_LABELS.map(([a, l]) => <th key={a}>{l}</th>)}</tr></thead>
+        <tbody>
+          {labels.map(([key, label]) => (
+            <tr key={key}>
+              <td>{label}</td>
+              {ACTION_LABELS.map(([a, l]) => (
+                <td key={a} style={{ textAlign: 'center' }}>
+                  <input type="checkbox" disabled={disabled} aria-label={`${l} em ${label}`}
+                    checked={current(key).includes(a)} onChange={(e) => toggle(key, a, e.target.checked)} />
+                </td>
+              ))}
+            </tr>
+          ))}
+        </tbody>
+      </table>
     </div>
   );
 }
@@ -35,10 +66,10 @@ function PermChecks({ value, onChange, disabled, labels = PERM_LABELS }) {
 export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
-  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false, auditInstanceLimit: 0 });
+  const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false, auditInstanceLimit: 0, limits: {} });
   const [appNotifications, setAppNotifications] = useState({ enabled: false, instanceId: '', fallbackEnabled: false, fallbackInstanceId: '' });
   const [notificationInstances, setNotificationInstances] = useState([]);
-  const [nu, setNu] = useState({ name: '', login: '', perms: ALL_PERMS, stockFlowIds: [], isPrimary: false });
+  const [nu, setNu] = useState({ name: '', login: '', perms: ALL_PERMS, actions: {}, stockFlowIds: [], isPrimary: false });
   const [temporaryCredential, setTemporaryCredential] = useState(null);
   const [busy, setBusy] = useState(false);
   const initializedFlowsStoreId = useRef(null);
@@ -61,6 +92,7 @@ export default function StoreAppModal({ storeId, onClose }) {
       enabled: r.store.app.enabled, name: r.store.app.name, color: r.store.app.color || '#F2A33A',
       userLimit: r.store.app.userLimit, productLimit: r.store.app.productLimit ?? r.maxAppProducts,
       auditEnabled: r.store.app.auditEnabled, auditInstanceLimit: r.store.app.auditInstanceLimit,
+      limits: r.store.app.limits || {},
     });
     if (initializedFlowsStoreId.current !== storeId) {
       initializedFlowsStoreId.current = storeId;
@@ -202,6 +234,22 @@ export default function StoreAppModal({ storeId, onClose }) {
             <small className="muted">Disponível: {data.maxAppAuditInstances}. Cada vaga reservada é descontada do limite da sua conta e dos outros apps.</small>
           </label>}
           {data.availablePerms.includes('auditoria') && !cfg.auditEnabled && data.maxAppAuditInstances < 1 && <p className="muted small">Não há vagas de auditoria disponíveis. Reduza o limite de outro app ou amplie o limite da conta.</p>}
+          <section className="banner" style={{ display: 'grid', gap: 10 }}>
+            <strong>Limites repartidos com este app</strong>
+            <small className="muted">Deixe em branco para não aplicar teto. Vagas de WhatsApp saem do limite do seu plano; os demais limites valem só para este app.</small>
+            <label style={{ display: 'grid', gap: 4 }}>
+              <span>WhatsApps de envio (disponível: {data.maxAppInstances})</span>
+              <input className="input" type="number" min="0" max={data.maxAppInstances} step="1" value={cfg.limits.instances ?? ''}
+                onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, instances: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label="WhatsApps de envio do app" />
+            </label>
+            {LIMIT_FIELDS.map(([key, label]) => (
+              <label key={key} style={{ display: 'grid', gap: 4 }}>
+                <span>{label}</span>
+                <input className="input" type="number" min="0" step="1" value={cfg.limits[key] ?? ''}
+                  onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, [key]: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label={`${label} do app`} />
+              </label>
+            ))}
+          </section>
           {data.users.length > data.maxAppUsers && <p className="muted small">Há {data.users.length} acessos cadastrados, acima do limite atual do plano. Exclua acessos excedentes para adequar a quantidade.</p>}
           <button className="btn btn-primary" disabled={busy || cfg.auditEnabled && (!Number.isInteger(Number(cfg.auditInstanceLimit)) || Number(cfg.auditInstanceLimit) < 1 || Number(cfg.auditInstanceLimit) > data.maxAppAuditInstances)} onClick={() => run(() => api.put(`/stores/${storeId}/app`, { ...cfg, appNotifications }), 'Aplicativo salvo.')}>Salvar aplicativo</button>
 
@@ -228,7 +276,8 @@ export default function StoreAppModal({ storeId, onClose }) {
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
-                <PermChecks labels={permissionLabels} value={u.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} disabled={busy} onChange={(perms) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms }), 'Permissões salvas.')} />
+                <PermMatrix labels={permissionLabels} perms={u.perms} actions={u.actions} disabled={busy}
+                  onChange={({ perms, actions }) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms, actions }), 'Permissões salvas.')} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <strong className="small">Fluxos de estoque</strong>
                   {data.flows.map((flow) => <label key={flow.id} className="small">
@@ -252,7 +301,8 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
             <p className="muted small" style={{ margin: 0 }}>Uma senha provisória será gerada após criar o acesso. O usuário deverá cadastrar uma senha nova ao entrar.</p>
             <strong className="small">O que este acesso pode usar:</strong>
-            <PermChecks labels={permissionLabels} value={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} onChange={(perms) => setNu({ ...nu, perms })} />
+            <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} actions={nu.actions}
+              onChange={({ perms, actions }) => setNu({ ...nu, perms, actions })} />
             <strong className="small">Fluxos de estoque permitidos:</strong>
             <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>
               {data.flows.map((flow) => <label key={flow.id} className="small">
@@ -270,7 +320,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                 const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
                 const result = await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
                 setTemporaryCredential({ name: result.user.name, password: result.temporaryPassword });
-                setNu({ name: '', login: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
+                setNu({ name: '', login: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), actions: {}, stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
               }, 'Acesso criado.')}>Criar acesso</button>
           </div>
         </div>

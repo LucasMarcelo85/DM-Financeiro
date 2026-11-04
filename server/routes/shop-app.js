@@ -6,6 +6,7 @@ import { config } from '../config.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { computeAccess } from '../services/access.js';
+import { ACTION_BY_METHOD, hasAction, cleanActions } from '../services/app-access.js';
 import { instanceRouter } from './instances.js';
 import { tokenRoutes } from './api-tokens.js';
 import { catalogPaymentsRouter } from './catalog-payments.js';
@@ -110,11 +111,18 @@ async function shopAuth(req, _res, next) {
   req.forcedAuditScope = `store:${su.store.id}`;
   req.shopUser = su;
   req.shopPerms = allowedPerms(su.store.user, su.perms.split(',').filter(Boolean), su.store);
+  req.shopActions = su.permActions;
   next();
 }
 
+const ACTION_LABEL = { ver: 'visualizar', criar: 'criar', editar: 'editar', excluir: 'excluir' };
 const needPerm = (...any) => (req, _res, next) => {
-  if (!any.some((p) => req.shopPerms.includes(p))) throw new AppError(403, 'Seu acesso não libera esta área.', 'FORBIDDEN');
+  const areas = any.filter((p) => req.shopPerms.includes(p));
+  if (!areas.length) throw new AppError(403, 'Seu acesso não libera esta área.', 'FORBIDDEN');
+  const action = req.shopActionOverride || ACTION_BY_METHOD[req.method] || 'editar';
+  if (!areas.some((area) => hasAction(req.shopActions, area, action))) {
+    throw new AppError(403, `Seu acesso não permite ${ACTION_LABEL[action]} nesta área.`, 'FORBIDDEN');
+  }
   next();
 };
 
@@ -123,18 +131,20 @@ const needTab = (tab) => (req, _res, next) => {
   next();
 };
 
-const meDTO = (su, store) => ({
-  user: {
-    name: su.name, login: su.login,
-    perms: allowedPerms(store.user, su.perms.split(',').filter(Boolean), store),
-    isPrimary: su.isPrimary, mustChangePassword: su.mustChangePassword,
-  },
-  app: {
-    id: store.id, name: appName(store), color: appColor(store),
-    whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
-    auditSend: Boolean(store.appAuditEnabled && store.appAuditInstanceLimit > 0 && limitsFor(store.user).auditSend),
-  },
-});
+const meDTO = (su, store) => {
+  const perms = allowedPerms(store.user, su.perms.split(',').filter(Boolean), store);
+  return {
+    user: {
+      name: su.name, login: su.login, perms, actions: cleanActions(su.permActions, perms),
+      isPrimary: su.isPrimary, mustChangePassword: su.mustChangePassword,
+    },
+    app: {
+      id: store.id, name: appName(store), color: appColor(store),
+      whatsapp: String(store.config?.whatsapp || '').replace(/\D/g, ''),
+      auditSend: Boolean(store.appAuditEnabled && store.appAuditInstanceLimit > 0 && limitsFor(store.user).auditSend),
+    },
+  };
+};
 
 router.get('/me', shopAuth, (req, res) => {
   res.json(meDTO(req.shopUser, req.shopUser.store));
@@ -170,12 +180,15 @@ router.get('/team', shopAuth, needPrimary, async (req, res) => {
   const permittedFlows = req.shopUser.stockFlowIds;
   const visibleFlows = flows.filter((flow) => permittedFlows.includes(flow.id));
   res.json({
-    users: users.map((user) => ({
-      id: user.id, name: user.name, login: user.login, active: user.active,
-      perms: allowedPerms(req.user, user.perms.split(',').filter(Boolean), req.shopUser.store),
-      stockFlowIds: user.stockFlowIds,
-    })),
+    users: users.map((user) => {
+      const perms = allowedPerms(req.user, user.perms.split(',').filter(Boolean), req.shopUser.store);
+      return {
+        id: user.id, name: user.name, login: user.login, active: user.active,
+        perms, actions: cleanActions(user.permActions, perms), stockFlowIds: user.stockFlowIds,
+      };
+    }),
     availablePerms: req.shopPerms,
+    availableActions: cleanActions(req.shopActions, req.shopPerms),
     flows: visibleFlows,
     permittedFlowIds: permittedFlows,
   });
@@ -195,6 +208,15 @@ router.patch('/team/users/:uid', shopAuth, needPrimary, async (req, res) => {
       throw new AppError(403, 'Você só pode liberar áreas que também estão disponíveis no seu acesso.', 'FORBIDDEN');
     }
     data.perms = [...new Set(req.body.perms)].join(',');
+  }
+  if (req.body?.perms !== undefined || req.body?.actions !== undefined) {
+    const areas = (data.perms ?? user.perms).split(',').filter(Boolean);
+    const next = cleanActions(req.body.actions ?? user.permActions, areas);
+    const mine = cleanActions(req.shopActions, req.shopPerms);
+    if (areas.some((area) => next[area].some((a) => !(mine[area] || []).includes(a)))) {
+      throw new AppError(403, 'Você só pode liberar ações que também estão disponíveis no seu acesso.', 'FORBIDDEN');
+    }
+    data.permActions = next;
   }
   if (req.body?.stockFlowIds !== undefined) {
     const allowedFlowIds = req.shopUser.stockFlowIds;
@@ -248,6 +270,8 @@ router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
   const archivedArea = isRestore || (req.path === '/orders' && req.query.view === 'log');
   const area = isPOS ? 'pdv' : isStrategy ? 'estrategia' : isCustomers ? 'clientes' : archivedArea ? 'arquivados' : 'pedidos';
+  if (isArchive) req.shopActionOverride = 'excluir';
+  else if (isRestore) req.shopActionOverride = 'editar';
   needPerm(area)(req, _res, next);
 }, catalogRoutes);
 
