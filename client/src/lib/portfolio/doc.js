@@ -296,6 +296,16 @@ export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.
     const shift = expansions.reduce((sum, item) => sum + (original.y >= item.bottom ? item.delta : 0), 0);
     if (shift) base.set(el.id, { ...base.get(el.id), y: original.y + shift });
   }
+  const headerTop = Math.min(...doc.elements
+    .filter((el) => (el.region || (el.t === 'menu' ? 'header' : 'body')) === 'header' && !el.box[device].hide)
+    .map((el) => base.get(el.id)?.y ?? 0));
+  if (Number.isFinite(headerTop) && headerTop > 0) {
+    for (const el of doc.elements) {
+      if ((el.region || (el.t === 'menu' ? 'header' : 'body')) !== 'header') continue;
+      const box = base.get(el.id);
+      if (box) base.set(el.id, { ...box, y: Math.max(0, box.y - headerTop) });
+    }
+  }
   if (footerIds.size) {
     const bodyBoxes = doc.elements
       .filter((el) => !footerIds.has(el.id) && !el.box[device].hide)

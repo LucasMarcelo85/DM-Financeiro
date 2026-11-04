@@ -387,6 +387,7 @@ export default function PortfolioEditor() {
         const oldBox = layoutBoxes(current, targetDevice, products, current.catalog).get(element.id) || element.box[targetDevice];
         const nextBox = { ...element.box[targetDevice] };
         if (region === 'footer' && element.region !== 'footer') nextBox.y = 0;
+        else if (region === 'header') nextBox.y = 0;
         else if (element.region === 'footer' && region !== 'footer') nextBox.y = oldBox.y;
         if (element.t === 'menu' && region === 'header') Object.assign(nextBox, { x: 0, y: 0, w, h: Math.max(48, nextBox.h) });
         boxes[targetDevice] = nextBox;
