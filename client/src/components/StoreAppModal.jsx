@@ -10,7 +10,7 @@ const PERM_LABELS = [
   ['cobrancas', 'Cobranças'],
   ['contratos', 'Contratos'],
   ['auditoria', 'Auditoria e conversas WhatsApp'],
-  ['portfolio', 'Portfólio (o app edita a própria página)'],
+  ['portfolio', 'Portfólio (o app edita a página principal da loja)'],
   ['produtos', 'Produtos (cadastrar, editar e desativar)'],
   ['estoque', 'Estoque e movimentações'],
   ['pedidos', 'Pedidos'],
@@ -26,7 +26,6 @@ const ALL_PERMS = PERM_LABELS.map(([k]) => k);
 const LIMIT_FIELDS = [
   ['wsInstances', 'Conexões de WhatsApp do app (menus WhatsApp e cobranças)'],
   ['contracts', 'Contratos'],
-  ['portfolios', 'Páginas de portfólio'],
   ['apiTokens', 'Tokens de API'],
   ['aiAgents', 'Agentes de IA'],
 ];

@@ -189,7 +189,7 @@ const availablePerms = (user) => {
     if (perm === 'lembretes') return tabs.includes('lembretes');
     if (perm === 'cobrancas') return tabs.includes('cobrancas');
     if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
-    if (perm === 'portfolio') return tabs.includes('portfolio') && limits.portfolios > 0;
+    if (perm === 'portfolio') return tabs.includes('portfolio');
     if (perm === 'ia') return tabs.includes('ia');
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
     if (perm === 'pdv') return tabs.includes('pedidos') && limits.catalogProducts > 0;
@@ -326,7 +326,7 @@ router.put('/:id/app', async (req, res) => {
       extraLimits[key] = n;
     }
     // O que o dono reparte com os apps sai do limite do plano dele.
-    const shared = [['wsInstances', 'instances', 'conexões de WhatsApp'], ['contracts', 'contracts', 'contratos'], ['portfolios', 'portfolios', 'portfólios']];
+    const shared = [['wsInstances', 'instances', 'conexões de WhatsApp'], ['contracts', 'contracts', 'contratos']];
     const siblings = await prisma.store.findMany({ where: { userId: req.user.id, id: { not: store.id } }, select: { appLimits: true } });
     for (const [key, planKey, label] of shared) {
       const allocated = siblings.reduce((sum, s) => sum + (readLimits(s)[key] || 0) + (key === 'wsInstances' ? (readLimits(s).instances || 0) : 0), 0);

@@ -38,9 +38,9 @@ const SHOP_KEY = 'dm:shop-token';
 export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
 export const getShopToken = () => localStorage.getItem(SHOP_KEY);
 export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
-const SHOP_ROUTES = /^\/(products|catalog|inventory|instances|tokens|audit|team)(\/|\?|$)/;
+const SHOP_ROUTES = /^\/(products|catalog|inventory|portfolios|instances|tokens|audit|team)(\/|\?|$)/;
 // Menus com dados próprios do app (WhatsApp, clientes, lembretes, contratos, portfólio e IA) usam /shop-app/ws.
-const WORKSPACE_ROUTES = /^\/(instances|contacts|schedules|receipts|messages|media|contracts|portfolios|ai|stores)(\/|\?|$)/;
+const WORKSPACE_ROUTES = /^\/(instances|contacts|schedules|receipts|messages|media|contracts|ai|stores)(\/|\?|$)/;
 let workspaceMode = false;
 export const setWorkspaceMode = (on) => { workspaceMode = Boolean(on); };
 

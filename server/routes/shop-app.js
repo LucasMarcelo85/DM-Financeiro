@@ -52,7 +52,7 @@ const allowedPerms = (user, permissions, store) => {
     if (perm === 'contatos') return tabs.includes('clientes');
     if (perm === 'cobrancas') return tabs.includes('cobrancas');
     if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
-    if (perm === 'portfolio') return tabs.includes('portfolio') && limits.portfolios > 0;
+    if (perm === 'portfolio') return tabs.includes('portfolio');
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
     if (perm === 'pdv') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
@@ -319,7 +319,8 @@ workspaceArea('receipts', SCHEDULING, receiptRoutes);
 workspaceArea('messages', ['whatsapp', ...SCHEDULING], messageRoutes);
 workspaceArea('media', SCHEDULING, mediaRoutes);
 workspaceArea('contracts', ['contratos'], contractRoutes);
-workspaceArea('portfolios', ['portfolio'], portfolioRoutes);
+// Portfólio: o app edita a página principal da própria loja (regras em routes/portfolios.js).
+router.use('/portfolios', shopAuth, needAnyPerm('portfolio'), portfolioRoutes);
 workspaceArea('ai', ['ia'], aiRoutes);
 
 router.get('/ws/me', shopAuth, useWorkspace, (req, res) => res.json({ user: publicUser(req.user) }));

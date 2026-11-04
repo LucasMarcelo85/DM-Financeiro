@@ -14,27 +14,32 @@ import { storeScope } from '../utils/store.js';
 // Endereço: dominio/<portfolioSlug do usuário> = página principal; dominio/<portfolioSlug>/<slug da página> = as demais.
 const router = Router();
 
-// No app da loja (req.owner existe) o usuário só edita a página que já existe: nada de criar, duplicar, excluir ou mudar domínio.
-// A página do app nasce como cópia da página da loja (ou do portfólio do dono) no primeiro acesso.
+// No app da loja (req.shopUser existe) o usuário edita só a página principal da própria loja:
+// nada de criar, duplicar, excluir, trocar a principal, mudar o endereço ou o domínio.
 router.use(async (req, res, next) => {
-  if (!req.owner) return next();
+  if (!req.shopUser) return next();
   if (req.method !== 'GET' && req.method !== 'PATCH') {
-    throw new AppError(403, 'No aplicativo você só pode editar a página existente.', 'FORBIDDEN');
+    throw new AppError(403, 'No aplicativo você só pode editar a página principal.', 'FORBIDDEN');
   }
-  if (req.method === 'GET' && req.path === '/') {
-    const has = await prisma.portfolio.count({ where: { userId: req.user.id } });
-    if (!has) {
-      const storeId = req.shopUser?.store?.id;
-      const source = (storeId && await prisma.portfolio.findFirst({ where: { userId: req.owner.id, storeId }, orderBy: [{ isMain: 'desc' }, { id: 'asc' }] }))
-        || await prisma.portfolio.findFirst({ where: { userId: req.owner.id, storeId: null }, orderBy: [{ isMain: 'desc' }, { id: 'asc' }] });
-      const kind = source?.kind || 'site';
-      await createPage(req.user, {
-        name: (source?.name || req.shopUser?.store?.name || 'Minha página').slice(0, 120),
-        data: source ? source.data : emptyPortfolioDoc(kind),
-        count: 0, kind, published: Boolean(source?.published),
-      });
+  const storeId = req.forcedStore;
+  const findMain = () => prisma.portfolio.findFirst({ where: { userId: req.user.id, storeId, isMain: true }, select: { id: true } });
+  if (req.path === '/' && req.method === 'GET') {
+    let main = await findMain();
+    if (!main) {
+      const first = await prisma.portfolio.findFirst({ where: { userId: req.user.id, storeId }, orderBy: { id: 'asc' }, select: { id: true } });
+      if (first) main = await prisma.portfolio.update({ where: { id: first.id }, data: { isMain: true }, select: { id: true } });
+      else {
+        const { page } = await createPage(req.user, { name: (req.shopUser.store.name || 'Minha página').slice(0, 120), data: emptyPortfolioDoc('site'), count: 0, kind: 'site', storeId });
+        main = page;
+      }
     }
+    const row = await prisma.portfolio.findUnique({ where: { id: main.id }, select: summarySelect });
+    const { userSlug, owner } = await addressFor(req.user, storeId);
+    return res.json({ portfolios: [summaryDTO(row, userSlug, owner)], limit: 1, used: 1, catalogProducts: limitsFor(req.user).catalogProducts, userSlug, domain: domainDTO(owner) });
   }
+  const main = await findMain();
+  if (!main || req.path !== `/${main.id}`) throw new AppError(403, 'No aplicativo você só pode editar a página principal.', 'FORBIDDEN');
+  if (req.method === 'PATCH' && req.body?.slug !== undefined) throw new AppError(403, 'O endereço da página não pode ser alterado no aplicativo.', 'FORBIDDEN');
   next();
 });
 
