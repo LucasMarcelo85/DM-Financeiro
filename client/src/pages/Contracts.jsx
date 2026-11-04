@@ -2,6 +2,7 @@
 import { Link, useNavigate } from 'react-router-dom';
 import { api } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -86,10 +87,9 @@ export default function Contracts() {
       <header className="page-head head-row">
         <div>
           <h1>Contratos</h1>
-          <p className="muted">
-            Crie modelos do zero ou importe um arquivo e edite: logo, textos, fontes, cores e layout.
-            {data ? ` Você usou ${data.contracts.length} de ${plural(data.limit, 'modelo', 'modelos')} do seu plano.` : ''}
-          </p>
+          <HelpNote topic="contratos">
+            {data ? `Você usou ${data.contracts.length} de ${plural(data.limit, 'modelo', 'modelos')} do seu plano.` : ''}
+          </HelpNote>
         </div>
         <div className="btn-row">
           <button className="btn btn-ghost" onClick={() => fileRef.current?.click()} disabled={!data || full || !!busy}><Icon name="file" size={18} /> {busy === 'import' ? 'Importando...' : 'Importar modelo'}</button>

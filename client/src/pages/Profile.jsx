@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { api } from '../api.js';
 import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import Modal from '../components/Modal.jsx';
 import PlanBadge from '../components/PlanBadge.jsx';
 import { ForgotPinModal, onlyPinDigits } from '../components/PinPrompt.jsx';
@@ -20,7 +21,7 @@ export default function Profile() {
     <>
       <header className="page-head">
         <h1>Perfil</h1>
-        <p className="muted">Seus dados de acesso e as proteções da sua conta.</p>
+        <HelpNote topic="perfil" />
       </header>
 
       <section className="card profile-card">

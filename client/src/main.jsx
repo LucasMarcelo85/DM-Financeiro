@@ -6,6 +6,7 @@ import { AuthProvider } from './auth.jsx';
 import { ToastProvider } from './components/Toast.jsx';
 import PortfolioPublic from './pages/PortfolioPublic.jsx';
 import ShopApp from './pages/ShopApp.jsx';
+import Docs from './pages/Docs.jsx';
 import './styles.css';
 
 // Domínio próprio de um portfólio (meusite.com.br): o servidor marca o HTML com o dono do site.
@@ -13,11 +14,18 @@ import './styles.css';
 const siteOwner = document.querySelector('meta[name="pf-user"]')?.getAttribute('content') || '';
 // Aplicativo do lojista (/app): tela própria, sem login do painel nem menu.
 const shopApp = /^\/app(\/|$)/.test(window.location.pathname);
+// Documentação pública: funciona em qualquer domínio, inclusive no domínio próprio da loja.
+const docsPage = /^\/ajuda(\/|$)/.test(window.location.pathname);
 
 createRoot(document.getElementById('root')).render(
   <React.StrictMode>
     <BrowserRouter>
-      {shopApp ? (
+      {docsPage ? (
+        <Routes>
+          <Route path="/ajuda" element={<Docs />} />
+          <Route path="/ajuda/:topic" element={<Docs />} />
+        </Routes>
+      ) : shopApp ? (
         <ToastProvider>
           <Routes>
             <Route path="/app" element={<ShopApp />} />

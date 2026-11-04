@@ -1,6 +1,7 @@
 ﻿import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, isShopMode, setActiveAuditScope } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import { useAuth } from '../auth.jsx';
 import InstanceManager from '../components/InstanceManager.jsx';
 import ChatList from '../components/audit/ChatList.jsx';
@@ -301,10 +302,9 @@ export default function Audit({ canReply = false }) {
       <header className="page-head head-row">
         <div>
           <h1>Auditoria</h1>
-          <p className="muted">
-            Acompanhe ao vivo as conversas dos seus números, com etiquetas, anotações e busca por palavra-chave.
-            {canSend ? ' No seu plano você também pode responder.' : ' No seu plano você só visualiza as conversas.'}
-          </p>
+          <HelpNote topic="auditoria">
+            {canSend ? 'No seu plano você também pode responder.' : 'No seu plano você só visualiza as conversas.'}
+          </HelpNote>
         </div>
         <div className="btn-row">
           <span className={`au-live ${online ? 'is-on' : ''}`} role="status" title={online ? 'Recebendo mensagens em tempo real' : 'Sem o tempo real: a tela continua se atualizando a cada poucos segundos'}><i />{online ? 'Ao vivo' : 'Atualizando...'}</span>

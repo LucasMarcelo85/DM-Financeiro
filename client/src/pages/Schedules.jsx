@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import BillingDashboard from '../components/BillingDashboard.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import PayModal from '../components/PayModal.jsx';
@@ -201,9 +202,7 @@ export default function Schedules({ kind }) {
       <header className="page-head head-row">
         <div>
           <h1>{cfg.title}</h1>
-          <p className="muted">
-            {kind === 'cobranca' ? 'Agende cobranças avulsas ou mensais e o sistema envia no horário certo.' : 'Agende lembretes de vencimento avulsos ou mensais.'}
-          </p>
+          {kind === 'cobranca' ? <HelpNote topic="cobrancas" /> : <p className="muted">Agende lembretes de vencimento avulsos ou mensais.</p>}
         </div>
         <Link to={`${cfg.route}/${kind === 'cobranca' ? 'nova' : 'novo'}`} className="btn btn-primary"><Icon name="plus" size={18} /> {cfg.newLabel}</Link>
       </header>

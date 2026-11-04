@@ -108,10 +108,9 @@ export default function Products({ allow = [] }) {
       <header className="page-head head-row rounded-2xl border border-slate-200 bg-gradient-to-r from-white to-slate-50 p-5 shadow-sm">
         <div>
           <h1>Produtos e serviços</h1>
-          <p className="muted">
-            Cadastre o que você vende. Eles aparecem no catálogo digital e nos cartões de produtos do portfólio.
-            {data && data.limit > 0 ? ` Você usou ${data.count} de ${plural(data.limit, 'item', 'itens')} do seu plano.` : ''}
-          </p>
+          <HelpNote topic="produtos">
+            {data && data.limit > 0 ? `Você usou ${data.count} de ${plural(data.limit, 'item', 'itens')} do seu plano.` : ''}
+          </HelpNote>
         </div>
         <div className="btn-group">
           {canManageProducts && <CsvTransfer

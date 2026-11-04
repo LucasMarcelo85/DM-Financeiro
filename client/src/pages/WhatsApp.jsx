@@ -1,4 +1,5 @@
 import { useAuth } from '../auth.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import InstanceManager from '../components/InstanceManager.jsx';
 import { plural } from '../lib/format.js';
 
@@ -8,9 +9,7 @@ export default function WhatsApp() {
     <>
       <header className="page-head">
         <h1>WhatsApp</h1>
-        <p className="muted">
-          WhatsApps que enviam suas cobranças e lembretes. Seu plano permite {plural(user.limits.instances, 'conexão', 'conexões')}: por QR Code ou pela API oficial da Meta.
-        </p>
+        <HelpNote topic="whatsapp">Seu plano permite {plural(user.limits.instances, 'conexão', 'conexões')}.</HelpNote>
       </header>
       <InstanceManager purpose="envio" />
     </>

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useState } from 'react';
 import { Link, useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
+import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import CsvTransfer from '../components/CsvTransfer.jsx';
@@ -107,7 +108,7 @@ export default function Contacts() {
       <header className="page-head head-row">
         <div>
           <h1>Clientes</h1>
-          <p className="muted">{data ? `${plural(data.total, 'cliente cadastrado', 'clientes cadastrados')}. ` : ''}Salve uma vez e escolha rápido nas cobranças e lembretes.</p>
+          <HelpNote topic="clientes">{data ? `${plural(data.total, 'cliente cadastrado', 'clientes cadastrados')}.` : ''}</HelpNote>
         </div>
         <div className="btn-group">
           <CsvTransfer

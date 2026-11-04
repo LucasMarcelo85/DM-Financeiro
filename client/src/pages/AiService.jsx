@@ -4,6 +4,7 @@ import ContactsPanel from '../components/ai/ContactsPanel.jsx';
 import ActionsModal from '../components/ai/ActionsModal.jsx';
 import CampaignModal from '../components/ai/CampaignModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { formatStoredPhone } from '../lib/format.js';
@@ -393,7 +394,7 @@ export default function AiService() {
   return (
     <>
       <header className="page-head head-row ai-page-head">
-        <div><h1>Atendimento com IA</h1><p className="muted">Configure Gemini, ChatGPT ou Claude para campanhas e conversas WhatsApp.</p></div>
+        <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
           <button type="button" className="btn btn-ghost" onClick={refreshUsage}><Icon name="refresh" size={17} /> Atualizar uso</button>
           {tab === 'agentes' && <button type="button" className="btn btn-primary" onClick={() => setEditor({})}><Icon name="plus" size={18} /> Criar agente</button>}

@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { api, isShopMode } from '../api.js';
 import CatalogSettings from '../components/CatalogSettings.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import CsvTransfer from '../components/CsvTransfer.jsx';
@@ -324,7 +325,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
       <header className="page-head head-row">
         <div>
           <h1>Pedidos e clientes</h1>
-          <p className="muted">Acompanhe vendas, clientes e estratégias. Pedidos ficam ativos por até 90 dias; os arquivados são removidos após 20 dias.</p>
+          <HelpNote topic="pedidos" />
         </div>
         <div className="btn-group">
           {tab !== 'strategy' && can(tab === 'customers' ? 'clientes' : 'pedidos') && (

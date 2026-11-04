@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from 'react';
 import { api, isShopMode } from '../api.js';
+import HelpNote from '../components/HelpNote.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
 import { dateBR } from '../lib/format.js';
@@ -110,7 +111,7 @@ export default function Api() {
     <>
       <header className="page-head">
         <h1>API e webhooks</h1>
-        <p className="muted">{shop ? 'Gerencie tokens e webhooks com acesso restrito a este site.' : 'Conecte seus sistemas por token e receba eventos da loja em uma URL HTTPS.'}</p>
+        {shop ? <p className="muted">Gerencie tokens e webhooks com acesso restrito a este site.</p> : <HelpNote topic="api" />}
       </header>
 
       {created && (

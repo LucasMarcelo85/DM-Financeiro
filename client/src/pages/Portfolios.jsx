@@ -207,10 +207,9 @@ export default function Portfolios() {
       <header className="page-head head-row">
         <div>
           <h1>{appMode ? 'Minha página' : 'Portfólio'}</h1>
-          <p className="muted">
-            {appMode ? 'Edite a página do seu aplicativo.' : <>Crie páginas profissionais com a sua marca e envie o link para clientes.
-            {data ? ` Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}</>}
-          </p>
+          {appMode
+            ? <p className="muted">Edite a página do seu aplicativo.</p>
+            : <HelpNote topic="portfolio">{data ? `Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}</HelpNote>}
         </div>
         {!appMode && getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
         {!appMode && <label className={`btn btn-ghost ${!data || full || busy ? 'is-disabled' : ''}`} aria-disabled={!data || full || !!busy}>
