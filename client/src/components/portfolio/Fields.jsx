@@ -16,12 +16,12 @@ export function Section({ title, children }) {
   );
 }
 
-export function TextField({ label, value, onChange, placeholder, maxLength, id, multiline, rows = 3, type = 'text', hint }) {
+export function TextField({ label, value, onChange, placeholder, maxLength, id, multiline, rows = 3, type = 'text', hint, className }) {
   const Tag = multiline ? 'textarea' : 'input';
   return (
     <label className="ce-field">
       <span>{label}</span>
-      <Tag className={multiline ? 'input' : 'input input-sm'} {...(multiline ? { rows } : { type })} value={value ?? ''} maxLength={maxLength} placeholder={placeholder}
+      <Tag className={`${multiline ? 'input' : 'input input-sm'}${className ? ` ${className}` : ''}`} {...(multiline ? { rows } : { type })} value={value ?? ''} maxLength={maxLength} placeholder={placeholder}
         onChange={(e) => onChange(e.target.value, `txt:${id || label}`)} />
       {hint && <small className="muted">{hint}</small>}
     </label>

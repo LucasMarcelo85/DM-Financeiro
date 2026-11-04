@@ -24,6 +24,9 @@ const PALETTE = [
   { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' },
   { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
+  { t: 'custom', codeType: 'html', icon: 'file', label: 'HTML' },
+  { t: 'custom', codeType: 'css', icon: 'braces', label: 'CSS' },
+  { t: 'custom', codeType: 'script', icon: 'play', label: 'JavaScript' },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
 const SAVE_LABEL = { saved: 'Salvo', dirty: 'Alterações não salvas', saving: 'Salvando...', error: 'Erro ao salvar' };
@@ -104,10 +107,11 @@ export default function PortfolioEditor() {
         const d = normalizeDoc(p.data, p.kind);
         docRef.current = d;
         setDocState(d);
-        setConverted(p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length > 0);
+        const isLegacy = p.data?.v !== 2 && (p.data?.editor === 'grapesjs' || (Array.isArray(p.data?.blocks) && p.data.blocks.length > 0));
+        setConverted(isLegacy);
         setName(p.name);
         setMeta({ slug: p.slug, published: p.published, isMain: p.isMain, path: p.path, customUrl: p.customUrl, kind: p.kind });
-        if (p.data?.v !== 2 && Array.isArray(p.data?.blocks) && p.data.blocks.length) { version.current = 1; setSaveState('dirty'); }
+        if (isLegacy) { version.current = 1; setSaveState('dirty'); }
       })
       .catch((e) => { toast(e.message, 'error'); nav('/portfolio', { replace: true }); });
     api.get('/products').then((r) => { if (alive) { setProducts(r.products); setCategories(r.categories); } }).catch(() => {});
@@ -302,12 +306,15 @@ export default function PortfolioEditor() {
     } catch (e) { toast(e.message, 'error'); return null; }
   }
 
-  function addFromPalette(t) {
+  function addFromPalette(t, codeType) {
     if (t === 'footer') { addFooter(); return; }
     if (t === 'image') { pendingAdd.current = null; fileRef.current?.click(); return; }
     if (t === 'products' && !products.length) toast('Cadastre produtos na aba Produtos/Serviços para escolher aqui.', 'error');
-    const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } } : t === 'icon' ? {} : undefined;
-    addNew(t, base);
+    const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } }
+      : t === 'custom' ? { name: `Código ${(codeType || 'html').toUpperCase()}` }
+        : t === 'icon' ? {} : undefined;
+    const added = addNew(t, base);
+    if (t === 'custom' && added) requestAnimationFrame(() => document.getElementById(`code-${codeType || 'html'}-${added.id}`)?.focus());
   }
 
   const addProductsIndividually = useCallback((ids) => {
@@ -437,7 +444,6 @@ export default function PortfolioEditor() {
         <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); setAnimate(false); }} title="Ver a página sem as ferramentas de edição">
           <EIcon name="eye" size={15} /> <span className="ce-lbl">{preview ? 'Voltar a editar' : 'Visualizar'}</span>
         </button>
-        {meta.kind !== 'catalog' && <button type="button" className="btn btn-ghost btn-sm" onClick={() => nav(`/portfolio/${id}/canvas`)} title="Abrir o site no canvas visual">Editar no canvas</button>}
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublished(!meta.published)} disabled={!!busy}>{busy === 'publish' ? 'Aguarde...' : meta.published ? 'Despublicar' : 'Publicar'}</button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShare(true)}><EIcon name="share" size={16} /> <span className="ce-lbl">Compartilhar</span></button>
         <button type="button" className="btn btn-primary btn-sm" onClick={save} disabled={saveState === 'saving' || saveState === 'saved'}>Salvar</button>
@@ -454,7 +460,7 @@ export default function PortfolioEditor() {
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
           </div>
           {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
-            <button key={p.t} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); e.dataTransfer.effectAllowed = 'copy'; } }}
+            <button key={`${p.t}-${p.codeType || p.label || ''}`} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t, p.codeType)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); if (p.codeType) e.dataTransfer.setData('text/pv-code-type', p.codeType); e.dataTransfer.effectAllowed = 'copy'; } }}
               title={p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
               <EIcon name={p.icon} size={20} />
               <span>{p.label || ELEMENT_LABELS[p.t]}</span>
@@ -491,7 +497,10 @@ export default function PortfolioEditor() {
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
                 onSelect={(sid) => { setSelectedId(sid); if (sid) setPanelOpen(true); }}
                 onBox={setBox} onInteract={setInteracting}
-                onDropType={(t, x, y) => addNew(t, undefined, { x: Math.round(x - 100), y: Math.round(y - 30) })}
+                onDropType={(t, x, y, codeType) => {
+                  const added = addNew(t, t === 'custom' ? { name: `Código ${(codeType || 'html').toUpperCase()}` } : undefined, { x: Math.round(x - 100), y: Math.round(y - 30) });
+                  if (t === 'custom' && added) requestAnimationFrame(() => document.getElementById(`code-${codeType || 'html'}-${added.id}`)?.focus());
+                }}
                 onDropFile={(f, x, y) => imageFromFile(f, { x, y })}
                 onEdit={(eid) => {
                   const el = findElement(docRef.current, eid);

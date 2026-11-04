@@ -1,7 +1,7 @@
 import crypto from 'node:crypto';
 import { AppError, normalizePhone } from './helpers.js';
 import { FONT_KEYS } from './contract.js';
-import { cleanGrapesPortfolio, cleanPortfolioHtml } from './portfolio-sanitize.js';
+import { cleanGrapesPortfolio, cleanPortfolioCss, cleanPortfolioHtml } from './portfolio-sanitize.js';
 
 // Valida e "limpa" o documento do editor de portfólio antes de salvar (e antes de qualquer pessoa ver a página pública).
 // O documento é reconstruído só com campos conhecidos (lista branca) e valores dentro de limites: nada inesperado
@@ -445,7 +445,16 @@ function cleanElement(raw) {
       if (!el.steps.length) el.steps.push({ id: 'step1', title: 'Etapa 1', content: '', image: '', questions: [] });
       break;
     case 'custom':
-      el.code = cleanPortfolioHtml(str(raw.code, 100000));
+      {
+        const code = isObj(raw.code) ? raw.code : { html: raw.code };
+        const html = str(code.html, 3 * 1024 * 1024);
+        const css = str(code.css, 1024 * 1024);
+        const script = str(code.script, 100000);
+        if (typeof code.html === 'string' && code.html.length > 3 * 1024 * 1024) throw new AppError(413, 'O HTML deste bloco ultrapassa o limite permitido.');
+        if (typeof code.css === 'string' && code.css.length > 1024 * 1024) throw new AppError(413, 'O CSS deste bloco ultrapassa o limite permitido.');
+        if (typeof code.script === 'string' && code.script.length > 100000) throw new AppError(413, 'O JavaScript deste bloco ultrapassa o limite permitido.');
+        el.code = { html: cleanPortfolioHtml(html), css: cleanPortfolioCss(css), script };
+      }
       break;
     case 'catsearch':
       Object.assign(el, { showSearch: bool(raw.showSearch, true), showCategories: bool(raw.showCategories, true), placeholder: line(raw.placeholder, 60) || 'Buscar produtos' });

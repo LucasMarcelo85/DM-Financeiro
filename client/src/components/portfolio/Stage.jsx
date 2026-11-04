@@ -106,7 +106,7 @@ export default function Stage({ doc, device, zoom, selectedId, products, animate
   function onDrop(e) {
     const p = toDesign(e);
     const type = e.dataTransfer.getData('text/pv-type');
-    if (type) { e.preventDefault(); onDropType?.(type, p.x, p.y); return; }
+    if (type) { e.preventDefault(); onDropType?.(type, p.x, p.y, e.dataTransfer.getData('text/pv-code-type')); return; }
     const file = [...(e.dataTransfer.files || [])].find((f) => f.type.startsWith('image/'));
     if (file) { e.preventDefault(); onDropFile?.(file, p.x, p.y); }
   }

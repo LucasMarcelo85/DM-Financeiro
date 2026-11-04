@@ -6,6 +6,7 @@ import { CatalogScope, CatGridView, CatSearchView } from './Catalog.jsx';
 import { ICON_COMPONENTS, ICONS } from '../../lib/portfolio/icons.js';
 import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
 import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/model.js';
+import { makePortfolioCodeDocument } from '../../lib/portfolio/portfolioCode.js';
 import { brl } from '../../lib/format.js';
 
 // Desenha a página do portfólio (formato v2). O mesmo código serve ao editor, à visualização e à página pública:
@@ -502,7 +503,22 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
   else if (el.t === 'menu') content = <MenuView el={el} device={device} mode={mode} />;
   else if (el.t === 'products') content = <ProductsView el={el} device={device} products={products} mode={mode} />;
   else if (el.t === 'modal') content = <ModalToolView el={el} mode={mode} shop={shop} onCart={onCart} />;
-  else if (el.t === 'custom') content = mode === 'edit' ? <div className="pv-ph"><span>Bloco de script desativado. Exclua-o ou substitua por outro elemento.</span></div> : null;
+  else if (el.t === 'custom') {
+    try {
+      content = (
+        <iframe
+          title={el.name || 'Conteúdo HTML personalizado'}
+          srcDoc={makePortfolioCodeDocument(mode === 'edit' ? { ...el.code, script: '' } : el.code)}
+          sandbox="allow-scripts"
+          referrerPolicy="no-referrer"
+          loading="lazy"
+          style={{ display: 'block', width: '100%', height: '100%', border: 0, pointerEvents: mode === 'edit' ? 'none' : 'auto' }}
+        />
+      );
+    } catch (error) {
+      content = mode === 'edit' ? <div className="pv-ph"><span>CSS inválido: {error.message}</span></div> : null;
+    }
+  }
   else if (el.t === 'catsearch') content = <CatSearchView el={el} mode={mode} />;
   else if (el.t === 'catgrid') content = <CatGridView el={el} device={device} mode={mode} />;
   else if (el.t === 'button') {

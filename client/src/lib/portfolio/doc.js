@@ -72,7 +72,7 @@ const TYPE_DEFAULTS = {
     steps: [{ id: 'step1', title: 'Etapa 1', content: 'Adicione aqui os detalhes.', image: '', questions: [] }],
     actionType: 'whatsapp', actionLabel: 'Enviar respostas', actionUrl: '', actionPhone: '', actionProductId: null,
   }),
-  custom: () => ({ code: '<section style="padding: 24px; text-align: center;"><h2>Seu conteúdo personalizado</h2><p>Edite este bloco com HTML e CSS. Scripts não são permitidos.</p></section>' }),
+  custom: () => ({ code: { html: '<section style="padding: 24px; text-align: center;"><h2>Seu conteúdo personalizado</h2><p>Edite HTML, CSS e JavaScript no painel.</p></section>', css: '', script: '' } }),
   catsearch: () => ({ showSearch: true, showCategories: true, placeholder: 'Buscar produtos' }),
   catgrid: () => ({ cols: { desktop: 4, tablet: 3, mobile: 2 } }),
 };
@@ -126,6 +126,14 @@ function fixElement(raw, theme) {
   if (!isObj(raw) || !TYPE_DEFAULTS[raw.t]) return null;
   const d = TYPE_DEFAULTS[raw.t](theme);
   const el = { ...d, ...raw, id: typeof raw.id === 'string' && raw.id ? raw.id : uid(), name: raw.name || '', locked: Boolean(raw.locked) };
+  if (raw.t === 'custom') {
+    const code = isObj(raw.code) ? raw.code : { html: typeof raw.code === 'string' ? raw.code : '' };
+    el.code = {
+      html: typeof code.html === 'string' ? code.html : '',
+      css: typeof code.css === 'string' ? code.css : '',
+      script: typeof code.script === 'string' ? code.script : '',
+    };
+  }
   for (const k of ['fill', 'filters', 'cols', 'link']) if (d[k]) el[k] = { ...d[k], ...(isObj(raw[k]) ? raw[k] : {}) };
   el.anim = { ...ANIM0(), ...(isObj(raw.anim) ? raw.anim : {}) };
   const base = { ...emptyBox(raw.t), ...(isObj(raw.box?.desktop) ? raw.box.desktop : {}) };
@@ -134,6 +142,22 @@ function fixElement(raw, theme) {
 }
 
 export function normalizeDoc(raw, kindHint = 'site') {
+  if (isObj(raw) && raw.editor === 'grapesjs') {
+    const box = Object.fromEntries(DEVICES.map(({ id, w }) => [id, { x: 0, y: 0, w, h: 900, r: 0, hide: false }]));
+    return syncDevices(withCatalogElements(normalizeBase({
+      v: 2,
+      kind: kindHint,
+      seo: { title: raw.title || '', description: raw.description || '' },
+      manual: { tablet: true, mobile: true },
+      elements: [{
+        id: 'imported-html-page',
+        t: 'custom',
+        name: 'Página HTML importada',
+        code: { html: typeof raw.html === 'string' ? raw.html : '', css: typeof raw.css === 'string' ? raw.css : '', script: '' },
+        box,
+      }],
+    }, kindHint)));
+  }
   return syncDevices(withCatalogElements(normalizeBase(raw, kindHint)));
 }
 

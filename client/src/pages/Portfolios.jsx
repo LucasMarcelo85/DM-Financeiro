@@ -268,7 +268,6 @@ export default function Portfolios() {
               </Link>
               <div className="ct-actions">
                 <Link className="btn btn-primary btn-sm" to={`/portfolio/${p.id}`}><Icon name="edit" size={16} /> Editar</Link>
-                {p.kind !== 'catalog' && <Link className="btn btn-ghost btn-sm" to={`/portfolio/${p.id}/canvas`}>Editar no canvas</Link>}
                 <button className="btn btn-ghost btn-sm" onClick={() => copy(p)}><Icon name="copy" size={16} /> Copiar link</button>
                 <button className="btn btn-ghost btn-sm" onClick={() => setSharing(p)}><Icon name="share" size={16} /> Compartilhar</button>
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(p)} aria-label={`Excluir ${p.name}`} title="Excluir"><Icon name="trash" size={18} /></button>

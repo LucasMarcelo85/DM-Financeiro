@@ -108,8 +108,8 @@ export function cleanPortfolioHtml(value) {
 }
 
 export function cleanGrapesPortfolio(raw, kind) {
-  if (kind === 'catalog') throw new AppError(400, 'O editor de blocos é compatível com páginas de site. Use o editor de catálogo para manter os pedidos ativos.');
-  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError(400, 'Documento do editor de blocos inválido.');
+  if (kind === 'catalog') throw new AppError(400, 'O HTML importado é compatível com páginas de site. Use o editor de catálogo para manter os pedidos ativos.');
+  if (!raw || typeof raw !== 'object' || Array.isArray(raw)) throw new AppError(400, 'Documento HTML importado inválido.');
   const html = cleanPortfolioHtml(raw.html);
   const css = cleanPortfolioCss(raw.css);
   const title = typeof raw.title === 'string' ? raw.title.trim().slice(0, 120) : '';

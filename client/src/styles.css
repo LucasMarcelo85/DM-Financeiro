@@ -566,6 +566,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .ce-field { display: grid; gap: 0.25rem; font-size: 0.85rem; min-width: 0; }
 .ce-field > span:first-child { font-weight: 600; color: var(--muted); }
 .ce-insp .input { width: 100%; }
+.ce-insp .pe-code-input { min-height: 8rem; resize: vertical; font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace; font-size: 0.76rem; line-height: 1.45; }
 .ce-num { display: flex; align-items: center; gap: 0.3rem; }
 .ce-num em { font-style: normal; color: var(--muted); font-size: 0.8rem; }
 .ce-color { display: flex; align-items: center; gap: 0.35rem; }

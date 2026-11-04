@@ -1,4 +1,3 @@
-import { lazy, Suspense } from 'react';
 import { Navigate, Outlet, Route, Routes, useLocation } from 'react-router-dom';
 import { useAuth } from './auth.jsx';
 import Layout from './components/Layout.jsx';
@@ -29,8 +28,6 @@ import AiService from './pages/AiService.jsx';
 import ForgotPassword from './pages/ForgotPassword.jsx';
 import PinPrompt from './components/PinPrompt.jsx';
 import { isTabLocked, tabOfPath } from './lib/pin.js';
-
-const GrapesPortfolioEditor = lazy(() => import('./pages/GrapesPortfolioEditor.jsx'));
 
 const OPEN_WHEN_BLOCKED = ['/plano', '/pagamento/retorno', '/admin', '/admin/planos', '/perfil'];
 
@@ -92,8 +89,8 @@ export default function App() {
       <Route element={<Protected bare />}>
         <Route path="contratos/:id" element={<ContractEditor />} />
         <Route path="portfolio/:id" element={<PortfolioEditor />} />
-        <Route path="portfolio/:id/canvas" element={<Suspense fallback={<Splash />}><GrapesPortfolioEditor /></Suspense>} />
-        <Route path="portfolio/:id/blocks" element={<Suspense fallback={<Splash />}><GrapesPortfolioEditor /></Suspense>} />
+        <Route path="portfolio/:id/canvas" element={<PortfolioEditor />} />
+        <Route path="portfolio/:id/blocks" element={<PortfolioEditor />} />
       </Route>
       <Route element={<Protected />}>
         <Route path="whatsapp" element={<WhatsApp />} />

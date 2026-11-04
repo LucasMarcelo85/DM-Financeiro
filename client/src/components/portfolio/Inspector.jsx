@@ -401,6 +401,24 @@ function CatGridSection({ el, api }) {
   );
 }
 
+function CustomCodeSection({ el, api }) {
+  const set = (key) => (value) => api.patch({ code: { ...el.code, [key]: value } }, `code:${key}`);
+  return (
+    <>
+      <Section title="Código personalizado">
+        <p className="muted small">O conteúdo fica isolado em uma caixa redimensionável no canvas. Cole apenas um fragmento HTML, sem as tags &lt;html&gt;, &lt;head&gt; ou &lt;body&gt;. O CSS fica restrito a este bloco.</p>
+        <TextField label="HTML" value={el.code.html} onChange={set('html')} multiline rows={12} maxLength={3 * 1024 * 1024} className="pe-code-input" id={`code-html-${el.id}`} hint="Scripts e estilos dentro do HTML são removidos. Use os campos abaixo." />
+        <TextField label="CSS" value={el.code.css} onChange={set('css')} multiline rows={10} maxLength={1024 * 1024} className="pe-code-input" id={`code-css-${el.id}`} hint="Regras e URLs inseguras são removidas. Não use @import ou url()." />
+        <TextField label="JavaScript" value={el.code.script} onChange={set('script')} multiline rows={10} maxLength={100000} className="pe-code-input" id={`code-script-${el.id}`} hint="Executa somente na visualização e na publicação, dentro do iframe isolado. Não acessa a aplicação; fetch, XHR, WebSocket e scripts externos são bloqueados. Evite loops infinitos." />
+      </Section>
+      <Section title="Restrições do bloco">
+        <p className="muted small">O tamanho do bloco é controlado no canvas; arraste as alças para ajustá-lo. Formulários, iframes, scripts externos e conexões fetch/XHR/WebSocket não são permitidos. Imagens HTTPS podem ser carregadas; estilos ficam restritos ao bloco.</p>
+        <p className="muted small">Bibliotecas como MUI, Bootstrap e Tailwind não são carregadas automaticamente. Para evitar quebrar a página, use CSS próprio e teste a versão em computador, tablet e celular.</p>
+      </Section>
+    </>
+  );
+}
+
 function ProductsSection({ el, api, products }) {
   const [q, setQ] = useState('');
   const f = (k) => (v) => api.patch({ [k]: v }, `el:${k}`);
@@ -546,7 +564,7 @@ export function ElementInspector({ el, device, api, products, layoutBox }) {
       {el.t === 'menu' && <MenuSection el={el} api={api} />}
       {el.t === 'products' && <ProductsSection key={el.id} el={el} api={api} products={products} />}
       {el.t === 'modal' && <ModalSection el={el} api={api} products={products} />}
-      {el.t === 'custom' && <Section title="Script desativado"><p className="muted small">A ferramenta de script foi removida e este código salvo não é executado. Exclua o bloco ou substitua por outro elemento.</p></Section>}
+      {el.t === 'custom' && <CustomCodeSection el={el} api={api} />}
       {el.t === 'catsearch' && <CatSearchSection el={el} api={api} />}
       {el.t === 'catgrid' && <CatGridSection el={el} api={api} />}
       {linkable && (

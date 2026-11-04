@@ -1,7 +1,7 @@
 import DOMPurify from 'dompurify';
 
 const PREVIEW_HTML_OPTIONS = {
-  FORBID_TAGS: ['script', 'iframe', 'object', 'embed', 'form', 'base', 'meta', 'link'],
+  FORBID_TAGS: ['script', 'style', 'iframe', 'object', 'embed', 'form', 'base', 'meta', 'link'],
   FORBID_ATTR: ['srcdoc'],
   ALLOW_DATA_ATTR: true,
 };
