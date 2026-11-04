@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link } from 'react-router-dom';
 import { api, isShopMode } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
+import HelpNote from '../components/HelpNote.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import ProductWorkspace from '../components/ProductWorkspace.jsx';
 import Icon from '../components/Icon.jsx';
