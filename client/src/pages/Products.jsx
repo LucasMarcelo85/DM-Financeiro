@@ -12,6 +12,8 @@ import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { brl, centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 import InventoryManager from '../components/InventoryManager.jsx';
+import LabelPrinter from '../components/LabelPrinter.jsx';
+import RomaneioModal from '../components/RomaneioModal.jsx';
 
 // Cadastro de produtos e serviços: usados no catálogo digital e nos cartões de produtos do portfólio.
 const MAX_IMAGES = 12;
@@ -19,7 +21,7 @@ const PRODUCT_VIEW_KEY = 'dm:products:view';
 const DEFAULT_PRODUCT_VIEW = { cardWidth: 208, imageHeight: 150 };
 const PRODUCT_CSV_COLUMNS = [
   { key: 'kind', type: 'string' }, { key: 'name', type: 'string' }, { key: 'category', type: 'string' },
-  { key: 'description', type: 'string' }, { key: 'priceCents', type: 'number' },
+  { key: 'description', type: 'string' }, { key: 'barcode', type: 'string' }, { key: 'priceCents', type: 'number' },
   { key: 'stockEnabled', type: 'boolean' }, { key: 'stockQuantity', type: 'number' },
   { key: 'active', type: 'boolean' }, { key: 'mainImage', type: 'json' },
   { key: 'images', type: 'json' }, { key: 'priceOptions', type: 'json' },
@@ -49,6 +51,8 @@ export default function Products({ allow = [] }) {
   const [confirmDel, setConfirmDel] = useState(null);
   const [managePreferences, setManagePreferences] = useState(false);
   const [manageInventory, setManageInventory] = useState(false);
+  const [showLabels, setShowLabels] = useState(false);
+  const [showRomaneio, setShowRomaneio] = useState(false);
   const [batchDrafts, setBatchDrafts] = useState([]);
   const [cardView, setCardView] = useState(() => {
     try {
@@ -120,6 +124,8 @@ export default function Products({ allow = [] }) {
               return result;
             }}
           />}
+          {canManageProducts && <button className="btn btn-ghost shadow-sm" onClick={() => setShowLabels(true)}><Icon name="barcode" size={18} /> Etiquetas</button>}
+          <button className="btn btn-ghost shadow-sm" onClick={() => setShowRomaneio(true)}><Icon name="printer" size={18} /> Romaneio</button>
           {canManageStock && <button className="btn btn-ghost shadow-sm" onClick={() => setManageInventory(true)}><Icon name="box" size={18} /> Estoques</button>}
           {canManageProducts && <button className="btn btn-primary shadow-sm transition hover:-translate-y-0.5 hover:shadow-md" onClick={() => setEditing('new')} disabled={!data || blocked || full}><Icon name="plus" size={18} /> Novo produto</button>}
         </div>
@@ -178,6 +184,7 @@ export default function Products({ allow = [] }) {
               <div className="pr-body">
                 <span className="pr-cat">{p.category}<em>{p.kind === 'servico' ? 'Serviço' : 'Produto'}</em></span>
                 <strong title={p.name}>{p.name}</strong>
+                {p.barcode && <small className="muted pr-code"><Icon name="barcode" size={12} /> {p.barcode}</small>}
                 <span className="pr-price">{productPriceLabel(p)}</span>
                 {p.priceOptions.length > 0 && <small className="muted">{p.priceOptions.length} formas de preço</small>}
                 {p.stockEnabled && <small className="muted">Estoque: {p.images.length ? p.images.reduce((sum, image) => sum + image.stockQuantity, 0) : p.stockQuantity}</small>}
@@ -202,6 +209,8 @@ export default function Products({ allow = [] }) {
         toast('Opções salvas.');
         load();
       }} />}
+      {showLabels && data && <LabelPrinter products={data.products} onClose={() => setShowLabels(false)} onChanged={load} />}
+      {showRomaneio && data && <RomaneioModal products={data.products} onClose={() => setShowRomaneio(false)} />}
       {manageInventory && <InventoryManager onClose={() => { setManageInventory(false); load(); }} />}
       {confirmDel && (
         <Modal title="Excluir este item?" onClose={() => setConfirmDel(null)}

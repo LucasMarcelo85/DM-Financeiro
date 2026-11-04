@@ -1,6 +1,9 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 import { api } from '../api.js';
 import Modal from './Modal.jsx';
+import Icon from './Icon.jsx';
+import BarcodeScanner from './BarcodeScanner.jsx';
+import { sameCode } from '../lib/barcode.js';
 import { useToast } from './Toast.jsx';
 import { brl, centsToMasked, formatStoredPhone, maskMoney, moneyToCents } from '../lib/format.js';
 
@@ -46,6 +49,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   const [stockFlowId, setStockFlowId] = useState('');
   const [search, setSearch] = useState('');
   const [cart, setCart] = useState([]);
+  const [scanning, setScanning] = useState(false);
   const [selection, setSelection] = useState(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
@@ -76,7 +80,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     if (canSelectStockFlow) loadStockFlows();
   }, [loadProducts, loadStockFlows, toast, canSelectStockFlow]);
 
-  const visibleProducts = products.filter((product) => `${product.name} ${product.category}`.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')));
+  const visibleProducts = products.filter((product) => `${product.name} ${product.category} ${product.barcode || ''}`.toLocaleLowerCase('pt-BR').includes(search.trim().toLocaleLowerCase('pt-BR')));
   const selectedStockFlow = stockFlows.find((flow) => flow.id === Number(stockFlowId));
   const stockFor = (product, imageId = null) => {
     if (!canSelectStockFlow || !selectedStockFlow) return imageId
@@ -109,6 +113,18 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
       return;
     }
     addToCart(product, null, null);
+  }
+
+  function scanCode(raw) {
+    const code = String(raw || '').trim();
+    if (!code) return false;
+    for (const product of products) {
+      const image = (product.images || []).find((row) => sameCode(row.barcode, code));
+      if (image) { addToCart(product, image.id, null); setSearch(''); return true; }
+      if (sameCode(product.barcode, code)) { chooseProduct(product); setSearch(''); return true; }
+    }
+    toast(`Código ${code} não encontrado nos produtos.`, 'error');
+    return false;
   }
 
   function addToCart(product, imageId, priceOptionId) {
@@ -280,8 +296,15 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
       </header>
       <div className="pos-layout">
         <section className="pos-products-panel">
-          <div className="pos-products-head"><h2>Produtos</h2><input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} placeholder="Buscar produto ou categoria" aria-label="Buscar produtos do PDV" />
-            {canSelectStockFlow && stockFlows.length > 1 && <label className="pos-stock-flow">Fluxo de estoque
+          <div className="pos-products-head"><h2>Produtos</h2>          <div className="pos-search-row"><input className="input" type="search" value={search} onChange={(event) => setSearch(event.target.value)} onKeyDown={(event) => {
+                        // Leitor USB digita o código e envia Enter.
+                        if (event.key !== 'Enter' || !search.trim()) return;
+                        event.preventDefault();
+                        const hit = products.some((p) => sameCode(p.barcode, search) || (p.images || []).some((i) => sameCode(i.barcode, search)));
+                        if (hit) scanCode(search);
+                      }} placeholder="Buscar produto, categoria ou bipar código" aria-label="Buscar produtos do PDV" />
+                      <button type="button" className="btn btn-ghost pos-scan-btn" onClick={() => setScanning(true)} aria-label="Bipar com a câmera" title="Bipar com a câmera"><Icon name="camera" size={20} /></button></div>
+                      {canSelectStockFlow && stockFlows.length > 1 && <label className="pos-stock-flow">Fluxo de estoque
               <select className="input" value={stockFlowId} disabled={cart.length > 0} onChange={(event) => setStockFlowId(event.target.value)}>
                 {stockFlows.map((flow) => <option key={flow.id} value={flow.id}>{flow.name}{flow.isDefault ? ' (padrão do catálogo)' : ''}</option>)}
               </select>
@@ -315,6 +338,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
           {renderCart()}
         </aside>
       </div>
+      {scanning && <BarcodeScanner onDetected={scanCode} onClose={() => setScanning(false)} />}
       {selection && (
         <Modal title={`Adicionar ${selection.product.name}`} onClose={() => setSelection(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setSelection(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => addToCart(selection.product, selection.imageId, selection.priceOptionId)} disabled={selection.product.stockEnabled && stockFor(selection.product, selection.imageId) < 1}>Adicionar ao carrinho</button></>}>

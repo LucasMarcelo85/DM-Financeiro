@@ -572,6 +572,7 @@ model Product {
   name        String
   category    String   @default("")
   description String   @default("")
+  barcode     String   @default("")
   priceCents  Int      @default(0) @map("price_cents")
   stockEnabled Boolean @default(false) @map("stock_enabled")
   stockQuantity Int    @default(0) @map("stock_quantity")
@@ -599,6 +600,7 @@ model ProductImage {
   size       String @default("")
   color      String @default("")
   colorHex   String @default("") @map("color_hex")
+  barcode    String @default("")
   priceCents Int?   @map("price_cents")
   stockQuantity Int @default(0) @map("stock_quantity")
   mime       String
@@ -917,10 +919,53 @@ model AiAgent {
   instance     Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
   conversations AiConversation[]
   actions      AiAction[]
+  campaigns    AiCampaign[]
 
   @@index([userId, mode])
   @@index([instanceId, active])
   @@map("ai_agents")
+}
+
+// Campanha de marketing enviada aos poucos: um contato por vez, com espera entre as mensagens.
+model AiCampaign {
+  id          Int       @id @default(autoincrement())
+  userId      Int       @map("user_id")
+  agentId     Int       @map("agent_id")
+  message     String    @default("")
+  status      String    @default("scheduled")
+  startAt     DateTime  @map("start_at")
+  endAt       DateTime  @map("end_at")
+  intervalMs  Int       @map("interval_ms")
+  speed       Int       @default(1)
+  nextRunAt   DateTime? @map("next_run_at")
+  total       Int       @default(0)
+  lastError   String    @default("") @map("last_error")
+  createdAt   DateTime  @default(now()) @map("created_at")
+  finishedAt  DateTime? @map("finished_at")
+
+  agent AiAgent          @relation(fields: [agentId], references: [id], onDelete: Cascade)
+  items AiCampaignItem[]
+
+  @@index([userId, createdAt])
+  @@index([agentId, status])
+  @@index([status, nextRunAt])
+  @@map("ai_campaigns")
+}
+
+model AiCampaignItem {
+  id         Int       @id @default(autoincrement())
+  campaignId Int       @map("campaign_id")
+  position   Int
+  phone      String
+  name       String    @default("")
+  status     String    @default("pending")
+  error      String    @default("")
+  sentAt     DateTime? @map("sent_at")
+
+  campaign AiCampaign @relation(fields: [campaignId], references: [id], onDelete: Cascade)
+
+  @@index([campaignId, status, position])
+  @@map("ai_campaign_items")
 }
 
 // Funções que o agente executa fora da conversa (ex.: avisar um especialista por WhatsApp).

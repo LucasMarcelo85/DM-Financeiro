@@ -35,12 +35,20 @@ export function decodeProductImage(src) {
   return { mime: m[1], data: buf };
 }
 
+export function cleanBarcode(value) {
+  const code = String(value ?? '').trim();
+  if (!code) return '';
+  if (!/^[A-Za-z0-9._\-\/ ]{3,48}$/.test(code)) throw new AppError(400, 'O código de barras deve ter de 3 a 48 caracteres (letras, números, ponto, hífen ou barra).');
+  return code;
+}
+
 // ---------- Produto / serviço ----------
 // `images`: [{ id }] (mantém uma imagem que já existe) ou [{ data: 'data:image/...' }] (nova), com `label` (variação).
 export function cleanProduct(b = {}) {
   const kind = PRODUCT_KINDS.has(b.kind) ? b.kind : 'produto';
   const name = line(b.name, 120);
   if (name.length < 2) throw new AppError(400, 'Informe o nome.');
+  const barcode = cleanBarcode(b.barcode);
   const category = line(b.category, 60);
   if (!category) throw new AppError(400, 'Informe a categoria.');
   const description = typeof b.description === 'string' ? b.description.replace(/\r/g, '').trim().slice(0, 2000) : '';
@@ -78,7 +86,7 @@ export function cleanProduct(b = {}) {
     const stockQuantity = intIn(im.stockQuantity ?? 0, 0, 1_000_000, `Estoque da variação ${i + 1}`);
     const label = isPrimary ? '' : (line(im.label, 100) || [color, size].filter(Boolean).join(' · '));
     if (!isPrimary && !label && !Number.isInteger(im.id)) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
-    const out = { isPrimary, label, size, color, colorHex, priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
+    const out = { isPrimary, label, size, color, colorHex, barcode: isPrimary ? '' : cleanBarcode(im.barcode), priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');
@@ -86,7 +94,7 @@ export function cleanProduct(b = {}) {
   };
   if (rawMainImage) images.push(cleanImage(rawMainImage, 0, true));
   for (const [index, image] of rawVariations.entries()) images.push(cleanImage(image, index + Number(Boolean(rawMainImage)), false));
-  return { kind, name, category, description, priceCents, stockEnabled, stockQuantity, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
+  return { kind, name, category, description, barcode, priceCents, stockEnabled, stockQuantity, active: b.active === undefined ? true : Boolean(b.active), images, priceOptions };
 }
 
 // ---------- Configuração do catálogo (entregas e frete) ----------
@@ -205,12 +213,13 @@ export const publicProduct = (p) => {
     size: image.size || '',
     color: image.color || '',
     colorHex: image.colorHex || '',
+    barcode: image.barcode || '',
     priceCents: image.priceCents,
     stockQuantity: image.stockQuantity ?? 0,
     url: `/api/public/product-image/${image.id}`,
   });
   return {
-    id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, priceCents: p.priceCents,
+    id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, barcode: p.barcode || '', priceCents: p.priceCents,
     stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
     mainImage: mainImage ? { id: mainImage.id, url: `/api/public/product-image/${mainImage.id}` } : null,
     images: images.filter((image) => !image.isPrimary).map(imageDto),

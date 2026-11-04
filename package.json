@@ -23,6 +23,8 @@
   "dependencies": {
     "@prisma/adapter-pg": "^6.19.3",
     "@prisma/client": "^6.19.3",
+    "@zxing/browser": "^0.2.1",
+    "@zxing/library": "^0.23.0",
     "bcryptjs": "^2.4.3",
     "cookie-parser": "^1.4.7",
     "css-tree": "^3.2.1",
@@ -32,6 +34,7 @@
     "express-rate-limit": "^7.5.0",
     "heic2any": "^0.0.4",
     "helmet": "^8.0.0",
+    "jsbarcode": "^3.12.3",
     "jsonwebtoken": "^9.0.2",
     "pg": "^8.13.1",
     "prisma": "^6.19.3",

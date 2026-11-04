@@ -1,8 +1,8 @@
-﻿import { Router } from 'express';
+import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
-import { cleanProduct, publicProduct } from '../utils/catalog.js';
+import { cleanBarcode, cleanProduct, publicProduct } from '../utils/catalog.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
 import { dateRange } from '../utils/date-range.js';
@@ -10,7 +10,7 @@ import { syncProductStock } from '../services/inventory.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = { images: imgSelect, priceOptions: optionSelect };
 const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
@@ -69,7 +69,7 @@ function createData(data, userId, storeId) {
     ...product,
     userId,
     storeId,
-    images: { create: images.map((image, position) => ({ position, isPrimary: image.isPrimary, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
+    images: { create: images.map((image, position) => ({ position, isPrimary: image.isPrimary, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
     priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
   };
 }
@@ -110,18 +110,17 @@ router.get('/export', async (req, res) => {
   const products = await prisma.product.findMany({
     where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     include: {
-      images: { select: { position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, stockQuantity: true, mime: true, data: true }, orderBy: { position: 'asc' } },
+      images: { select: { position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, stockQuantity: true, mime: true, data: true }, orderBy: { position: 'asc' } },
       priceOptions: optionSelect,
     },
   });
   res.json({ rows: products.map((product) => {
     const images = product.images.map((image) => ({
       data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}`,
-      label: image.label, size: image.size, color: image.color, colorHex: image.colorHex,
-      stockQuantity: image.stockQuantity,
+      label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode,
     }));
     return {
-      kind: product.kind, name: product.name, category: product.category, description: product.description,
+      kind: product.kind, name: product.name, category: product.category, description: product.description, barcode: product.barcode,
       priceCents: product.priceCents, stockEnabled: product.stockEnabled, stockQuantity: product.stockQuantity,
       active: product.active,
       mainImage: images.find((_image, index) => product.images[index].isPrimary) || null,
@@ -155,6 +154,7 @@ router.post('/import', async (req, res) => {
       }
       await assertCanCreate(req, 1, storeId);
       const data = cleanProduct(row);
+      await assertBarcodesFree(req.user.id, storeId, barcodesOf(data));
       const product = await prisma.$transaction(async (tx) => {
         const created = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
         await syncProductStock(tx, created);
@@ -184,6 +184,21 @@ router.put('/preferences', async (req, res) => {
   res.json({ preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels } });
 });
 
+// Um mesmo código não pode identificar dois itens, senão o leitor do PDV não saberia qual vender.
+async function assertBarcodesFree(userId, storeId, codes, ignoreProductId = 0) {
+  const list = codes.filter(Boolean);
+  if (new Set(list).size !== list.length) throw new AppError(400, 'O mesmo código de barras foi usado mais de uma vez neste produto.');
+  if (!list.length) return;
+  const productWhere = { userId, storeId, ...(ignoreProductId ? { id: { not: ignoreProductId } } : {}) };
+  const [product, image] = await Promise.all([
+    prisma.product.findFirst({ where: { ...productWhere, barcode: { in: list } }, select: { name: true, barcode: true } }),
+    prisma.productImage.findFirst({ where: { barcode: { in: list }, product: productWhere }, select: { barcode: true, product: { select: { name: true } } } }),
+  ]);
+  const used = product || image;
+  if (used) throw new AppError(409, `O código ${used.barcode} já está em uso em "${product?.name || image.product.name}".`);
+}
+const barcodesOf = (data) => [data.barcode, ...data.images.map((image) => image.barcode)];
+
 router.get('/:id', async (req, res) => {
   res.json({ product: dto(await owned(req)) });
 });
@@ -192,6 +207,7 @@ router.post('/', async (req, res) => {
   const storeId = await storeScope(req);
   await assertCanCreate(req, 1, storeId);
   const data = cleanProduct(req.body);
+  await assertBarcodesFree(req.user.id, storeId, barcodesOf(data));
   const p = await prisma.$transaction(async (tx) => {
     const created = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
     await syncProductStock(tx, created);
@@ -212,6 +228,7 @@ router.post('/bulk', async (req, res) => {
   const storeId = await storeScope(req);
   await assertCanCreate(req, list.length, storeId);
   const prepared = list.map((product) => cleanProduct(product));
+  for (const data of prepared) await assertBarcodesFree(req.user.id, storeId, barcodesOf(data));
   const products = await prisma.$transaction(async (tx) => {
     const created = [];
     for (const data of prepared) {
@@ -234,7 +251,16 @@ router.patch('/:id', async (req, res) => {
     publishProduct(req.user.id, p, 'product.updated');
     return res.json({ product: dto(p) });
   }
+  // Só o código de barras (gerar código na impressão de etiquetas).
+  if (Object.keys(body).length === 1 && typeof body.barcode === 'string') {
+    const barcode = cleanBarcode(body.barcode);
+    await assertBarcodesFree(req.user.id, current.storeId, [barcode], current.id);
+    const p = await prisma.product.update({ where: { id: current.id }, data: { barcode }, include: productInclude });
+    publishProduct(req.user.id, p, 'product.updated');
+    return res.json({ product: dto(p) });
+  }
   const { images, priceOptions, ...data } = cleanProduct(body);
+  await assertBarcodesFree(req.user.id, current.storeId, [data.barcode, ...images.map((image) => image.barcode)], current.id);
   const have = new Set(current.images.map((i) => i.id));
   if (images.some((i) => i.id !== undefined && !have.has(i.id))) throw new AppError(400, 'Uma das imagens não pertence a este produto.');
   const havePriceOptions = new Set(current.priceOptions.map((option) => option.id));
@@ -244,8 +270,8 @@ router.patch('/:id', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
-      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
-      else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
+      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
+      else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {

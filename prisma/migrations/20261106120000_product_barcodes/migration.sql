@@ -1,0 +1,2 @@
+ALTER TABLE "products" ADD COLUMN "barcode" TEXT NOT NULL DEFAULT '';
+ALTER TABLE "product_images" ADD COLUMN "barcode" TEXT NOT NULL DEFAULT '';

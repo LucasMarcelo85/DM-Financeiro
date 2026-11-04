@@ -4,6 +4,7 @@ import Icon from './Icon.jsx';
 import { useToast } from './Toast.jsx';
 import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
+import { generateEan13 } from '../lib/barcode.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 
 const MAX_IMAGES = 12;
@@ -23,6 +24,7 @@ function blankDraft(image = null) {
     name: '',
     category: '',
     description: '',
+    barcode: '',
     price: '',
     onRequest: false,
     active: true,
@@ -58,6 +60,7 @@ function draftFromProduct(product) {
     label: image.label || '',
     color: image.color || '',
     colorHex: image.colorHex || '',
+    barcode: image.barcode || '',
     size: image.size || '',
     stockQuantity: String(image.stockQuantity || 0),
     ...variationFields(image),
@@ -76,6 +79,7 @@ function draftFromProduct(product) {
     name: product.name,
     category: product.category,
     description: product.description,
+    barcode: product.barcode || '',
     price: centsToMasked(product.priceCents),
     onRequest: product.priceCents === 0,
     active: product.active,
@@ -143,6 +147,7 @@ function productBody(draft) {
       label: details.join(' · ').slice(0, 100),
       color: image.color?.trim() || '',
       colorHex: image.colorHex || '',
+      barcode: image.barcode?.trim() || '',
       size: image.size?.trim() || '',
       stockQuantity: Number(image.stockQuantity) || 0,
       priceCents: null,
@@ -153,6 +158,7 @@ function productBody(draft) {
     name,
     category,
     description: draft.description.trim(),
+    barcode: draft.barcode?.trim() || '',
     priceCents: draft.onRequest ? 0 : moneyToCents(draft.price),
     active: draft.active,
     stockEnabled: draft.stockEnabled,
@@ -381,6 +387,7 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
                     ])].filter((type) => !['cor', 'tamanho'].includes(type.toLocaleLowerCase('pt-BR'))).map((type) => <option key={type} value={type}>{type}</option>)}
                     <option value="Outro">Outro</option>
                   </select></label>
+                  <label className="field"><span>Código de barras <small>(opcional)</small></span><input className="input" value={image.barcode || ''} maxLength={48} onChange={(event) => onPatchVariation(image.key, { barcode: event.target.value })} placeholder="Vazio = usa o do produto" /></label>
                   {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
                   <label className="field"><span>Valor da característica</span><input className="input" value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
                 </div>
@@ -453,6 +460,7 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
             <div className="pr-details-fields">
               <label className="field"><span>Nome do produto *</span><input className="input" value={draft.name} maxLength="120" onChange={(event) => onPatch({ name: event.target.value })} placeholder="Ex.: Camiseta básica" /></label>
               <label className="field"><span>Categoria *</span><input className="input" list={`categories-${draft.key}`} value={draft.category} maxLength="60" onChange={(event) => onPatch({ category: event.target.value })} placeholder="Ex.: Roupas" /><datalist id={`categories-${draft.key}`}>{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
+              <label className="field"><span>Código de barras</span><span className="pr-barcode-row"><input className="input" value={draft.barcode || ''} maxLength={48} onChange={(event) => onPatch({ barcode: event.target.value })} placeholder="Digite, bipe com o leitor ou gere" /><button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ barcode: generateEan13() })}>Gerar</button></span><small>Usado nas etiquetas e para bipar no PDV.</small></label>
               <label className="field pr-description"><span>Descrição</span><textarea className="input" rows="3" maxLength="2000" value={draft.description} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Detalhes que ajudam o cliente a conhecer o produto" /></label>
               <label className="check-line"><input type="checkbox" checked={draft.kind === 'servico'} onChange={(event) => onPatch({ kind: event.target.checked ? 'servico' : 'produto' })} /><span>Este item é um serviço</span></label>
             </div>
