@@ -205,7 +205,7 @@ export async function createOrder(userSlug, body = {}) {
         if (existing) await tx.contact.update({ where: { id: existing.id }, data: { ...clean, ...(existing.name ? {} : { name: customerName }) } });
         else await tx.contact.create({ data: { userId: owner.id, name: customerName, phone, ...clean } });
         const createdOrder = await tx.order.create({
-          data: { userId: owner.id, storeId: store?.id ?? null, stockFlowId: stockFlow.id, code: newCode(), customerName, customerPhone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
+          data: { userId: owner.id, storeId: store?.id ?? null, stockFlowId: stockFlow.id, code: newCode(), customerName, customerPhone: phone, deliveryType: type, delivery, items, subtotalCents, shippingCents, totalCents, notes, paymentStatus: paymentMethod === 'online' ? 'pending' : 'unpaid', paymentProvider },
         });
         await tx.orderStrategyRecord.create({
           data: {
