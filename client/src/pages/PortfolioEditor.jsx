@@ -24,9 +24,7 @@ const PALETTE = [
   { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' },
   { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
-  { t: 'custom', codeType: 'html', icon: 'file', label: 'HTML' },
-  { t: 'custom', codeType: 'css', icon: 'braces', label: 'CSS' },
-  { t: 'custom', codeType: 'script', icon: 'play', label: 'JavaScript' },
+  { t: 'custom', codeType: 'script', icon: 'braces', label: 'JavaScript' },
 ];
 const DEVICE_ICON = { desktop: 'desktop', tablet: 'tablet', mobile: 'mobile' };
 const SAVE_LABEL = { saved: 'Salvo', dirty: 'Alterações não salvas', saving: 'Salvando...', error: 'Erro ao salvar' };
@@ -311,7 +309,7 @@ export default function PortfolioEditor() {
     if (t === 'image') { pendingAdd.current = null; fileRef.current?.click(); return; }
     if (t === 'products' && !products.length) toast('Cadastre produtos na aba Produtos/Serviços para escolher aqui.', 'error');
     const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } }
-      : t === 'custom' ? { name: `Código ${(codeType || 'html').toUpperCase()}` }
+      : t === 'custom' ? { name: 'JavaScript' }
         : t === 'icon' ? {} : undefined;
     const added = addNew(t, base);
     if (t === 'custom' && added) requestAnimationFrame(() => document.getElementById(`code-${codeType || 'html'}-${added.id}`)?.focus());
@@ -498,7 +496,7 @@ export default function PortfolioEditor() {
                 onSelect={(sid) => { setSelectedId(sid); if (sid) setPanelOpen(true); }}
                 onBox={setBox} onInteract={setInteracting}
                 onDropType={(t, x, y, codeType) => {
-                  const added = addNew(t, t === 'custom' ? { name: `Código ${(codeType || 'html').toUpperCase()}` } : undefined, { x: Math.round(x - 100), y: Math.round(y - 30) });
+                  const added = addNew(t, t === 'custom' ? { name: 'JavaScript' } : undefined, { x: Math.round(x - 100), y: Math.round(y - 30) });
                   if (t === 'custom' && added) requestAnimationFrame(() => document.getElementById(`code-${codeType || 'html'}-${added.id}`)?.focus());
                 }}
                 onDropFile={(f, x, y) => imageFromFile(f, { x, y })}
