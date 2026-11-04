@@ -12,7 +12,7 @@ export const setPinToken = (t) => { pinToken = t || null; };
 
 // Loja ativa do painel (null = loja principal). Produtos, pedidos e portfólios usam `?store=`.
 const STORE_KEY = 'dm:store';
-export const getActiveStore = () => localStorage.getItem(STORE_KEY) || null;
+export const getActiveStore = () => (/^\/app(\/|$)/.test(window.location.pathname) ? null : localStorage.getItem(STORE_KEY) || null);
 export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
 const SCOPED = /^\/(products|catalog|inventory|portfolios)(\/|\?|$)/;
 const AUDIT_SCOPE_KEY = 'dm:audit-scope';
@@ -39,11 +39,17 @@ export const isShopMode = () => /^\/app(\/|$)/.test(window.location.pathname);
 export const getShopToken = () => localStorage.getItem(SHOP_KEY);
 export const setShopToken = (t) => { if (t) localStorage.setItem(SHOP_KEY, t); else localStorage.removeItem(SHOP_KEY); };
 const SHOP_ROUTES = /^\/(products|catalog|inventory|instances|tokens|audit|team)(\/|\?|$)/;
+// Menus com dados próprios do app (WhatsApp, clientes, lembretes, contratos, portfólio e IA) usam /shop-app/ws.
+const WORKSPACE_ROUTES = /^\/(instances|contacts|schedules|receipts|messages|media|contracts|portfolios|ai|stores)(\/|\?|$)/;
+let workspaceMode = false;
+export const setWorkspaceMode = (on) => { workspaceMode = Boolean(on); };
 
 async function request(method, url, body) {
   let res;
   const shop = isShopMode();
-  const target = shop ? (SHOP_ROUTES.test(url) ? `/shop-app${url}` : url) : scoped(url);
+  const target = shop
+    ? (workspaceMode && WORKSPACE_ROUTES.test(url) ? `/shop-app/ws${url}` : SHOP_ROUTES.test(url) ? `/shop-app${url}` : url)
+    : scoped(url);
   const auth = shop && getShopToken() ? { Authorization: `Bearer ${getShopToken()}` } : {};
   try {
     res = await fetch(`/api${target}`, {

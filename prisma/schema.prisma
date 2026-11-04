@@ -90,6 +90,7 @@ model User {
   payments  Payment[]
   contacts  Contact[]
   schedules       Schedule[]
+  savedMedia      SavedMedia[]
   messages        Message[]
   billingPayments BillingPayment[]
   contracts       Contract[]
@@ -217,6 +218,7 @@ model Schedule {
   userId      Int            @map("user_id")
   contactId   Int            @map("contact_id")
   instanceId  Int?           @map("instance_id")
+  mediaId     Int?           @map("media_id")
   kind        MessageKind
   recurrence  Recurrence
   status      ScheduleStatus @default(ativa)
@@ -241,12 +243,31 @@ model Schedule {
   user            User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   contact         Contact          @relation(fields: [contactId], references: [id], onDelete: Cascade)
   instance        Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  media           SavedMedia?      @relation(fields: [mediaId], references: [id], onDelete: SetNull)
   messages        Message[]
   billingPayments BillingPayment[]
 
   @@index([userId, kind])
   @@index([status, nextRunAt])
   @@map("schedules")
+}
+
+// Arquivo (foto, vídeo ou documento) guardado na biblioteca do usuário para reutilizar em cobranças e lembretes.
+model SavedMedia {
+  id        Int      @id @default(autoincrement())
+  userId    Int      @map("user_id")
+  kind      String // image | video | document
+  name      String
+  mimeType  String   @map("mime_type")
+  size      Int
+  data      Bytes
+  createdAt DateTime @default(now()) @map("created_at")
+
+  user      User       @relation(fields: [userId], references: [id], onDelete: Cascade)
+  schedules Schedule[]
+
+  @@index([userId, createdAt])
+  @@map("saved_media")
 }
 
 // Cobrança marcada como paga pelo usuário (uma linha por vencimento pago).

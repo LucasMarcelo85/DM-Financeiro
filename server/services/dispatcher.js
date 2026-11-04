@@ -31,23 +31,39 @@ export const instanceCandidates = (schedule, userInstances) => {
   return preferred ? [preferred, ...userInstances.filter((i) => i.id !== preferred.id)] : userInstances;
 };
 
-// Envia o texto e, se houver, o link/Pix em uma segunda mensagem.
-// Lança erro se o texto falhar; devolve 'partial' se só o link/Pix falhar.
-export async function deliver(instance, number, text, extra) {
+// Envia o texto (ou o arquivo com o texto de legenda) e, se houver, o link/Pix em uma segunda mensagem.
+// Lança erro se a primeira mensagem falhar; devolve 'partial' se só o link/Pix falhar.
+// media: { kind, mimeType, name, data(Buffer) } | null
+const CAPTION_MAX = 1000;
+export async function deliver(instance, number, text, extra, media = null) {
   const key = String(instance.id || instance.name);
   const queue = deliveryQueues.get(key) || { tail: Promise.resolve(), lastSentAt: 0 };
   const current = queue.tail.then(async () => {
-    const textWait = queue.lastSentAt + config.evolution.messageDelayMs - Date.now();
-    if (textWait > 0) await sleep(textWait);
+    const wait = async () => {
+      const w = queue.lastSentAt + config.evolution.messageDelayMs - Date.now();
+      if (w > 0) await sleep(w);
+    };
+    await wait();
     try {
-      await wa.sendText(instance, number, text);
+      if (media) {
+        const inCaption = text.length <= CAPTION_MAX;
+        await wa.sendMedia(instance, number, {
+          mediatype: media.kind, mimetype: media.mimeType, fileName: media.name,
+          caption: inCaption ? text : '', base64: Buffer.from(media.data).toString('base64'),
+        });
+        if (!inCaption) {
+          await wait();
+          await wa.sendText(instance, number, text);
+        }
+      } else {
+        await wa.sendText(instance, number, text);
+      }
     } finally {
       queue.lastSentAt = Date.now();
     }
     if (!extra) return { status: 'sent', error: null };
     try {
-      const extraWait = queue.lastSentAt + config.evolution.messageDelayMs - Date.now();
-      if (extraWait > 0) await sleep(extraWait);
+      await wait();
       try {
         await wa.sendText(instance, number, extra);
       } finally {
@@ -65,6 +81,10 @@ export async function deliver(instance, number, text, extra) {
 
 const TRIAL_NOTICE = 'Mensagem de teste DM Digital.\nAdquira um plano para remover esta mensagem automática.';
 const withTrialNotice = (text, user) => (isTrialUser(user) ? `${TRIAL_NOTICE}\n\n${text}` : text);
+
+export const loadMedia = (schedule) => (schedule.mediaId
+  ? prisma.savedMedia.findFirst({ where: { id: schedule.mediaId, userId: schedule.userId } })
+  : null);
 
 export const renderFor = (schedule, contact, dueDate, user) => ({
   text: withTrialNotice(renderTemplate(schedule.text, { name: contact.name, amountCents: schedule.amountCents, dueDate }), user),
@@ -141,7 +161,7 @@ async function processOne(s, originalRunAt) {
   if (instance) {
     const { text, extra } = renderFor(s, contact, dueDate, s.user);
     try {
-      result = await deliver(instance, contact.phone, text, extra);
+      result = await deliver(instance, contact.phone, text, extra, await loadMedia(s));
     } catch (e) {
       failure = e.message;
     }

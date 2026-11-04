@@ -161,7 +161,7 @@ export function limitsFor(user) {
   const base = limitsOf(user.plan); // o teste grátis tem todo o acesso do plano escolhido
   const extras = extrasFor(user.id);
   // Limite do plano + o que o usuário pagou à parte (só enquanto estiver em dia).
-  return {
+  const full = {
     ...base,
     instances: base.instances + extras.instances,
     auditInstances: base.auditInstances + extras.auditInstances,
@@ -171,6 +171,13 @@ export function limitsFor(user) {
     stores: base.stores + extras.stores,
     extras,
   };
+  // Área de trabalho de um app: o dono reparte parte do que tem (user.limitCaps) e o app nunca passa disso.
+  if (user.limitCaps) {
+    for (const [key, cap] of Object.entries(user.limitCaps)) {
+      if (typeof full[key] === 'number') full[key] = Math.min(full[key], cap);
+    }
+  }
+  return full;
 }
 
 export function trialSettings() {

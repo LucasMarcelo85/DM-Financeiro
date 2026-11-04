@@ -2,6 +2,7 @@ import { useEffect, useState } from 'react';
 import { api, getActiveStore, isShopMode } from '../api.js';
 import Modal from './Modal.jsx';
 import InfinitePayMark from './InfinitePayMark.jsx';
+import infinitePayLogo from '../assets/infinitepay.png';
 import { Check, Seg, TextField } from './portfolio/Fields.jsx';
 import { useToast } from './Toast.jsx';
 import { brl, centsToMasked, formatStoredPhone, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
@@ -197,10 +198,20 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
             <span><InfinitePayMark /><small>{infinitePayConnection?.connected ? `Recebimentos ativos para a InfiniteTag ${infinitePayConnection.handle}.` : 'Receba pagamentos online diretamente na conta InfinitePay da sua loja.'}</small></span>
             {infinitePayConnection?.connected && <button type="button" className="btn btn-ghost btn-sm" onClick={disconnectInfinitePay} disabled={Boolean(paymentBusy)}>{paymentBusy ? 'Desconectando...' : 'Desconectar'}</button>}
           </div>
+          <div className="cs-infinitepay-help">
+            <img src={infinitePayLogo} alt="Logo do app InfinitePay" width="72" height="72" />
+            <p className="small">
+              Informe sua <strong>InfiniteTag</strong> (o nome de usuário da sua conta no app InfinitePay, sem o símbolo $). Você encontra a tag no app, na tela do seu perfil.
+            </p>
+          </div>
           <div className="cs-payment-row">
             <TextField label="InfiniteTag / handle da sua loja" value={infiniteHandle} onChange={setInfiniteHandle} placeholder="minhaloja" id="cs-infinitepay" hint="Este identificador direciona os pagamentos para sua conta InfinitePay; não informe senha ou token." />
             <button type="button" className="btn btn-ghost btn-sm" onClick={saveInfiniteHandle} disabled={Boolean(paymentBusy) || !infiniteHandle.trim()}>{paymentBusy === 'infinitepay' ? 'Salvando...' : 'Salvar handle'}</button>
           </div>
+          <p className="small cs-infinitepay-signup">
+            Não tenho conta:{' '}
+            <a href="https://infinitepay.onelink.me/IGWD/dmsolucoesdigitais" target="_blank" rel="noopener noreferrer">criar minha conta InfinitePay</a>
+          </p>
           <p className="muted small">Use a InfiniteTag da sua própria loja. Não informe senha nem dados bancários. Os pagamentos são confirmados pela InfinitePay.</p>
         </fieldset>
         <fieldset className="cs-box">

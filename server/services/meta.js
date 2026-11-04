@@ -93,6 +93,33 @@ export async function sendText(inst, to, text) {
   return { key: { id: d?.messages?.[0]?.id || null } };
 }
 
+// Envia o arquivo pela API oficial: primeiro sobe o arquivo para a Meta e depois manda a mensagem com o ID dele.
+export async function sendMedia(inst, to, { mediatype, mimetype, fileName, caption, base64 }) {
+  const token = tokenOf(inst);
+  if (!token) throw new AppError(400, 'O token da API oficial não está disponível. Cadastre o token de novo.', 'META_AUTH');
+  const form = new FormData();
+  form.append('messaging_product', 'whatsapp');
+  form.append('type', mimetype);
+  form.append('file', new Blob([Buffer.from(base64, 'base64')], { type: mimetype }), fileName);
+  let res;
+  try {
+    res = await fetch(`${config.meta.graphUrl}/${config.meta.apiVersion}/${encodeURIComponent(inst.metaPhoneNumberId)}/media`, {
+      method: 'POST', headers: { Authorization: `Bearer ${token}` }, body: form, signal: AbortSignal.timeout(60000),
+    });
+  } catch {
+    throw new AppError(502, 'Não foi possível enviar o arquivo para a Meta. Tente novamente em instantes.', 'META_UNREACHABLE');
+  }
+  const uploaded = await res.json().catch(() => null);
+  if (!res.ok || !uploaded?.id) throw new AppError(502, uploaded?.error?.error_user_msg || uploaded?.error?.message || 'A Meta recusou o arquivo.', 'META_ERROR');
+  const payload = mediatype === 'document'
+    ? { id: uploaded.id, filename: fileName, ...(caption ? { caption } : {}) }
+    : { id: uploaded.id, ...(caption ? { caption } : {}) };
+  const d = await graph('POST', `/${encodeURIComponent(inst.metaPhoneNumberId)}/messages`, token, {
+    messaging_product: 'whatsapp', recipient_type: 'individual', to: String(to).replace(/\D/g, ''), type: mediatype, [mediatype]: payload,
+  });
+  return { key: { id: d?.messages?.[0]?.id || null } };
+}
+
 // ---------- Webhook ----------
 export function verifySignature(rawBody, header, appSecret) {
   if (!rawBody || !header || !appSecret) return false;

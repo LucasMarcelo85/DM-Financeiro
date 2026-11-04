@@ -15,6 +15,7 @@ export default function InventoryManager({ onClose }) {
   const [fromFlowId, setFromFlowId] = useState('');
   const [toFlowId, setToFlowId] = useState('');
   const [busy, setBusy] = useState(false);
+  const [showFlows, setShowFlows] = useState(false);
 
   async function load() {
     const result = await api.get('/inventory/flows');
@@ -124,6 +125,31 @@ export default function InventoryManager({ onClose }) {
   return (
     <Modal wide title="Estoques" onClose={onClose}>
       <div className="inventory-manager inv-board">
+        <div className="inv-modes" role="tablist" aria-label="Modo do estoque">
+          <button type="button" role="tab" aria-selected={!showFlows} className={!showFlows ? 'is-on' : ''} onClick={() => setShowFlows(false)}>Movimentar estoque</button>
+          <button type="button" role="tab" aria-selected={showFlows} className={showFlows ? 'is-on' : ''} onClick={() => setShowFlows(true)}>Gerenciar fluxos ({flows.length})</button>
+        </div>
+        {showFlows ? (
+        <section className="inv-flows">
+          <p className="muted">Separe o estoque por local ou operação. As transferências movimentam quantidades sem alterar o total de produtos do plano.</p>
+          <form className="inventory-create" onSubmit={createFlow}>
+            <label>Nome do novo fluxo<input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="Ex.: Loja, Depósito, Expedição" /></label>
+            <button className="btn btn-primary" type="submit" disabled={busy || name.trim().length < 2}><Icon name="plus" size={16} /> Criar fluxo</button>
+          </form>
+          <div className="inventory-flow-list">
+            {flows.map((flow) => (
+              <article className="inventory-flow-card" key={flow.id}>
+                <div><strong>{flow.name}</strong>{flow.isDefault && <span className="pill pill-sent">Padrão do catálogo</span>}</div>
+                <small>{flow.levels.filter((level) => level.stockEnabled).length} itens com controle de estoque</small>
+                <div className="inventory-flow-actions">
+                  <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => renameFlow(flow)}>Renomear</button>
+                  {!flow.isDefault && <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => deleteFlow(flow)}>Excluir</button>}
+                </div>
+              </article>
+            ))}
+          </div>
+        </section>
+        ) : <>
         <div className="inv-route">
           <label>Origem<select className="input" value={fromFlowId} onChange={(event) => { setFromFlowId(event.target.value); setSelection({}); if (event.target.value === toFlowId) setToFlowId(String(flows.find((flow) => String(flow.id) !== event.target.value)?.id || '')); }}>
             {flows.map((flow) => <option key={flow.id} value={flow.id}>{flow.name}</option>)}
@@ -133,7 +159,7 @@ export default function InventoryManager({ onClose }) {
             {flows.filter((flow) => flow.id !== Number(fromFlowId)).map((flow) => <option key={flow.id} value={flow.id}>{flow.name}</option>)}
           </select></label>
         </div>
-        {flows.length < 2 && <p className="muted small">Crie pelo menos dois fluxos (abaixo) para fazer uma movimentação.</p>}
+        {flows.length < 2 && <p className="muted small">Crie pelo menos dois fluxos (aba "Gerenciar fluxos") para fazer uma movimentação.</p>}
 
         <div className="inv-toolbar">
           <input className="input" type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Buscar produto ou variação" aria-label="Buscar produto" />
@@ -172,26 +198,7 @@ export default function InventoryManager({ onClose }) {
         </div>
         {picked.length > 100 && <p className="form-error">Cada movimentação aceita até 100 itens. Remova alguns e repita.</p>}
 
-        <details className="inv-flows">
-          <summary>Gerenciar fluxos de estoque ({flows.length})</summary>
-          <p className="muted">Separe o estoque por local ou operação. As transferências movimentam quantidades sem alterar o total de produtos do plano.</p>
-          <div className="inventory-flow-list">
-            {flows.map((flow) => (
-              <article className="inventory-flow-card" key={flow.id}>
-                <div><strong>{flow.name}</strong>{flow.isDefault && <span className="pill pill-sent">Padrão do catálogo</span>}</div>
-                <small>{flow.levels.filter((level) => level.stockEnabled).length} itens com controle de estoque</small>
-                <div className="inventory-flow-actions">
-                  <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => renameFlow(flow)}>Renomear</button>
-                  {!flow.isDefault && <button className="btn btn-ghost btn-sm" type="button" disabled={busy} onClick={() => deleteFlow(flow)}>Excluir</button>}
-                </div>
-              </article>
-            ))}
-          </div>
-          <form className="inventory-create" onSubmit={createFlow}>
-            <label>Nome do novo fluxo<input className="input" value={name} onChange={(event) => setName(event.target.value)} maxLength={60} placeholder="Ex.: Loja, Depósito, Expedição" /></label>
-            <button className="btn btn-primary" type="submit" disabled={busy || name.trim().length < 2}><Icon name="plus" size={16} /> Criar fluxo</button>
-          </form>
-        </details>
+        </>}
       </div>
     </Modal>
   );

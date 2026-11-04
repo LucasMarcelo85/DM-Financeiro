@@ -6,3 +6,6 @@ export const getState = (inst) => (inst.provider === 'meta' ? meta.getState(inst
 
 // `to`: número com DDI (ex.: 5585999999999) ou, em grupos, o identificador do grupo.
 export const sendText = (inst, to, text) => (inst.provider === 'meta' ? meta.sendText(inst, to, text) : evo.sendText(inst.name, to, text));
+
+// file: { mediatype, mimetype, fileName, caption, base64 }
+export const sendMedia = (inst, to, file) => (inst.provider === 'meta' ? meta.sendMedia(inst, to, file) : evo.sendMedia(inst.name, to, file));

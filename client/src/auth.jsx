@@ -2,7 +2,7 @@ import { createContext, useCallback, useContext, useEffect, useMemo, useState } 
 import { api, setPinToken } from './api.js';
 import { setTimezone } from './lib/format.js';
 
-const AuthContext = createContext(null);
+export const AuthContext = createContext(null);
 export const useAuth = () => useContext(AuthContext);
 
 export function AuthProvider({ children }) {

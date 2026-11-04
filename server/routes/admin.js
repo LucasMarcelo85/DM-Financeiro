@@ -36,7 +36,7 @@ const lastOpenEvent = (userId) => prisma.accessEvent.findFirst({ where: { userId
 
 router.get('/users', async (_req, res) => {
   const [users, events] = await Promise.all([
-    prisma.user.findMany({ orderBy: { id: 'desc' }, include: { _count: { select: { instances: true, contacts: true } } } }),
+    prisma.user.findMany({ where: { NOT: { email: { endsWith: '@workspace.invalid' } } }, orderBy: { id: 'desc' }, include: { _count: { select: { instances: true, contacts: true } } } }),
     prisma.accessEvent.findMany({ where: { revertedAt: null }, orderBy: { id: 'desc' }, distinct: ['userId'] }),
   ]);
   const byUser = new Map(events.map((e) => [e.userId, e]));

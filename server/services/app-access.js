@@ -4,7 +4,7 @@ export const ACTIONS = ['ver', 'criar', 'editar', 'excluir'];
 export const ACTION_BY_METHOD = { GET: 'ver', HEAD: 'ver', POST: 'criar', PUT: 'editar', PATCH: 'editar', DELETE: 'excluir' };
 
 // instances sai do limite do plano; os demais são tetos próprios do app.
-export const LIMIT_KEYS = ['instances', 'apiTokens', 'aiAgents', 'aiResponses', 'aiContacts'];
+export const LIMIT_KEYS = ['instances', 'apiTokens', 'aiAgents', 'aiResponses', 'aiContacts', 'wsInstances', 'contracts', 'portfolios'];
 export const MAX_LIMIT = 2_147_483_647;
 
 // Devolve { área: [ações] } só das áreas liberadas; "ver" sempre acompanha as demais ações.

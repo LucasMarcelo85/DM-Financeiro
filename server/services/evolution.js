@@ -156,3 +156,7 @@ export async function deleteInstance(name) {
 }
 
 export const sendText = (name, number, text) => evo('POST', `/message/sendText/${enc(name)}`, { number, text });
+
+// mediatype: image | video | document. `media` é o conteúdo em base64 (sem prefixo data:).
+export const sendMedia = (name, number, { mediatype, mimetype, fileName, caption, base64 }) =>
+  evo('POST', `/message/sendMedia/${enc(name)}`, { number, mediatype, mimetype, fileName, caption: caption || undefined, media: base64 });

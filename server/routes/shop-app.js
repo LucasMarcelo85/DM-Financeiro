@@ -14,6 +14,16 @@ import productRoutes from './products.js';
 import catalogRoutes from './catalog.js';
 import auditRoutes from './audit.js';
 import inventoryRoutes from './inventory.js';
+import contactRoutes from './contacts.js';
+import scheduleRoutes from './schedules.js';
+import receiptRoutes from './receipts.js';
+import messageRoutes from './messages.js';
+import mediaRoutes from './media.js';
+import contractRoutes from './contracts.js';
+import portfolioRoutes from './portfolios.js';
+import aiRoutes from './ai.js';
+import { publicUser } from '../services/access.js';
+import { workspaceFor, workspaceUser } from '../services/workspace.js';
 
 // Aplicativo do lojista: permissões e dados ficam restritos à loja/site associado ao acesso.
 const router = Router();
@@ -37,6 +47,13 @@ const allowedPerms = (user, permissions, store) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
   return permissions.filter((perm) => {
+    if (perm === 'ia') return tabs.includes('ia');
+    if (perm === 'whatsapp') return tabs.includes('whatsapp') && limits.instances > 0;
+    if (perm === 'contatos') return tabs.includes('clientes');
+    if (perm === 'lembretes') return tabs.includes('lembretes');
+    if (perm === 'cobrancas') return tabs.includes('cobrancas');
+    if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
+    if (perm === 'portfolio') return tabs.includes('portfolio') && limits.portfolios > 0;
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
     if (perm === 'pdv') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
@@ -111,7 +128,7 @@ async function shopAuth(req, _res, next) {
   req.forcedAuditScope = `store:${su.store.id}`;
   req.shopUser = su;
   req.shopPerms = allowedPerms(su.store.user, su.perms.split(',').filter(Boolean), su.store);
-  req.shopActions = su.permActions;
+  req.shopActions = null; // o app libera menus inteiros; ver/criar/editar/excluir não é mais configurável
   next();
 }
 
@@ -280,5 +297,33 @@ router.use('/catalog/payments', shopAuth, needPerm('entregas'), needTab('pedidos
 router.use('/tokens', shopAuth, needPerm('api'), needTab('api'), tokenRoutes);
 router.use('/audit/instances', shopAuth, needPerm('auditoria'), needTab('auditoria'), instanceRouter('auditoria'));
 router.use('/audit', shopAuth, needPerm('auditoria'), needTab('auditoria'), auditRoutes);
+
+// Área de trabalho do app: WhatsApp, clientes, lembretes, contratos, portfólio e IA ficam separados do dono.
+// As rotas existentes são reaproveitadas, mas rodam como o usuário interno do app (veja services/workspace.js).
+const needAnyPerm = (...areas) => (req, _res, next) => {
+  if (!areas.some((area) => req.shopPerms.includes(area))) throw new AppError(403, 'Seu acesso não libera esta área.', 'FORBIDDEN');
+  next();
+};
+async function useWorkspace(req, _res, next) {
+  const store = req.shopUser.store;
+  const ws = await workspaceFor(store, req.user);
+  req.owner = req.user;
+  req.user = workspaceUser(ws, store, req.owner);
+  next();
+}
+const workspaceArea = (path, areas, handler) => router.use(`/ws/${path}`, shopAuth, needAnyPerm(...areas), useWorkspace, handler);
+const SCHEDULING = ['lembretes', 'cobrancas'];
+workspaceArea('instances', ['whatsapp', ...SCHEDULING, 'ia'], instanceRouter('envio'));
+workspaceArea('contacts', ['contatos', ...SCHEDULING], contactRoutes);
+workspaceArea('schedules', SCHEDULING, scheduleRoutes);
+workspaceArea('receipts', SCHEDULING, receiptRoutes);
+workspaceArea('messages', ['whatsapp', ...SCHEDULING], messageRoutes);
+workspaceArea('media', SCHEDULING, mediaRoutes);
+workspaceArea('contracts', ['contratos'], contractRoutes);
+workspaceArea('portfolios', ['portfolio'], portfolioRoutes);
+workspaceArea('ai', ['ia'], aiRoutes);
+
+router.get('/ws/me', shopAuth, useWorkspace, (req, res) => res.json({ user: publicUser(req.user) }));
+router.get('/ws/stores', shopAuth, (_req, res) => res.json({ stores: [], limit: 0 }));
 
 export default router;

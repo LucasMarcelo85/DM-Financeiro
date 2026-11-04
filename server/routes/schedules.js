@@ -3,14 +3,14 @@ import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
 import { TIME_RE, defaultPayableDue, firstOccurrence, localToday, parseISODate, payableDues, toISODate } from '../utils/schedule.js';
 import { billingPaymentDTO, scheduleDTO } from '../utils/serialize.js';
-import { deliver, instanceCandidates, logMessage, pickOpenInstance, renderFor } from '../services/dispatcher.js';
+import { deliver, instanceCandidates, loadMedia, logMessage, pickOpenInstance, renderFor } from '../services/dispatcher.js';
 
 const router = Router();
 const KINDS = ['cobranca', 'lembrete'];
 const NAMES = { cobranca: 'cobrança', lembrete: 'lembrete' };
 const PAST_MSG = 'Esse dia e horário de envio já passaram. Escolha uma data futura ou use "Enviar agora".';
 // Junto com cada item vão os pagamentos marcados (os 24 vencimentos mais recentes).
-const include = { contact: true, billingPayments: { orderBy: { dueDate: 'desc' }, take: 24 } };
+const include = { contact: true, media: { select: { id: true, name: true, kind: true } }, billingPayments: { orderBy: { dueDate: 'desc' }, take: 24 } };
 
 async function getOwned(req) {
   const id = Number(req.params.id);
@@ -48,7 +48,18 @@ function parseFields(body, kind) {
   const sendNow = body.sendMode === 'agora';
   if (sendNow && recurrence === 'mensal') throw new AppError(400, 'Enviar agora só vale para envio avulso.');
 
-  return { recurrence, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow };
+  return { recurrence, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow, mediaId: body.mediaId === '' || body.mediaId == null ? null : Number(body.mediaId) };
+}
+
+// O arquivo precisa ser do usuário. Cobrança aceita só documento; lembrete aceita foto, vídeo ou documento.
+async function resolveMediaId(userId, kind, mediaId) {
+  if (mediaId == null) return null;
+  const media = Number.isInteger(mediaId)
+    ? await prisma.savedMedia.findFirst({ where: { id: mediaId, userId }, select: { id: true, kind: true } })
+    : null;
+  if (!media) throw new AppError(400, 'Arquivo não encontrado na sua biblioteca.');
+  if (kind === 'cobranca' && media.kind !== 'document') throw new AppError(400, 'Na cobrança só é possível anexar documentos (PDF, Word, Excel...).');
+  return media.id;
 }
 
 async function resolveInstanceId(userId, value) {
@@ -105,9 +116,10 @@ router.post('/', async (req, res) => {
     if (!occ) throw new AppError(400, PAST_MSG);
   }
   const contact = await resolveContact(req.user.id, req.body);
+  const mediaId = await resolveMediaId(req.user.id, kind, f.mediaId);
 
   const base = {
-    userId: req.user.id, contactId: contact.id, instanceId, kind, recurrence: f.recurrence, amountCents: f.amountCents,
+    userId: req.user.id, contactId: contact.id, instanceId, mediaId, kind, recurrence: f.recurrence, amountCents: f.amountCents,
     text: f.text, extra: f.extra, dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
   };
 
@@ -125,7 +137,7 @@ router.post('/', async (req, res) => {
   const { text, extra } = renderFor(created, contact, f.dueDate, req.user);
   let result;
   try {
-    result = await deliver(instance, contact.phone, text, extra);
+    result = await deliver(instance, contact.phone, text, extra, await loadMedia(created));
   } catch (e) {
     await logMessage({ schedule: created, contact, instanceName: instance.name, status: 'failed', error: e.message, automatic: false });
     await prisma.schedule.delete({ where: { id: created.id } });
@@ -150,12 +162,13 @@ router.patch('/:id', async (req, res) => {
 
   const hasContact = (req.body.contactId != null && req.body.contactId !== '') || req.body.newContact;
   const contact = hasContact ? await resolveContact(req.user.id, req.body) : null;
+  const mediaId = await resolveMediaId(req.user.id, current.kind, f.mediaId);
 
   const s = await prisma.schedule.update({
     where: { id: current.id },
     data: {
       ...(contact ? { contactId: contact.id } : {}),
-      instanceId, recurrence: f.recurrence, amountCents: f.amountCents, text: f.text, extra: f.extra,
+      instanceId, mediaId, recurrence: f.recurrence, amountCents: f.amountCents, text: f.text, extra: f.extra,
       dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
       nextDueDate: occ?.nextDueDate ?? null, nextRunAt: occ?.nextRunAt ?? null,
       status: paused ? 'pausada' : 'ativa', attempts: 0, lastError: null,
@@ -234,7 +247,7 @@ router.post('/:id/send-now', async (req, res) => {
   const { text, extra } = renderFor(s, s.contact, s.nextDueDate ?? s.dueDate, req.user);
   let result;
   try {
-    result = await deliver(instance, s.contact.phone, text, extra);
+    result = await deliver(instance, s.contact.phone, text, extra, await loadMedia(s));
   } catch (e) {
     await logMessage({ schedule: s, contact: s.contact, instanceName: instance.name, status: 'failed', error: e.message, automatic: false });
     throw e;

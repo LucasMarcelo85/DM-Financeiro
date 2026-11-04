@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import ContactPicker, { clientPayload, clientReady } from '../components/ContactPicker.jsx';
 import Icon from '../components/Icon.jsx';
 import Lamp from '../components/Lamp.jsx';
+import MediaPicker from '../components/MediaPicker.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
 import { addDaysISO, centsToMasked, isoDay, isoToBR, maskMoney, moneyToCents, todayISO } from '../lib/format.js';
@@ -45,6 +46,7 @@ export default function ScheduleForm({ kind }) {
   const [sendTime, setSendTime] = useState('09:00');
   const [text, setText] = useState(cfg.template);
   const [extra, setExtra] = useState('');
+  const [mediaId, setMediaId] = useState(null);
   const [instanceId, setInstanceId] = useState('');
   const [status, setStatus] = useState('ativa');
   const [busy, setBusy] = useState(false);
@@ -56,7 +58,7 @@ export default function ScheduleForm({ kind }) {
         setClient({ id: s.contact.id, name: s.contact.name, phone: s.contact.phone });
         setAmount(s.amountCents != null ? centsToMasked(s.amountCents) : '');
         setRecurrence(s.recurrence); setDueDate(s.dueDate); setDaysBefore(s.daysBefore); setSendTime(s.sendTime);
-        setText(s.text); setExtra(s.extra || ''); setInstanceId(s.instanceId ? String(s.instanceId) : ''); setStatus(s.status);
+        setText(s.text); setExtra(s.extra || ''); setMediaId(s.mediaId ?? null); setInstanceId(s.instanceId ? String(s.instanceId) : ''); setStatus(s.status);
         setLoading(false);
       }).catch((e) => { toast(e.message, 'error'); navigate(cfg.route, { replace: true }); });
     } else if (params.get('cliente')) {
@@ -88,7 +90,7 @@ export default function ScheduleForm({ kind }) {
     if (!ready || busy) return;
     setBusy(true);
     const payload = {
-      kind, recurrence, sendMode, dueDate, daysBefore, sendTime, text, extra,
+      kind, recurrence, sendMode, dueDate, daysBefore, sendTime, text, extra, mediaId,
       instanceId: instanceId || null, amountCents: kind === 'cobranca' ? money : undefined, ...clientPayload(client),
     };
     try {
@@ -213,6 +215,7 @@ export default function ScheduleForm({ kind }) {
               <input className="input" value={extra} onChange={(e) => setExtra(e.target.value)} placeholder="https://... ou chave Pix" maxLength={1000} autoComplete="off" />
               <small>Vai em uma segunda mensagem, só com o link ou a chave, para o cliente copiar e colar com um toque.</small>
             </label>
+            <MediaPicker value={mediaId} onChange={setMediaId} onlyDocuments={kind === 'cobranca'} />
           </section>
 
           <div className="form-actions">

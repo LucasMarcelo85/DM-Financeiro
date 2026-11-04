@@ -56,6 +56,8 @@ export const scheduleDTO = (s) => ({
   extra: s.extra,
   dueDate: toISODate(s.dueDate),
   nextDueDate: s.nextDueDate ? toISODate(s.nextDueDate) : null,
+  mediaId: s.mediaId ?? null,
+  media: s.media ? { id: s.media.id, name: s.media.name, kind: s.media.kind } : null,
   daysBefore: s.daysBefore,
   sendTime: s.sendTime,
   nextRunAt: ms(s.nextRunAt),

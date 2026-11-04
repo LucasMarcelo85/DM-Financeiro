@@ -11,6 +11,7 @@ import { isReservedSlug, isValidSlug, slugify } from '../utils/slug.js';
 import { ensureDefaultStockFlow } from '../services/inventory.js';
 import * as whatsapp from '../services/whatsapp.js';
 import { cleanActions, readLimits, LIMIT_KEYS, MAX_LIMIT } from '../services/app-access.js';
+import { WORKSPACE_EMAIL_SUFFIX } from '../services/workspace.js';
 
 // Lojas extras da conta. Cada loja tem site, produtos, pedidos e domínio próprios.
 const router = Router();
@@ -107,6 +108,7 @@ router.delete('/:id', async (req, res) => {
     prisma.product.deleteMany({ where: { userId: req.user.id, storeId: store.id } }),
     prisma.portfolio.deleteMany({ where: { userId: req.user.id, storeId: store.id } }),
     prisma.store.delete({ where: { id: store.id } }),
+    prisma.user.deleteMany({ where: { email: `ws-${store.id}${WORKSPACE_EMAIL_SUFFIX}` } }),
   ]);
   if (store.customDomain) {
     forgetDomain(store.customDomain);
@@ -177,11 +179,18 @@ router.post('/:id/domain/check', async (req, res) => {
 });
 
 // ---------- Aplicativo do lojista ----------
-const APP_PERMS = ['produtos', 'estoque', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'auditoria'];
+const APP_PERMS = ['whatsapp', 'contatos', 'lembretes', 'cobrancas', 'contratos', 'auditoria', 'portfolio', 'produtos', 'estoque', 'pedidos', 'clientes', 'arquivados', 'estrategia', 'pdv', 'api', 'entregas', 'ia'];
 const availablePerms = (user) => {
   const limits = limitsFor(user);
   const tabs = limits.tabs;
   return APP_PERMS.filter((perm) => {
+    if (perm === 'whatsapp') return tabs.includes('whatsapp') && limits.instances > 0;
+    if (perm === 'contatos') return tabs.includes('clientes');
+    if (perm === 'lembretes') return tabs.includes('lembretes');
+    if (perm === 'cobrancas') return tabs.includes('cobrancas');
+    if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
+    if (perm === 'portfolio') return tabs.includes('portfolio') && limits.portfolios > 0;
+    if (perm === 'ia') return tabs.includes('ia');
     if (perm === 'produtos') return tabs.includes('produtos') && limits.catalogProducts > 0;
     if (perm === 'pdv') return tabs.includes('pedidos') && limits.catalogProducts > 0;
     if (perm === 'pedidos' || perm === 'clientes' || perm === 'arquivados' || perm === 'estrategia') return tabs.includes('pedidos');
@@ -305,6 +314,16 @@ router.put('/:id/app', async (req, res) => {
       const n = Number(raw[key]);
       if (!Number.isInteger(n) || n < 0 || n > MAX_LIMIT) throw new AppError(400, 'Os limites do app precisam ser números inteiros maiores ou iguais a zero.');
       extraLimits[key] = n;
+    }
+    // O que o dono reparte com os apps sai do limite do plano dele.
+    const shared = [['wsInstances', 'instances', 'conexões de WhatsApp'], ['contracts', 'contracts', 'contratos'], ['portfolios', 'portfolios', 'portfólios']];
+    const siblings = await prisma.store.findMany({ where: { userId: req.user.id, id: { not: store.id } }, select: { appLimits: true } });
+    for (const [key, planKey, label] of shared) {
+      const allocated = siblings.reduce((sum, s) => sum + (readLimits(s)[key] || 0), 0);
+      const room = Math.max(0, limits[planKey] - allocated);
+      if ((extraLimits[key] || 0) > room) {
+        throw new AppError(400, `Você só pode repartir ${room} ${label} com este app (o restante já está em uso por outros apps ou pelo seu plano).`);
+      }
     }
   }
   if (req.body?.appNotifications !== undefined) {

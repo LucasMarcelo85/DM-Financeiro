@@ -5,59 +5,47 @@ import { useToast } from './Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
 
 const PERM_LABELS = [
+  ['whatsapp', 'WhatsApp (conexões do app)'],
+  ['contatos', 'Clientes (contatos)'],
+  ['lembretes', 'Lembretes'],
+  ['cobrancas', 'Cobranças'],
+  ['contratos', 'Contratos'],
+  ['auditoria', 'Auditoria e conversas WhatsApp'],
+  ['portfolio', 'Portfólio (o app edita a própria página)'],
   ['produtos', 'Produtos (cadastrar, editar e desativar)'],
   ['estoque', 'Estoque e movimentações'],
   ['pedidos', 'Pedidos'],
-  ['clientes', 'Clientes'],
+  ['clientes', 'Clientes dos pedidos'],
   ['arquivados', 'Arquivados'],
   ['estrategia', 'Estratégia de vendas e regiões'],
   ['pdv', 'Frente de caixa (PDV)'],
+  ['entregas', 'Entregas e frete'],
   ['api', 'API e webhooks da loja'],
-  ['entregas', 'Entregas, frete e WhatsApp'],
-  ['auditoria', 'Auditoria e conversas WhatsApp'],
+  ['ia', 'IA (o usuário do app usa o próprio token)'],
 ];
 const ALL_PERMS = PERM_LABELS.map(([k]) => k);
-const ACTION_LABELS = [['ver', 'Ver'], ['criar', 'Criar'], ['editar', 'Editar'], ['excluir', 'Excluir']];
 const LIMIT_FIELDS = [
+  ['wsInstances', 'Conexões de WhatsApp do app (menus WhatsApp, lembretes e cobranças)'],
+  ['contracts', 'Contratos'],
+  ['portfolios', 'Páginas de portfólio'],
   ['apiTokens', 'Tokens de API'],
   ['aiAgents', 'Agentes de IA'],
-  ['aiResponses', 'Respostas de IA por mês'],
-  ['aiContacts', 'Contatos de IA'],
 ];
 
-// Cada menu liberado tem suas ações; "Ver" liga/desliga o menu e as demais ações dependem dele.
-function PermMatrix({ labels, perms, actions, disabled, onChange }) {
-  const current = (key) => (perms.includes(key) ? (actions?.[key] || ACTION_LABELS.map(([a]) => a)) : []);
-  function toggle(key, action, on) {
-    let list = current(key);
-    if (action === 'ver') list = on ? ['ver'] : [];
-    else list = on ? [...new Set([...list, 'ver', action])] : list.filter((a) => a !== action);
-    const next = {};
-    const nextPerms = [];
-    labels.forEach(([k]) => {
-      const l = k === key ? list : current(k);
-      if (l.length) { nextPerms.push(k); next[k] = l; }
-    });
-    onChange({ perms: nextPerms, actions: next });
+// Cada menu que o dono tem pode ser liberado inteiro para o acesso; não há ver/criar/editar/excluir separados.
+function PermMatrix({ labels, perms, disabled, onChange }) {
+  function toggle(key, on) {
+    const next = labels.map(([k]) => k).filter((k) => (k === key ? on : perms.includes(k)));
+    onChange({ perms: next, actions: {} });
   }
   return (
-    <div style={{ overflowX: 'auto' }}>
-      <table className="table" style={{ width: '100%', fontSize: 13 }}>
-        <thead><tr><th style={{ textAlign: 'left' }}>Menu</th>{ACTION_LABELS.map(([a, l]) => <th key={a}>{l}</th>)}</tr></thead>
-        <tbody>
-          {labels.map(([key, label]) => (
-            <tr key={key}>
-              <td>{label}</td>
-              {ACTION_LABELS.map(([a, l]) => (
-                <td key={a} style={{ textAlign: 'center' }}>
-                  <input type="checkbox" disabled={disabled} aria-label={`${l} em ${label}`}
-                    checked={current(key).includes(a)} onChange={(e) => toggle(key, a, e.target.checked)} />
-                </td>
-              ))}
-            </tr>
-          ))}
-        </tbody>
-      </table>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(15rem, 1fr))', gap: '6px 14px' }}>
+      {labels.map(([key, label]) => (
+        <label key={key} className="small" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
+          <input type="checkbox" disabled={disabled} checked={perms.includes(key)} onChange={(e) => toggle(key, e.target.checked)} />
+          {label}
+        </label>
+      ))}
     </div>
   );
 }
@@ -236,9 +224,9 @@ export default function StoreAppModal({ storeId, onClose }) {
           {data.availablePerms.includes('auditoria') && !cfg.auditEnabled && data.maxAppAuditInstances < 1 && <p className="muted small">Não há vagas de auditoria disponíveis. Reduza o limite de outro app ou amplie o limite da conta.</p>}
           <section className="banner" style={{ display: 'grid', gap: 10 }}>
             <strong>Limites repartidos com este app</strong>
-            <small className="muted">Deixe em branco para não aplicar teto. Vagas de WhatsApp saem do limite do seu plano; os demais limites valem só para este app.</small>
+            <small className="muted">Cada app tem dados próprios (clientes, lembretes, contratos, portfólio e IA). Eles saem do limite do seu plano e nunca passam dele. Em branco = sem permissão para o recurso (WhatsApp, contratos e portfólio) ou sem teto (demais). Na IA, quem usa o app informa o próprio token.</small>
             <label style={{ display: 'grid', gap: 4 }}>
-              <span>WhatsApps de envio (disponível: {data.maxAppInstances})</span>
+              <span>WhatsApps de envio de pedidos (disponível: {data.maxAppInstances})</span>
               <input className="input" type="number" min="0" max={data.maxAppInstances} step="1" value={cfg.limits.instances ?? ''}
                 onChange={(e) => setCfg({ ...cfg, limits: { ...cfg.limits, instances: e.target.value === '' ? '' : Number(e.target.value) } })} aria-label="WhatsApps de envio do app" />
             </label>
@@ -276,7 +264,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                     <button className="btn btn-ghost btn-sm" disabled={busy} onClick={() => { if (window.confirm(`Excluir o acesso de ${u.name}?`)) run(() => api.del(`/stores/${storeId}/app/users/${u.id}`), 'Acesso excluído.'); }}>Excluir</button>
                   </span>
                 </div>
-                <PermMatrix labels={permissionLabels} perms={u.perms} actions={u.actions} disabled={busy}
+                <PermMatrix labels={permissionLabels} perms={u.perms} disabled={busy}
                   onChange={({ perms, actions }) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms, actions }), 'Permissões salvas.')} />
                 <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', alignItems: 'center' }}>
                   <strong className="small">Fluxos de estoque</strong>
@@ -301,7 +289,7 @@ export default function StoreAppModal({ storeId, onClose }) {
             <input className="input" value={nu.login} onChange={(e) => setNu({ ...nu, login: e.target.value })} placeholder="Usuário de acesso" maxLength={80} autoCapitalize="none" aria-label="Usuário de acesso" />
             <p className="muted small" style={{ margin: 0 }}>Uma senha provisória será gerada após criar o acesso. O usuário deverá cadastrar uma senha nova ao entrar.</p>
             <strong className="small">O que este acesso pode usar:</strong>
-            <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))} actions={nu.actions}
+            <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))}
               onChange={({ perms, actions }) => setNu({ ...nu, perms, actions })} />
             <strong className="small">Fluxos de estoque permitidos:</strong>
             <div style={{ display: 'flex', gap: '4px 14px', flexWrap: 'wrap' }}>

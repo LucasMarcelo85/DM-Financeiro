@@ -268,6 +268,7 @@ textarea.input { resize: vertical; line-height: 1.5; }
 /* ---------- Estatísticas e blocos do início ---------- */
 .head-row { display: flex; align-items: flex-end; justify-content: space-between; gap: 1rem; flex-wrap: wrap; }
 .head-row > div { display: grid; gap: 0.35rem; }
+.head-row > .btn-group { display: flex; flex-direction: row; flex-wrap: wrap; justify-content: flex-end; }
 .stats-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 1rem; }
 @media (min-width: 78rem) { .stats-grid { grid-template-columns: repeat(4, minmax(0, 1fr)); } }
 @media (max-width: 30rem) { .stats-grid { grid-template-columns: minmax(0, 1fr); } }
@@ -1585,6 +1586,16 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .cs-payment-row > label { flex: 1; }
 .cs-infinitepay-brand { display: inline-flex; align-items: center; gap: 0.55rem; color: var(--text); }
 .cs-infinitepay-brand svg { width: 2rem; height: 1.35rem; }
+.cs-infinitepay-help { display: flex; align-items: center; gap: .8rem; }
+.cs-infinitepay-help img { border-radius: 50%; flex: 0 0 auto; object-fit: cover; }
+.cs-infinitepay-help p, .cs-infinitepay-signup { margin: 0; }
+.media-picker { display: grid; gap: .5rem; }
+.media-list { display: flex; flex-wrap: wrap; gap: .4rem; max-height: 11rem; overflow: auto; }
+.media-item { display: inline-flex; align-items: center; border: 1px solid var(--line); border-radius: 10px; background: #fff; }
+.media-item > button, button.media-item { border: 0; background: transparent; padding: .4rem .65rem; font: inherit; cursor: pointer; text-align: left; }
+.media-item small { color: var(--muted); margin-left: .3rem; }
+.media-item.is-on { border-color: var(--brand, #f2a33a); background: color-mix(in srgb, var(--brand, #f2a33a) 10%, #fff); }
+.media-del { border: 0; background: transparent; padding: .4rem .6rem; cursor: pointer; color: var(--muted); }
 .cs-payment-row > span small { max-width: 34rem; }
 .cat-payment-label { display: inline-flex; align-items: center; flex-wrap: wrap; gap: 0.35rem; }
 @media (max-width: 520px) {
@@ -1811,13 +1822,12 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .inv-table tr.is-empty { color: #94a3b8; }
 .inv-qty { width: 5.5rem; padding: .3rem .5rem; }
 .inv-actionbar { display: flex; justify-content: space-between; align-items: center; gap: 1rem; flex-wrap: wrap; padding: .7rem .9rem; border: 1px solid color-mix(in srgb, var(--brand, #f2a33a) 35%, var(--line)); border-radius: 12px; background: color-mix(in srgb, var(--brand, #f2a33a) 5%, #fff); }
-.inv-flows { border: 1px solid var(--line); border-radius: 10px; padding: .6rem .9rem; max-height: 40vh; overflow: auto; }
-.inv-board > .inv-flows { flex: 0 1 auto; min-height: 3rem; }
-.inv-board > .inv-flows[open] { flex: 1 1 22rem; max-height: none; min-height: 16rem; }
-.inv-board > .inv-table-wrap { min-height: 8rem; }
-.inv-flows .inventory-create { margin-top: .6rem; }
-.inv-flows summary { cursor: pointer; font-weight: 650; }
-.inv-flows[open] > * + * { margin-top: .6rem; }
+.inv-flows { display: grid; gap: .8rem; align-content: start; overflow: auto; min-height: 0; flex: 1 1 auto; }
+.inv-modes { display: flex; gap: .4rem; }
+.ws-fullscreen { position: fixed; inset: 0; z-index: 60; overflow: auto; background: var(--bg, #fff); }
+.inv-modes button { border: 1px solid var(--line); background: #fff; border-radius: 10px; padding: .45rem .9rem; font: inherit; font-weight: 650; cursor: pointer; }
+.inv-modes button.is-on { border-color: var(--brand, #f2a33a); background: color-mix(in srgb, var(--brand, #f2a33a) 12%, #fff); }
+.inv-flows .inventory-create { margin-top: 0; }
 .shop-team { display: grid; gap: 1rem; }
 .shop-team > header h1 { margin: 0; }
 .shop-team > header p { margin: 0.35rem 0 0; }

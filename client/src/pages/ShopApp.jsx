@@ -1,6 +1,7 @@
 import { useEffect, useState } from 'react';
 import { useParams } from 'react-router-dom';
-import { api, getShopToken, setShopToken } from '../api.js';
+import { api, getShopToken, setShopToken, setWorkspaceMode } from '../api.js';
+import WorkspaceSection, { WORKSPACE_TABS } from '../components/WorkspaceSection.jsx';
 import { useToast } from '../components/Toast.jsx';
 import Modal from '../components/Modal.jsx';
 import Products from './Products.jsx';
@@ -18,6 +19,13 @@ const TABS = [
   ['entregas', 'Entregas e WhatsApp'],
   ['api', 'API e webhooks'],
   ['auditoria', 'Auditoria'],
+  ['whatsapp', 'WhatsApp'],
+  ['contatos', 'Clientes'],
+  ['lembretes', 'Lembretes'],
+  ['cobrancas', 'Cobranças'],
+  ['contratos', 'Contratos'],
+  ['portfolio', 'Portfólio'],
+  ['ia', 'IA'],
 ];
 const tabsFor = (perms = [], isPrimary = false) => TABS.filter(([key]) => key === 'produtos'
   ? perms.includes(key) || perms.includes('estoque')
@@ -209,6 +217,13 @@ export default function ShopApp() {
     ['entregas', 'Entregas e WhatsApp'],
     ['api', 'API e webhooks'],
     ['auditoria', 'Auditoria'],
+    ['whatsapp', 'WhatsApp'],
+    ['contatos', 'Clientes (contatos)'],
+    ['lembretes', 'Lembretes'],
+    ['cobrancas', 'Cobranças'],
+    ['contratos', 'Contratos'],
+    ['portfolio', 'Portfólio (página própria)'],
+    ['ia', 'IA'],
   ];
 
   function TeamManagement() {
@@ -287,6 +302,7 @@ export default function ShopApp() {
 
   const tabs = tabsFor(perms || [], isPrimary);
   const otherTab = tabs.find(([key]) => key !== 'pdv')?.[0];
+  setWorkspaceMode(WORKSPACE_TABS.includes(tab));
 
   return (
     <>
@@ -309,6 +325,7 @@ export default function ShopApp() {
                 : tab === 'pdv' ? <Orders key="shop-pdv" allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
                 : tab === 'api' ? <Api />
                   : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
+                    : WORKSPACE_TABS.includes(tab) ? <WorkspaceSection key={tab} area={tab} />
                     : tab === 'entregas' ? <>
                       <section className="card">
                         <h2>WhatsApp conectado a este site</h2>
