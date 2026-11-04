@@ -6,7 +6,7 @@ import { CatalogScope, CatGridView, CatSearchView } from './Catalog.jsx';
 import { ICON_COMPONENTS, ICONS } from '../../lib/portfolio/icons.js';
 import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
 import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/model.js';
-import { makePortfolioCodeDocument } from '../../lib/portfolio/portfolioCode.js';
+import { preparePortfolioCode } from '../../lib/portfolio/portfolioCode.js';
 import { brl } from '../../lib/format.js';
 
 // Desenha a página do portfólio (formato v2). O mesmo código serve ao editor, à visualização e à página pública:
@@ -470,6 +470,32 @@ function ProductsView({ el, device, products, mode }) {
 
 // ---------------------------------------------------------------- elemento completo (posição, animações, link)
 const FULL_BLEED = 3000; // elementos de largura total passam das bordas do desenho; a página corta o excesso
+function PortfolioCodeFrame({ code, mode, title }) {
+  const frameRef = useRef(null);
+  const safeCode = useMemo(() => preparePortfolioCode(mode === 'edit' ? { ...code, script: '' } : code), [code, mode]);
+  const latestCode = useRef(safeCode);
+  latestCode.current = safeCode;
+
+  function sendCode() {
+    frameRef.current?.contentWindow?.postMessage({ type: 'portfolio-code', code: latestCode.current }, '*');
+  }
+
+  useEffect(() => { sendCode(); }, [safeCode]);
+
+  return (
+    <iframe
+      ref={frameRef}
+      title={title}
+      src="/api/public/portfolio-code-frame"
+      sandbox="allow-scripts"
+      referrerPolicy="no-referrer"
+      loading="lazy"
+      onLoad={sendCode}
+      style={{ display: 'block', width: '100%', height: '100%', border: 0, pointerEvents: mode === 'edit' ? 'none' : 'auto' }}
+    />
+  );
+}
+
 function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink, onCart, cartCount, replay = 0, layoutBox, fixedStyle }) {
   const box = layoutBox || boxOf(el, device);
   const ref = useRef(null);
@@ -505,16 +531,7 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
   else if (el.t === 'modal') content = <ModalToolView el={el} mode={mode} shop={shop} onCart={onCart} />;
   else if (el.t === 'custom') {
     try {
-      content = (
-        <iframe
-          title={el.name || 'Conteúdo HTML personalizado'}
-          srcDoc={makePortfolioCodeDocument(mode === 'edit' ? { ...el.code, script: '' } : el.code)}
-          sandbox="allow-scripts"
-          referrerPolicy="no-referrer"
-          loading="lazy"
-          style={{ display: 'block', width: '100%', height: '100%', border: 0, pointerEvents: mode === 'edit' ? 'none' : 'auto' }}
-        />
-      );
+      content = <PortfolioCodeFrame code={el.code} mode={mode} title={el.name || 'Conteúdo HTML personalizado'} />;
     } catch (error) {
       content = mode === 'edit' ? <div className="pv-ph"><span>CSS inválido: {error.message}</span></div> : null;
     }

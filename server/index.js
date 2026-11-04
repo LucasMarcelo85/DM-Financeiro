@@ -92,7 +92,7 @@ const PIXEL_CSP = [
   "style-src 'self' 'unsafe-inline' https://fonts.googleapis.com",
   "font-src 'self' https://fonts.gstatic.com",
   "img-src 'self' data: https://www.facebook.com https://*.facebook.com https://www.google-analytics.com https://*.google-analytics.com https://www.googletagmanager.com https://*.google.com https://*.doubleclick.net https://analytics.tiktok.com",
-  "frame-src https://www.youtube-nocookie.com https://player.vimeo.com",
+  "frame-src 'self' https://www.youtube-nocookie.com https://player.vimeo.com",
   "media-src 'self' https:",
   "connect-src 'self' https://www.facebook.com https://*.facebook.com https://*.google-analytics.com https://*.analytics.google.com https://www.googletagmanager.com https://*.doubleclick.net https://analytics.tiktok.com https://*.tiktok.com",
   "frame-ancestors 'none'",
@@ -113,7 +113,7 @@ app.use(
         'font-src': ["'self'", 'https://fonts.gstatic.com'],
         'img-src': ["'self'", 'data:', 'blob:'],
         // Vídeos do portfólio: YouTube/Vimeo (embutidos) ou arquivo direto por https.
-        'frame-src': ['https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
+        'frame-src': ["'self'", 'https://www.youtube-nocookie.com', 'https://player.vimeo.com'],
         'media-src': ["'self'", 'https:'],
         'connect-src': ["'self'"],
         'frame-ancestors': ["'none'"],
@@ -121,6 +121,39 @@ app.use(
     },
   })
 );
+const PORTFOLIO_CODE_FRAME = `<!doctype html>
+<html lang="pt-BR">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,initial-scale=1">
+  <style>*{box-sizing:border-box}html,body{width:100%;height:100%;min-height:100%;margin:0;overflow:auto}body{font-family:Arial,sans-serif}</style>
+  <script>
+    window.addEventListener('message', (event) => {
+      if (event.source !== window.parent || event.data?.type !== 'portfolio-code' || !event.data.code) return;
+      const { html, css, script } = event.data.code;
+      document.body.innerHTML = typeof html === 'string' ? html : '';
+      document.querySelectorAll('[data-portfolio-code-style]').forEach((node) => node.remove());
+      const style = document.createElement('style');
+      style.dataset.portfolioCodeStyle = '';
+      style.textContent = typeof css === 'string' ? css : '';
+      document.head.appendChild(style);
+      document.querySelectorAll('[data-portfolio-code-script]').forEach((node) => node.remove());
+      if (typeof script === 'string' && script) {
+        const node = document.createElement('script');
+        node.dataset.portfolioCodeScript = '';
+        node.textContent = script;
+        document.body.appendChild(node);
+      }
+    });
+  </script>
+</head>
+<body></body>
+</html>`;
+app.get('/api/public/portfolio-code-frame', (_req, res) => res
+  .set('Content-Security-Policy', "default-src 'none'; script-src 'unsafe-inline'; style-src 'unsafe-inline'; img-src data: blob: https:; media-src data: blob: https:; connect-src 'none'; form-action 'none'; base-uri 'none'; object-src 'none'; frame-src 'none'; worker-src 'none'; font-src data:; sandbox allow-scripts")
+  .set('Cache-Control', 'no-store')
+  .type('html')
+  .send(PORTFOLIO_CODE_FRAME));
 // Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
 const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
