@@ -68,6 +68,15 @@ async function applyChatName(inst, jid, name) {
   publish(inst.userId, { type: 'chat', chat: chatDTO(updated) }, inst.auditScope);
 }
 
+async function learnPhone(inst, jid, phone) {
+  if (!phone || !jid || jid.endsWith('@g.us')) return null;
+  const chat = await prisma.auditChat.findUnique({ where: { instanceId_jid: { instanceId: inst.id, jid } } });
+  if (!chat || chat.phone === phone) return chat;
+  const updated = await prisma.auditChat.update({ where: { id: chat.id }, data: { phone } });
+  publish(inst.userId, { type: 'chat', chat: chatDTO(updated) }, inst.auditScope);
+  return updated;
+}
+
 // Guarda o nome que o WhatsApp mostra para uma pessoa (contato ou participante de grupo).
 export async function learnName(inst, jid, rawName) {
   const name = String(rawName || '').replace(/\s+/g, ' ').trim().slice(0, 120);
@@ -183,6 +192,9 @@ export async function recordMessage(inst, m, { live = true } = {}) {
       if (e.code !== 'P2002') throw e; // duas mensagens criaram a conversa ao mesmo tempo
       chat = await prisma.auditChat.findUnique({ where: key });
     }
+  }
+  if (!m.isGroup && m.phone && chat.phone !== m.phone) {
+    chat = await learnPhone(inst, m.jid, m.phone) || chat;
   }
 
   // Mensagem recebida só é "não lida" se for nova e o dono não respondeu depois dela.
@@ -308,6 +320,7 @@ export const toMs = (v) => {
 };
 
 const phoneOfJid = (jid) => (jid && jid.endsWith('@s.whatsapp.net') ? onlyDigits(jid.split('@')[0]) : '');
+const phoneOfMessageKey = (key) => phoneOfJid(key?.remoteJidAlt) || phoneOfJid(key?.participantAlt);
 
 // Transforma uma mensagem da Evolution no formato interno (ou null para ignorar).
 export function fromEvolution(item) {
@@ -321,7 +334,7 @@ export function fromEvolution(item) {
   const participant = key.participantAlt?.endsWith('@s.whatsapp.net') ? key.participantAlt : key.participant || null;
   return {
     jid, isGroup, fromMe, externalId: key.id, ...content, ts: toMs(item.messageTimestamp),
-    phone: isGroup ? '' : phoneOfJid(jid.endsWith('@s.whatsapp.net') ? jid : key.remoteJidAlt),
+    phone: isGroup ? '' : phoneOfJid(jid) || phoneOfMessageKey(key),
     chatName: !fromMe && !isGroup ? item.pushName || null : null,
     sender: isGroup ? (fromMe ? 'Você' : item.pushName || null) : null,
     senderJid: isGroup && !fromMe ? participant : null,
@@ -376,6 +389,7 @@ export async function ingestEvolution(inst, event, data) {
 
 // ---------- Sincronização (backfill + busca automática) ----------
 const syncs = new Map(); // conexão -> { running, done, total, imported, error, finishedAt }
+const phoneRepairAttempts = new Set();
 export const syncState = (id) => syncs.get(id) || null;
 
 async function refreshSummary(chatId) {
@@ -399,7 +413,7 @@ export async function syncInstance(inst, { deep = false } = {}) {
   const touched = new Set();
   try {
     const remote = (await evo.findChats(inst.name))
-      .map((c) => ({ jid: c.remoteJid || c.id, name: c.name || c.subject || null, updated: Date.parse(c.updatedAt) || (c.lastMessage?.messageTimestamp ? toMs(c.lastMessage.messageTimestamp) : 0), last: c.lastMessage || null }))
+      .map((c) => ({ jid: c.remoteJid || c.id, name: c.name || c.subject || null, phone: phoneOfMessageKey(c.lastMessage?.key), updated: Date.parse(c.updatedAt) || (c.lastMessage?.messageTimestamp ? toMs(c.lastMessage.messageTimestamp) : 0), last: c.lastMessage || null }))
       .filter((c) => c.jid && !c.jid.endsWith('@broadcast') && !c.jid.endsWith('@newsletter'))
       .sort((a, b) => b.updated - a.updated)
       .slice(0, 1000);
@@ -412,11 +426,16 @@ export async function syncInstance(inst, { deep = false } = {}) {
       } catch { /* Evolution sem esse endpoint: o nome vem pelos eventos */ }
     }
 
-    const local = new Map((await prisma.auditChat.findMany({ where: { instanceId: inst.id }, select: { jid: true, lastMessageAt: true } })).map((c) => [c.jid, c.lastMessageAt.getTime()]));
+    const local = new Map((await prisma.auditChat.findMany({ where: { instanceId: inst.id }, select: { jid: true, phone: true, lastMessageAt: true } }))
+      .map((c) => [c.jid, { lastMessageAt: c.lastMessageAt.getTime(), phone: c.phone }]));
     // Conversas que só têm mensagens além do prazo de retenção (e que nem existem aqui) não valem a busca.
     const cutoffMs = retentionCutoff();
     const recent = (c) => local.has(c.jid) || !c.updated || c.updated >= cutoffMs;
-    const todo = (deep ? remote : remote.filter((c) => !local.has(c.jid) || c.updated > local.get(c.jid) + 500)).filter(recent);
+    const todo = (deep ? remote : remote.filter((c) => {
+      const current = local.get(c.jid);
+      return !current || c.updated > current.lastMessageAt + 500
+        || (!current.phone && !phoneRepairAttempts.has(`${inst.id}:${c.jid}`));
+    })).filter(recent);
     state.total = todo.length;
     emit();
 
@@ -431,6 +450,8 @@ export async function syncInstance(inst, { deep = false } = {}) {
           // Nova de verdade = chegou depois da última busca (a 1ª busca é histórico: tudo lido).
           if (await recordMessage(full, m, { live: since !== null && m.ts > since - 120_000 })) state.imported += 1;
         }
+        if (c.phone && !c.jid.endsWith('@g.us')) await learnPhone(inst, c.jid, c.phone);
+        if (!c.jid.endsWith('@g.us')) phoneRepairAttempts.add(`${inst.id}:${c.jid}`);
         touched.add(c.jid);
         if (c.name && c.jid.endsWith('@g.us')) await learnGroupName(full, c.jid, c.name);
       } catch (e) {
