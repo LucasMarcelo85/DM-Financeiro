@@ -196,7 +196,7 @@ function cleanPosLayout(value = {}) {
   return Object.fromEntries(POS_LAYOUT_FIELDS.map((field) => {
     const item = source[field] && typeof source[field] === 'object' ? source[field] : {};
     return [field, {
-      width: item.width === 'half' ? 'half' : 'full',
+      width: Number.isInteger(item.width) ? Math.min(12, Math.max(4, item.width)) : item.width === 'half' ? 6 : 12,
       size: ['compact', 'normal', 'large'].includes(item.size) ? item.size : 'normal',
     }];
   }));

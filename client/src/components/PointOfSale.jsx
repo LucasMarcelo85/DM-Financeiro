@@ -24,7 +24,7 @@ const POS_LAYOUT_FIELDS = [
   ['mixedAmount', 'Valor da primeira forma'],
   ['mixedSecond', 'Segunda forma de pagamento'],
 ];
-const DEFAULT_POS_LAYOUT = Object.fromEntries(POS_LAYOUT_FIELDS.map(([key]) => [key, { width: 'full', size: 'normal' }]));
+const DEFAULT_POS_LAYOUT = Object.fromEntries(POS_LAYOUT_FIELDS.map(([key]) => [key, { width: 12, size: 'normal' }]));
 const imageUrl = (image) => image?.url || '';
 const eligibleTier = (option, productQty, cartQty, cartCents) => option.scope === 'cart_quantity'
   ? cartQty >= (option.minQuantity || 1)
@@ -140,10 +140,61 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
       : mixedFirst === mixedSecond ? 'Escolha duas formas de pagamento diferentes.' : '';
   const changeCents = paymentBreakdown.filter((payment) => payment.method === 'dinheiro').reduce((sum, payment) => sum + Math.max(0, payment.receivedCents - payment.amountCents), 0);
 
-  const fieldStyle = (key) => ({
-    gridColumn: layout[key]?.width === 'half' ? 'span 1' : '1 / -1',
-  });
-  const fieldClass = (key) => `pos-configurable-field pos-field-size-${layout[key]?.size || 'normal'}`;
+  const activeLayout = layoutForm || layout;
+  const fieldWidth = (key) => Math.min(12, Math.max(4, Number(activeLayout[key]?.width) || (activeLayout[key]?.width === 'half' ? 6 : 12)));
+  const fieldStyle = (key) => ({ gridColumn: `span ${fieldWidth(key)}` });
+  const fieldClass = (key) => `pos-configurable-field pos-field-size-${activeLayout[key]?.size || 'normal'}`;
+  const resizeFieldByKey = (key, axis, event) => {
+    const direction = ['ArrowRight', 'ArrowDown'].includes(event.key) ? 1 : ['ArrowLeft', 'ArrowUp'].includes(event.key) ? -1 : 0;
+    if (!direction) return;
+    event.preventDefault();
+    const sizes = ['compact', 'normal', 'large'];
+    setLayoutForm((current) => {
+      if (!current) return current;
+      const field = current[key] || DEFAULT_POS_LAYOUT[key];
+      return {
+        ...current,
+        [key]: axis === 'width'
+          ? { ...field, width: Math.min(12, Math.max(4, (Number(field.width) || 12) + direction)) }
+          : { ...field, size: sizes[Math.min(2, Math.max(0, sizes.indexOf(field.size || 'normal') + direction))] },
+      };
+    });
+  };
+  const fieldResizeHandles = (key) => layoutForm ? <>
+    <span className="pos-resize-handle pos-resize-width" role="separator" aria-orientation="vertical" aria-label={`Arraste para ajustar a largura de ${POS_LAYOUT_FIELDS.find(([field]) => field === key)?.[1]}`} title="Arraste para ajustar a largura" tabIndex={0} onPointerDown={(event) => resizeField(key, 'width', event)} onKeyDown={(event) => resizeFieldByKey(key, 'width', event)} />
+    <span className="pos-resize-handle pos-resize-size" role="separator" aria-orientation="horizontal" aria-label={`Arraste para ajustar a altura de ${POS_LAYOUT_FIELDS.find(([field]) => field === key)?.[1]}`} title="Arraste para ajustar a altura" tabIndex={0} onPointerDown={(event) => resizeField(key, 'size', event)} onKeyDown={(event) => resizeFieldByKey(key, 'size', event)} />
+  </> : null;
+
+  function resizeField(key, axis, event) {
+    if (!layoutForm) return;
+    event.preventDefault();
+    event.stopPropagation();
+    const startY = event.clientY;
+    const field = event.currentTarget.parentElement;
+    const gridRect = field.parentElement.getBoundingClientRect();
+    const sizes = ['compact', 'normal', 'large'];
+    const initialSize = Math.max(0, sizes.indexOf(layoutForm[key]?.size || 'normal'));
+    const move = (moveEvent) => {
+      if (axis === 'width') {
+        const ratio = Math.min(1, Math.max(0, (moveEvent.clientX - gridRect.left) / gridRect.width));
+        const width = Math.min(12, Math.max(4, Math.round(ratio * 12)));
+        setLayoutForm((current) => ({ ...current, [key]: { ...current[key], width } }));
+      } else {
+        const size = sizes[Math.min(2, Math.max(0, initialSize + Math.round((moveEvent.clientY - startY) / 42)))];
+        setLayoutForm((current) => ({ ...current, [key]: { ...current[key], size } }));
+      }
+    };
+    const finish = () => {
+      window.removeEventListener('pointermove', move);
+      window.removeEventListener('pointerup', finish);
+      window.removeEventListener('pointercancel', finish);
+      document.body.classList.remove('pos-is-resizing-width', 'pos-is-resizing-size');
+    };
+    document.body.classList.add(`pos-is-resizing-${axis}`);
+    window.addEventListener('pointermove', move);
+    window.addEventListener('pointerup', finish);
+    window.addEventListener('pointercancel', finish);
+  }
 
   useEffect(() => {
     if (method === 'misto' && totalCents > 1 && (splitFirstCents < 1 || splitFirstCents >= totalCents)) {
@@ -225,8 +276,12 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
       const result = await api.put('/catalog/pos/settings', { layout: layoutForm });
       setLayout({ ...DEFAULT_POS_LAYOUT, ...(result.layout || {}) });
       setLayoutForm(null);
-      toast('Dimensões dos campos salvas.');
+      toast('Layout dos campos salvo.');
     } catch (error) { toast(error.message, 'error'); }
+  }
+
+  function cancelLayout() {
+    setLayoutForm(null);
   }
 
   async function checkout() {
@@ -306,44 +361,53 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
             </article>
           ))}
         </div>
-        <div className="pos-checkout-fields">
+        <div className={`pos-checkout-fields${layoutForm ? ' pos-layout-editing' : ''}`}>
+          {layoutForm && <p className="pos-layout-hint">Arraste a alça lateral para ajustar a largura e a inferior para ajustar a altura. Salve para manter as alterações.</p>}
           <label className={fieldClass('customerName')} style={fieldStyle('customerName')}>Cliente (opcional)
             <input className="input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Consumidor final" maxLength={120} />
+            {fieldResizeHandles('customerName')}
           </label>
           {allowCustomers && <label className={fieldClass('customerPhone')} style={fieldStyle('customerPhone')}>Telefone do cliente
             <input className="input" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="DDD + telefone" inputMode="tel" maxLength={20} />
+            {fieldResizeHandles('customerPhone')}
           </label>}
           <label className={fieldClass('notes')} style={fieldStyle('notes')}>Observações do pedido
             <textarea className="input" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={2} placeholder="Opcional" />
+            {fieldResizeHandles('notes')}
           </label>
           <div className="pos-adjustments">
-            <label className={fieldClass('discount')} style={fieldStyle('discount')}>Desconto {moneyInput(discount, setDiscount, 'Valor do desconto')}</label>
-            <label className={fieldClass('surcharge')} style={fieldStyle('surcharge')}>Acréscimo {moneyInput(surcharge, setSurcharge, 'Valor do acréscimo')}</label>
+            <label className={fieldClass('discount')} style={fieldStyle('discount')}>Desconto {moneyInput(discount, setDiscount, 'Valor do desconto')}{fieldResizeHandles('discount')}</label>
+            <label className={fieldClass('surcharge')} style={fieldStyle('surcharge')}>Acréscimo {moneyInput(surcharge, setSurcharge, 'Valor do acréscimo')}{fieldResizeHandles('surcharge')}</label>
           </div>
           <label className={fieldClass('paymentMethod')} style={fieldStyle('paymentMethod')}>Forma de pagamento
             <select className="input" value={method} onChange={(event) => changeMethod(event.target.value)}>
               {METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               <option value="misto">Pagamento misto</option>
             </select>
+            {fieldResizeHandles('paymentMethod')}
           </label>
           {method === 'misto' ? (
             <div className="pos-mixed">
               <label className={fieldClass('mixedFirst')} style={fieldStyle('mixedFirst')}>Primeira forma
                 <select className="input" value={mixedFirst} onChange={(event) => changeMixedFirst(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+                {fieldResizeHandles('mixedFirst')}
               </label>
-              <label className={fieldClass('mixedAmount')} style={fieldStyle('mixedAmount')}>Valor da primeira forma {moneyInput(mixedAmount, setMixedAmount, 'Valor da primeira forma de pagamento')}</label>
+              <label className={fieldClass('mixedAmount')} style={fieldStyle('mixedAmount')}>Valor da primeira forma {moneyInput(mixedAmount, setMixedAmount, 'Valor da primeira forma de pagamento')}{fieldResizeHandles('mixedAmount')}</label>
               <label className={fieldClass('mixedSecond')} style={fieldStyle('mixedSecond')}>Segunda forma
                 <select className="input" value={mixedSecond} onChange={(event) => changeMixedSecond(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+                {fieldResizeHandles('mixedSecond')}
               </label>
               <p className="muted">Restante: {brl(Math.max(0, totalCents - splitFirstCents))}</p>
               {splitError && <p className="form-error" role="alert">{splitError}</p>}
               {(mixedFirst === 'dinheiro' || mixedSecond === 'dinheiro') && <label className={fieldClass('cashReceived')} style={fieldStyle('cashReceived')}>Valor recebido em dinheiro (opcional)
                 {moneyInput(cashReceived, setCashReceived, 'Valor recebido em dinheiro')}
+                {fieldResizeHandles('cashReceived')}
               </label>}
             </div>
           ) : method === 'dinheiro' ? (
             <label className={fieldClass('cashReceived')} style={fieldStyle('cashReceived')}>Valor recebido (opcional)
               {moneyInput(cashReceived, setCashReceived, 'Valor recebido em dinheiro')}
+              {fieldResizeHandles('cashReceived')}
             </label>
           ) : null}
           <div className="pos-total"><span>Subtotal</span><strong>{brl(subtotalCents)}</strong></div>
@@ -361,7 +425,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     <section className="pos-page" ref={pageRef}>
       <header className="pos-header">
         <div>{onClose && <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>← Voltar</button>}<div><h1>Frente de caixa</h1><p className="muted">Venda rápida, estoque atualizado automaticamente.</p></div></div>
-        <div className="pos-header-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setLayoutForm({ ...layout })}>Campos do caixa</button><button type="button" className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>{fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => receipt && setReceiptForm({ ...receipt })} disabled={!receipt}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
+        <div className="pos-header-actions">{layoutForm ? <><button type="button" className="btn btn-ghost btn-sm" onClick={cancelLayout}>Cancelar ajuste</button><button type="button" className="btn btn-primary btn-sm" onClick={saveLayout}>Salvar campos</button></> : <button type="button" className="btn btn-ghost btn-sm" onClick={() => setLayoutForm({ ...layout })}>Arrastar para ajustar campos</button>}<button type="button" className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>{fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => receipt && setReceiptForm({ ...receipt })} disabled={!receipt}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
       </header>
       <div className="pos-layout">
         <section className="pos-products-panel">
@@ -408,30 +472,6 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
         </aside>
       </div>
       {scanning && <BarcodeScanner onDetected={scanCode} onClose={() => setScanning(false)} />}
-      {layoutForm && <Modal title="Dimensões dos campos do caixa" onClose={() => setLayoutForm(null)} wide
-        footer={<><button className="btn btn-ghost" onClick={() => setLayoutForm(null)}>Cancelar</button><button className="btn btn-primary" onClick={saveLayout}>Salvar layout</button></>}>
-        <p className="muted">Ajuste a largura e o tamanho de cada campo. O layout fica salvo separadamente para a loja atual.</p>
-        <div className="pos-layout-settings">
-          {POS_LAYOUT_FIELDS.map(([key, label]) => (
-            <fieldset key={key}>
-              <legend>{label}</legend>
-              <label>Largura
-                <select className="input" value={layoutForm[key]?.width || 'full'} onChange={(event) => setLayoutForm((current) => ({ ...current, [key]: { ...current[key], width: event.target.value } }))}>
-                  <option value="full">Largura total</option>
-                  <option value="half">Metade da linha</option>
-                </select>
-              </label>
-              <label>Tamanho
-                <select className="input" value={layoutForm[key]?.size || 'normal'} onChange={(event) => setLayoutForm((current) => ({ ...current, [key]: { ...current[key], size: event.target.value } }))}>
-                  <option value="compact">Compacto</option>
-                  <option value="normal">Normal</option>
-                  <option value="large">Amplo</option>
-                </select>
-              </label>
-            </fieldset>
-          ))}
-        </div>
-      </Modal>}
       {selection && (
         <Modal title={`Adicionar ${selection.product.name}`} onClose={() => setSelection(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setSelection(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => addToCart(selection.product, selection.imageId, selection.priceOptionId)} disabled={selection.product.stockEnabled && stockFor(selection.product, selection.imageId) < 1}>Adicionar ao carrinho</button></>}>

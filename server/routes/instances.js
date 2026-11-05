@@ -78,10 +78,13 @@ export function instanceRouter(purpose) {
   }
 
   async function auditStores(user, req) {
-    if (req.forcedAuditScope) return new Set([req.forcedStore]);
-    if (limitsFor(user).stores < 1) return new Set();
-    const stores = await prisma.store.findMany({ where: { userId: user.id, appEnabled: true }, select: { id: true } });
-    return new Set(stores.map((store) => store.id));
+    if (req.forcedAuditScope) return new Map([[req.forcedStore, req.shopUser.store]]);
+    if (limitsFor(user).stores < 1) return new Map();
+    const stores = await prisma.store.findMany({
+      where: { userId: user.id, appEnabled: true },
+      select: { id: true, name: true, appName: true },
+    });
+    return new Map(stores.map((store) => [store.id, store]));
   }
 
   async function own(req) {
@@ -242,7 +245,11 @@ export function instanceRouter(purpose) {
     );
     res.json({
       instances, purpose, limit, count, auditScope,
-      availableScopes: { main: true, app: !audit || stores.size > 0 },
+      availableScopes: {
+        main: true,
+        app: !audit || stores.size > 0,
+        apps: audit ? [...stores.values()].map((store) => ({ id: store.id, name: store.appName || store.name })) : [],
+      },
       evolutionConfigured: configured, unreachable: failed,
       metaWebhookUrl: metaWebhookUrl(), appUrlIsPublic: appUrlIsPublic(),
     });

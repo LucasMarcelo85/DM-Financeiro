@@ -260,7 +260,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
             <li key={i.id} className={`instance ${i.connected ? 'is-on' : ''}`}>
               <Lamp on={i.connected} pending={i.state === 'unknown' && (i.provider === 'meta' || data?.evolutionConfigured)} size="lg" />
               <div className="instance-info">
-                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? `App da loja ${i.auditScope.slice(6)}` : 'Loja principal'}</span>}</strong>
+                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? (shop ? 'App do lojista' : `App da loja ${i.auditScope.slice(6)}`) : 'Loja principal'}</span>}</strong>
                 <span>
                   {status(i)}
                   {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
@@ -295,9 +295,10 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
                     )}
                   </>
                 )}
-                {audit && data?.availableScopes?.app && (
+                {audit && !shop && data?.availableScopes?.app && (
                   <select className="input input-sm au-instance-scope" aria-label="Separar esta conexão" value={i.auditScope} onChange={(e) => run(`scope${i.id}`, () => api.patch(`${base}/${i.id}`, { auditScope: e.target.value }), 'Origem da conexão atualizada.')}>
-                    <option value="main">Loja principal</option><option value="app">App do lojista</option>
+                    <option value="main">Loja principal</option>
+                    {data.availableScopes.apps?.map((app) => <option key={app.id} value={`store:${app.id}`}>{app.name}</option>)}
                   </select>
                 )}
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(i)} aria-label={`Remover ${title(i)}`} title="Remover"><Icon name="trash" size={18} /></button>
