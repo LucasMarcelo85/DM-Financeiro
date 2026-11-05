@@ -38,13 +38,27 @@ router.get('/portfolio', async (req, res) => {
   if (doc.v === 2 && page.kind === 'catalog') {
     // Catálogo digital: todos os produtos ativos + as formas de entrega (sem token e sem endereço de saída). Sem plano com catálogo = 404.
     const ctx = await loadCatalogOwner(owner.portfolioSlug);
-    const products = await prisma.product.findMany({ where: { userId: owner.id, storeId: owner.storeId ?? null, active: true }, include: { images: imgs, priceOptions }, orderBy: [{ category: 'asc' }, { name: 'asc' }], take: 500 });
+    const products = await prisma.product.findMany({
+      where: {
+        userId: owner.id, storeId: owner.storeId ?? null, active: true,
+        stockLevels: { some: { variantKey: 'product', isActive: true, flow: { isDefault: true } } },
+      },
+      include: { images: imgs, priceOptions },
+      orderBy: [{ category: 'asc' }, { name: 'asc' }],
+      take: 500,
+    });
     out.products = products.map(publicProduct);
     out.store = { ...publicCatalogConfig(ctx.cfg), paymentMethods: ctx.paymentMethods };
   } else if (doc.v === 2) {
     // Página livre com cartões de produtos escolhidos.
     const ids = [...new Set((doc.elements || []).filter((e) => e.t === 'products').flatMap((e) => e.ids || []))].slice(0, 60);
-    if (ids.length) out.products = (await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: owner.storeId ?? null, active: true }, include: { images: imgs, priceOptions } })).map(publicProduct);
+    if (ids.length) out.products = (await prisma.product.findMany({
+      where: {
+        id: { in: ids }, userId: owner.id, storeId: owner.storeId ?? null, active: true,
+        stockLevels: { some: { variantKey: 'product', isActive: true, flow: { isDefault: true } } },
+      },
+      include: { images: imgs, priceOptions },
+    })).map(publicProduct);
   }
   res.set('Cache-Control', 'no-cache'); // o navegador confere (ETag) antes de reusar: edições aparecem logo
   res.json({

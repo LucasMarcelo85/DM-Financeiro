@@ -89,6 +89,7 @@ export default function Products({ allow = [] }) {
         product={editing === 'new' ? null : editing}
         categories={data?.categories || []}
         preferences={data?.preferences}
+        stockFlows={data?.stockFlows || []}
         available={Math.max(0, (data?.limit || 0) - (data?.count || 0))}
         onClose={() => setEditing(null)}
         onSaved={() => { setEditing(null); load(); }}

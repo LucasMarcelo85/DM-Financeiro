@@ -658,6 +658,7 @@ model StockLevel {
   productId   Int    @map("product_id")
   variantKey  String @default("product") @map("variant_key")
   quantity    Int    @default(0)
+  isActive    Boolean @default(true) @map("is_active")
 
   flow    StockFlow @relation(fields: [flowId], references: [id], onDelete: Cascade)
   product Product   @relation(fields: [productId], references: [id], onDelete: Cascade)

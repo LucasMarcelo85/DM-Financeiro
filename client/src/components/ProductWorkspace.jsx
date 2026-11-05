@@ -17,7 +17,7 @@ async function imageFromFile(file) {
   return { key: newKey(), data: src, url: src, label: '', stockQuantity: '0' };
 }
 
-function blankDraft(image = null) {
+function blankDraft(image = null, activeFlowIds = []) {
   return {
     key: newKey(),
     kind: 'produto',
@@ -30,6 +30,7 @@ function blankDraft(image = null) {
     active: true,
     stockEnabled: false,
     stockQuantity: '0',
+    activeFlowIds,
     priceOptions: [],
     mainImage: image,
     variations: [],
@@ -51,7 +52,7 @@ function variationFields(image) {
   };
 }
 
-function draftFromProduct(product) {
+function draftFromProduct(product, stockFlows) {
   const rows = product.images || [];
   const variation = (image) => ({
     key: `image-${image.id}`,
@@ -85,6 +86,7 @@ function draftFromProduct(product) {
     active: product.active,
     stockEnabled: Boolean(product.stockEnabled),
     stockQuantity: String(product.stockQuantity || 0),
+    activeFlowIds: product.activeFlowIds || stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id),
     priceOptions: (product.priceOptions || []).map((option) => ({
       key: `option-${option.id}`,
       id: option.id,
@@ -163,6 +165,7 @@ function productBody(draft) {
     active: draft.active,
     stockEnabled: draft.stockEnabled,
     stockQuantity: Number(draft.stockQuantity) || 0,
+    activeFlowIds: draft.activeFlowIds,
     priceOptions,
     mainImage: draft.mainImage ? {
       ...(draft.mainImage.id ? { id: draft.mainImage.id } : { data: draft.mainImage.data }),
@@ -171,10 +174,11 @@ function productBody(draft) {
   };
 }
 
-export default function ProductWorkspace({ product, categories, preferences, available, onClose, onSaved }) {
+export default function ProductWorkspace({ product, categories, preferences, stockFlows = [], available, onClose, onSaved }) {
   const editing = Boolean(product);
   const toast = useToast();
-  const [drafts, setDrafts] = useState(() => product ? [draftFromProduct(product)] : []);
+  const defaultFlowIds = stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id);
+  const [drafts, setDrafts] = useState(() => product ? [draftFromProduct(product, stockFlows)] : []);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -197,7 +201,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
     try {
       const prepared = [];
       for (const file of selected) prepared.push(await imageFromFile(file));
-      setDrafts((current) => [...current, ...prepared.map((image) => blankDraft(image))]);
+      setDrafts((current) => [...current, ...prepared.map((image) => blankDraft(image, defaultFlowIds))]);
     } catch (e) {
       setError(e.message);
     } finally {
@@ -299,7 +303,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
           <label className={`btn btn-primary ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
             <Icon name="plus" size={18} /> Escolher fotos
           </label>
-          <button type="button" className="btn btn-ghost" onClick={() => setDrafts([blankDraft()])} disabled={available < 1}>Começar sem foto</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setDrafts([blankDraft(null, defaultFlowIds)])} disabled={available < 1}>Começar sem foto</button>
         </div>
       </div>}
 
@@ -311,6 +315,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
           count={drafts.length}
           categories={categories}
           preferences={preferences}
+          stockFlows={stockFlows}
           editing={editing}
           uploading={uploading}
           onPatch={(changes) => patchDraft(draft.key, changes)}
@@ -322,7 +327,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
         />)}
       </div>
 
-      {!editing && drafts.length > 0 && <button type="button" className="btn btn-ghost pr-add-blank" onClick={() => setDrafts((current) => current.length < Math.min(available, MAX_BATCH) ? [...current, blankDraft()] : current)} disabled={drafts.length >= Math.min(available, MAX_BATCH)}>
+      {!editing && drafts.length > 0 && <button type="button" className="btn btn-ghost pr-add-blank" onClick={() => setDrafts((current) => current.length < Math.min(available, MAX_BATCH) ? [...current, blankDraft(null, defaultFlowIds)] : current)} disabled={drafts.length >= Math.min(available, MAX_BATCH)}>
         <Icon name="plus" size={17} /> Adicionar produto sem foto
       </button>}
       {error && <p className="form-error" role="alert">{error}</p>}
@@ -336,7 +341,7 @@ export default function ProductWorkspace({ product, categories, preferences, ava
   );
 }
 
-function ProductDraftCard({ draft, index, count, categories, preferences, editing, uploading, onPatch, onReplaceMain, onAddVariations, onRemove, onRemoveVariation, onPatchVariation }) {
+function ProductDraftCard({ draft, index, count, categories, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onAddVariations, onRemove, onRemoveVariation, onPatchVariation }) {
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
@@ -435,6 +440,18 @@ function ProductDraftCard({ draft, index, count, categories, preferences, editin
           <section className="pr-editor-section">
             <div className="pr-section-title"><span>3</span><div><h3>Estoque</h3><p>Controle o saldo total do produto ou informe quantidades por variação.</p></div></div>
             <label className="check-line"><input type="checkbox" checked={draft.stockEnabled} onChange={(event) => onPatch({ stockEnabled: event.target.checked })} /><span>Controlar estoque deste produto</span></label>
+            {stockFlows.length > 1 && <fieldset className="pr-stock-flow-options">
+              <legend>Produto disponível nos fluxos</legend>
+              <p className="muted small">A disponibilidade independe do saldo. Um fluxo desativado não exibe o produto no site nem no PDV desse fluxo.</p>
+              {stockFlows.map((flow) => <label className="check-line" key={flow.id}>
+                <input type="checkbox" checked={draft.activeFlowIds.includes(flow.id)} onChange={(event) => onPatch({
+                  activeFlowIds: event.target.checked
+                    ? [...new Set([...draft.activeFlowIds, flow.id])]
+                    : draft.activeFlowIds.filter((id) => id !== flow.id),
+                })} />
+                <span>{flow.name}{flow.isDefault ? ' (site e fluxo principal)' : ''}</span>
+              </label>)}
+            </fieldset>}
             {draft.stockEnabled && <div className="pr-stock-list">
               {draft.variations.length > 0 ? draft.variations.map((image, imageIndex) => <label className="field pr-stock-row" key={image.key}>
                 <span className="pr-stock-product"><img src={image.url} alt="" />{image.label || `Variação ${imageIndex + 1}`}</span>

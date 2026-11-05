@@ -85,7 +85,13 @@ export async function createOrder(userSlug, body = {}) {
   const requestedCount = rawItems.reduce((sum, item) => sum + (Number.isInteger(Number(item?.qty)) && Number(item.qty) > 0 ? Number(item.qty) : 0), 0);
   if (requestedCount < (cfg.checkout?.minItems || 1)) throw new AppError(400, `Este pedido precisa ter pelo menos ${cfg.checkout.minItems} itens.`);
   const ids = [...new Set(rawItems.map((i) => Number(i?.productId)).filter(Number.isInteger))];
-  const products = await prisma.product.findMany({ where: { id: { in: ids }, userId: owner.id, storeId: store?.id ?? null, active: true }, include: { images: true, priceOptions: { orderBy: { position: 'asc' } } } });
+  const products = await prisma.product.findMany({
+    where: {
+      id: { in: ids }, userId: owner.id, storeId: store?.id ?? null, active: true,
+      stockLevels: { some: { variantKey: 'product', isActive: true, flow: { isDefault: true } } },
+    },
+    include: { images: true, priceOptions: { orderBy: { position: 'asc' } } },
+  });
   const byId = new Map(products.map((p) => [p.id, p]));
   const qtyByProduct = new Map();
   for (const item of rawItems) {

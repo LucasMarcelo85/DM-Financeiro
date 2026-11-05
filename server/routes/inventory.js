@@ -42,6 +42,7 @@ router.get('/flows', async (req, res) => {
       return {
         productId: level.productId, productName: level.product.name, kind: level.product.kind,
         stockEnabled: level.product.stockEnabled, variantKey: level.variantKey, quantity: level.quantity,
+        isActive: level.isActive,
         variantLabel: image ? [image.label, image.size, image.color].filter(Boolean).join(' · ') || `Variação ${image.id}` : null,
       };
     }),
@@ -62,8 +63,8 @@ router.post('/flows', async (req, res) => {
       include: { images: { select: { id: true, isPrimary: true } } },
     });
     const levels = products.flatMap((product) => [
-      { flowId: created.id, productId: product.id, variantKey: 'product', quantity: 0 },
-      ...product.images.filter((image) => !image.isPrimary).map((image) => ({ flowId: created.id, productId: product.id, variantKey: `image:${image.id}`, quantity: 0 })),
+      { flowId: created.id, productId: product.id, variantKey: 'product', quantity: 0, isActive: false },
+      ...product.images.filter((image) => !image.isPrimary).map((image) => ({ flowId: created.id, productId: product.id, variantKey: `image:${image.id}`, quantity: 0, isActive: false })),
     ]);
     if (levels.length) await tx.stockLevel.createMany({ data: levels, skipDuplicates: true });
     return created;
@@ -155,7 +156,7 @@ router.post('/transfers', async (req, res) => {
       if (source.count !== 1) throw new AppError(409, `Estoque insuficiente de ${product.name} no fluxo ${from.name}.`);
       await tx.stockLevel.upsert({
         where: { flowId_productId_variantKey: { flowId: to.id, productId: line.productId, variantKey: line.variantKey } },
-        create: { flowId: to.id, productId: line.productId, variantKey: line.variantKey, quantity: line.quantity },
+        create: { flowId: to.id, productId: line.productId, variantKey: line.variantKey, quantity: line.quantity, isActive: false },
         update: { quantity: { increment: line.quantity } },
       });
       const [sourceRow, destinationRow] = await Promise.all([

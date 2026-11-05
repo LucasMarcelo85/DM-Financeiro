@@ -9,7 +9,7 @@ import ChatView from '../components/audit/ChatView.jsx';
 import ChatSide from '../components/audit/ChatSide.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
-import { plural } from '../lib/format.js';
+import { formatStoredPhone, plural } from '../lib/format.js';
 
 const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 60 }; // days: 7, 30 ou 60 (as mensagens com mais de 60 dias são apagadas sozinhas)
 const POLL_MS = 4000; // canal de segurança: pergunta ao servidor o que chegou (funciona mesmo se o tempo real for barrado)
@@ -320,7 +320,10 @@ export default function Audit({ canReply = false }) {
             <span>App / site</span>
             <select className="input" value={scope.startsWith('store:') ? scope : ''} onChange={(e) => e.target.value && switchScope(e.target.value)}>
               <option value="">Selecione uma loja com app ativo</option>
-              {stores.map((store) => <option key={store.id} value={`store:${store.id}`}>{store.app.name || store.name}</option>)}
+              {stores.map((store) => {
+                const app = inst?.availableScopes?.apps?.find((item) => item.id === store.id);
+                return <option key={store.id} value={`store:${store.id}`}>{store.app.name || store.name}{app?.phone ? ` · ${formatStoredPhone(app.phone)}` : ''}</option>;
+              })}
             </select>
           </label>
           <span className="muted small">Conexões, conversas e etiquetas ficam separadas.</span>

@@ -6,14 +6,24 @@ import { cleanBarcode, cleanProduct, publicProduct } from '../utils/catalog.js';
 import { storeScope } from '../utils/store.js';
 import { emitApiWebhook } from '../services/api-webhooks.js';
 import { dateRange } from '../utils/date-range.js';
-import { syncProductStock } from '../services/inventory.js';
+import { ensureDefaultStockFlow, syncProductStock } from '../services/inventory.js';
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
 const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
-const productInclude = { images: imgSelect, priceOptions: optionSelect };
-const dto = (p) => ({ ...publicProduct(p), active: p.active, createdAt: p.createdAt.getTime(), updatedAt: p.updatedAt.getTime() });
+const productInclude = {
+  images: imgSelect,
+  priceOptions: optionSelect,
+  stockLevels: { where: { variantKey: 'product' }, select: { flowId: true, isActive: true } },
+};
+const dto = (p, allowedFlowIds = null) => ({
+  ...publicProduct(p),
+  active: p.active,
+  activeFlowIds: (p.stockLevels || []).filter((level) => level.isActive && (!allowedFlowIds || allowedFlowIds.includes(level.flowId))).map((level) => level.flowId),
+  createdAt: p.createdAt.getTime(),
+  updatedAt: p.updatedAt.getTime(),
+});
 const publishProduct = (userId, product, event) => emitApiWebhook({
   userId, storeId: product.storeId, event, data: dto(product),
 }).catch((error) => console.error(`[api-webhook] produto ${product.id}: ${error.message}`));
@@ -61,6 +71,28 @@ async function assertCanCreate(req, requested = 1, storeId = null) {
   }
 }
 
+async function setActiveStockFlows(tx, req, productId, storeId, requestedFlowIds) {
+  const defaultFlow = await ensureDefaultStockFlow(tx, req.user.id, storeId);
+  const flows = await tx.stockFlow.findMany({ where: { userId: req.user.id, storeId }, select: { id: true } });
+  const allowedIds = new Set(flows
+    .filter((flow) => !req.shopUser || req.shopUser.stockFlowIds.includes(flow.id) || flow.id === defaultFlow.id)
+    .map((flow) => flow.id));
+  const activeFlowIds = requestedFlowIds === undefined ? [defaultFlow.id] : requestedFlowIds;
+  if (!Array.isArray(activeFlowIds) || activeFlowIds.some((id) => !Number.isSafeInteger(id) || !allowedIds.has(id))) {
+    throw new AppError(400, 'Seleção de fluxos de estoque inválida.');
+  }
+  await tx.stockLevel.updateMany({
+    where: { productId, variantKey: 'product', flowId: { in: flows.map((flow) => flow.id) } },
+    data: { isActive: false },
+  });
+  if (activeFlowIds.length) {
+    await tx.stockLevel.updateMany({
+      where: { productId, variantKey: 'product', flowId: { in: [...new Set(activeFlowIds)] } },
+      data: { isActive: true },
+    });
+  }
+}
+
 function createData(data, userId, storeId) {
   const { images, priceOptions, ...product } = data;
   if (priceOptions.some((option) => option.id !== undefined)) throw new AppError(400, 'Não envie formas de preço existentes ao cadastrar um item.');
@@ -76,16 +108,23 @@ function createData(data, userId, storeId) {
 
 router.get('/', async (req, res) => {
   const storeId = await storeScope(req);
+  const defaultFlow = await prisma.$transaction((tx) => ensureDefaultStockFlow(tx, req.user.id, storeId));
+  const allowedFlowIds = req.shopUser ? [...new Set([...req.shopUser.stockFlowIds, defaultFlow.id])] : null;
   const where = { userId: req.user.id, storeId };
   const q = String(req.query.q || '').trim();
   if (q) where.OR = [{ name: { contains: q, mode: 'insensitive' } }, { category: { contains: q, mode: 'insensitive' } }];
   if (req.query.category) where.category = String(req.query.category);
   if (req.query.kind === 'produto' || req.query.kind === 'servico') where.kind = req.query.kind;
-  const [rows, count, cats, savedPreferences] = await Promise.all([
+  const [rows, count, cats, savedPreferences, flows] = await Promise.all([
     prisma.product.findMany({ where, orderBy: [{ category: 'asc' }, { name: 'asc' }], include: productInclude, take: 500 }),
     prisma.product.count({ where: req.shopUser ? { userId: req.user.id, storeId } : { userId: req.user.id } }),
     prisma.product.findMany({ where: { userId: req.user.id, storeId }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
     req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null,
+    prisma.stockFlow.findMany({
+      where: { userId: req.user.id, storeId, ...(allowedFlowIds ? { id: { in: allowedFlowIds } } : {}) },
+      select: { id: true, name: true, isDefault: true },
+      orderBy: [{ isDefault: 'desc' }, { name: 'asc' }],
+    }),
   ]);
   const preferences = {
     ...defaultPreferences,
@@ -101,7 +140,14 @@ router.get('/', async (req, res) => {
     productLimit = Math.min(productLimit, store?.appProductLimit ?? productLimit);
   }
   preferences.categories = [...new Set([...preferences.categories, ...cats.map((c) => c.category).filter(Boolean)])].sort((a, b) => a.localeCompare(b, 'pt-BR'));
-  res.json({ products: rows.map(dto), count, limit: productLimit, categories: preferences.categories, preferences });
+  res.json({
+    products: rows.map((product) => dto(product, allowedFlowIds)),
+    stockFlows: flows,
+    count,
+    limit: productLimit,
+    categories: preferences.categories,
+    preferences,
+  });
 });
 
 router.get('/export', async (req, res) => {
@@ -211,10 +257,12 @@ router.post('/', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     const created = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
     await syncProductStock(tx, created);
+    await setActiveStockFlows(tx, req, created.id, storeId, req.body?.activeFlowIds);
     return created;
   });
-  publishProduct(req.user.id, p, 'product.created');
-  res.status(201).json({ product: dto(p) });
+  const fresh = await prisma.product.findUnique({ where: { id: p.id }, include: productInclude });
+  publishProduct(req.user.id, fresh, 'product.created');
+  res.status(201).json({ product: dto(fresh, req.shopUser?.stockFlowIds) });
 });
 
 router.post('/bulk', async (req, res) => {
@@ -227,19 +275,20 @@ router.post('/bulk', async (req, res) => {
   if (imagePayloadSize > 32 * 1024 * 1024) throw new AppError(413, 'O lote de fotos ficou muito grande. Cadastre menos produtos ou reduza o número de imagens por produto.');
   const storeId = await storeScope(req);
   await assertCanCreate(req, list.length, storeId);
-  const prepared = list.map((product) => cleanProduct(product));
-  for (const data of prepared) await assertBarcodesFree(req.user.id, storeId, barcodesOf(data));
+  const prepared = list.map((product) => ({ data: cleanProduct(product), activeFlowIds: product?.activeFlowIds }));
+  for (const product of prepared) await assertBarcodesFree(req.user.id, storeId, barcodesOf(product.data));
   const products = await prisma.$transaction(async (tx) => {
     const created = [];
-    for (const data of prepared) {
-      const product = await tx.product.create({ data: createData(data, req.user.id, storeId), include: productInclude });
+    for (const item of prepared) {
+      const product = await tx.product.create({ data: createData(item.data, req.user.id, storeId), include: productInclude });
       await syncProductStock(tx, product);
+      await setActiveStockFlows(tx, req, product.id, storeId, item.activeFlowIds);
       created.push(product);
     }
-    return created;
+    return Promise.all(created.map((product) => tx.product.findUnique({ where: { id: product.id }, include: productInclude })));
   });
   for (const product of products) publishProduct(req.user.id, product, 'product.created');
-  res.status(201).json({ products: products.map(dto) });
+  res.status(201).json({ products: products.map((product) => dto(product, req.shopUser?.stockFlowIds)) });
 });
 
 router.patch('/:id', async (req, res) => {
@@ -283,10 +332,12 @@ router.patch('/:id', async (req, res) => {
     }
     const updated = await tx.product.update({ where: { id: current.id }, data, include: productInclude });
     await syncProductStock(tx, updated);
+    if (body.activeFlowIds !== undefined) await setActiveStockFlows(tx, req, current.id, current.storeId, body.activeFlowIds);
     return updated;
   });
-  publishProduct(req.user.id, p, 'product.updated');
-  res.json({ product: dto(p) });
+  const fresh = await prisma.product.findUnique({ where: { id: p.id }, include: productInclude });
+  publishProduct(req.user.id, fresh, 'product.updated');
+  res.json({ product: dto(fresh, req.shopUser?.stockFlowIds) });
 });
 
 router.delete('/:id', async (req, res) => {

@@ -196,7 +196,7 @@ function cleanPosLayout(value = {}) {
   return Object.fromEntries(POS_LAYOUT_FIELDS.map((field) => {
     const item = source[field] && typeof source[field] === 'object' ? source[field] : {};
     return [field, {
-      width: Number.isInteger(item.width) ? Math.min(12, Math.max(4, item.width)) : item.width === 'half' ? 6 : 12,
+      width: item.width === 'half' || (Number.isInteger(item.width) && item.width <= 6) ? 'half' : 'full',
       size: ['compact', 'normal', 'large'].includes(item.size) ? item.size : 'normal',
     }];
   }));
@@ -261,8 +261,22 @@ router.post('/pos/checkout', async (req, res) => {
   if (notes.length > 2000) throw new AppError(400, 'As observações podem ter até 2.000 caracteres.');
 
   const order = await prisma.$transaction(async (tx) => {
+    const defaultFlow = req.shopUser && !req.shopPerms.includes('estoque')
+      ? await ensureDefaultStockFlow(tx, req.user.id, storeId)
+      : null;
+    if (defaultFlow && body.stockFlowId != null) throw new AppError(403, 'Seu acesso só permite usar o fluxo padrão de estoque.', 'FORBIDDEN');
+    const allowedFlowIds = req.shopUser
+      ? defaultFlow ? [defaultFlow.id] : req.shopUser.stockFlowIds
+      : null;
+    const stockFlow = await resolveStockFlow(tx, req.user.id, storeId, body.stockFlowId, allowedFlowIds);
     const products = await tx.product.findMany({
-      where: { id: { in: productIds }, userId: req.user.id, storeId, active: true },
+      where: {
+        id: { in: productIds },
+        userId: req.user.id,
+        storeId,
+        active: true,
+        stockLevels: { some: { flowId: stockFlow.id, variantKey: 'product', isActive: true } },
+      },
       include: {
         images: { select: { id: true, isPrimary: true, label: true, size: true, color: true, priceCents: true, stockQuantity: true } },
         priceOptions: { select: { id: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } },
@@ -320,14 +334,6 @@ router.post('/pos/checkout', async (req, res) => {
     const paymentMethod = payments.length > 1 ? 'misto' : payments[0].method;
     const code = `PDV-${Date.now().toString(36).toUpperCase()}-${crypto.randomBytes(3).toString('hex').toUpperCase()}`;
     const displayName = customerName || 'Consumidor final';
-    const defaultFlow = req.shopUser && !req.shopPerms.includes('estoque')
-      ? await ensureDefaultStockFlow(tx, req.user.id, storeId)
-      : null;
-    if (defaultFlow && body.stockFlowId != null) throw new AppError(403, 'Seu acesso só permite usar o fluxo padrão de estoque.', 'FORBIDDEN');
-    const allowedFlowIds = req.shopUser
-      ? defaultFlow ? [defaultFlow.id] : req.shopUser.stockFlowIds
-      : null;
-    const stockFlow = await resolveStockFlow(tx, req.user.id, storeId, body.stockFlowId, allowedFlowIds);
     const stockOrder = { userId: req.user.id, storeId, stockFlowId: stockFlow.id, items };
     await changeOrderStock(tx, stockOrder, 'reserve');
     if (customerPhone) {

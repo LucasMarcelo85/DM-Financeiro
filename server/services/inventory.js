@@ -30,7 +30,7 @@ export async function syncProductStock(tx, product) {
   }
   await tx.stockLevel.createMany({
     data: flows.filter((flow) => !flow.isDefault).flatMap((flow) => rows.map((row) => ({
-      flowId: flow.id, productId: product.id, variantKey: row.variantKey, quantity: 0,
+      flowId: flow.id, productId: product.id, variantKey: row.variantKey, quantity: 0, isActive: false,
     }))),
     skipDuplicates: true,
   });

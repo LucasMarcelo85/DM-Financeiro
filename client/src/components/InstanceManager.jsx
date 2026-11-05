@@ -7,7 +7,7 @@ import Lamp from './Lamp.jsx';
 import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
-import { formatDoc, plural } from '../lib/format.js';
+import { formatDoc, formatStoredPhone, plural } from '../lib/format.js';
 import { ago } from '../lib/audit.js';
 
 // Conexões de WhatsApp. `purpose`: 'envio' (cobranças e lembretes) ou 'auditoria' (só leitura das conversas).
@@ -163,6 +163,12 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
   const limit = data?.limit ?? user?.limits?.[audit ? 'auditInstances' : 'instances'] ?? 0;
   const canAdd = (data?.count ?? instances.length) < limit;
   const noun = audit ? ['número para auditoria', 'números para auditoria'] : ['WhatsApp conectado', 'WhatsApps conectados'];
+  const appForScope = (value) => data?.availableScopes?.apps?.find((app) => `store:${app.id}` === value);
+  const appScopeLabel = (value) => {
+    const app = appForScope(value);
+    const phone = app?.phone ? formatStoredPhone(app.phone) : '';
+    return phone ? `App da loja · ${phone}` : 'App do lojista';
+  };
 
   async function run(key, fn, okMsg) {
     setBusy(key);
@@ -260,7 +266,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
             <li key={i.id} className={`instance ${i.connected ? 'is-on' : ''}`}>
               <Lamp on={i.connected} pending={i.state === 'unknown' && (i.provider === 'meta' || data?.evolutionConfigured)} size="lg" />
               <div className="instance-info">
-                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? (shop ? 'App do lojista' : `App da loja ${i.auditScope.slice(6)}`) : 'Loja principal'}</span>}</strong>
+                <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? appScopeLabel(i.auditScope) : 'Loja principal'}</span>}</strong>
                 <span>
                   {status(i)}
                   {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
@@ -298,7 +304,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
                 {audit && !shop && data?.availableScopes?.app && (
                   <select className="input input-sm au-instance-scope" aria-label="Separar esta conexão" value={i.auditScope} onChange={(e) => run(`scope${i.id}`, () => api.patch(`${base}/${i.id}`, { auditScope: e.target.value }), 'Origem da conexão atualizada.')}>
                     <option value="main">Loja principal</option>
-                    {data.availableScopes.apps?.map((app) => <option key={app.id} value={`store:${app.id}`}>{app.name}</option>)}
+                    {data.availableScopes.apps?.map((app) => <option key={app.id} value={`store:${app.id}`}>{app.name}{app.phone ? ` · ${formatStoredPhone(app.phone)}` : ''}</option>)}
                   </select>
                 )}
                 <button className="icon-btn icon-btn-danger" onClick={() => setConfirmDel(i)} aria-label={`Remover ${title(i)}`} title="Remover"><Icon name="trash" size={18} /></button>
