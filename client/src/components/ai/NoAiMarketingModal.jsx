@@ -109,7 +109,7 @@ export default function NoAiMarketingModal({ data, onClose }) {
       return;
     }
     if (file.size < 1 || file.size > MAX_FILE_BYTES) {
-      setError('O arquivo deve ter até 10 MB.');
+      setError('O arquivo deve ter até 100 MB.');
       return;
     }
     try {
@@ -262,7 +262,7 @@ export default function NoAiMarketingModal({ data, onClose }) {
                 <Icon name="camera" size={16} /> {media ? 'Trocar foto ou vídeo' : 'Adicionar foto ou vídeo'}
                 <input type="file" accept="image/jpeg,image/png,image/webp,video/mp4,video/3gpp" hidden onChange={chooseMedia} />
               </label>
-              <small className="muted">JPEG, PNG, WebP, MP4 ou 3GPP · até 10 MB</small>
+              <small className="muted">JPEG, PNG, WebP, MP4 ou 3GPP · até 100 MB</small>
               {media && (
                 <div className="noai-media-preview">
                   {media.mimeType.startsWith('video/')

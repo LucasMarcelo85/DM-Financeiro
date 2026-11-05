@@ -204,13 +204,19 @@ app.use('/api/stats', auth, requireAccess, statsRoutes);
 app.use('/api/receipts', auth, requireAccess, receiptRoutes);
 app.use('/api/messages', auth, requireAccess, messageRoutes);
 app.use('/api/media', auth, requireAccess, express.json({ limit: '24mb' }), mediaRoutes);
-app.use('/api/ai', auth, requireAccess, pinGuard('ia'), express.json({ limit: '16mb' }), aiRoutes);
+app.use('/api/ai', auth, requireAccess, pinGuard('ia'), (req, res, next) => {
+  const limit = req.method === 'POST' && req.path === '/marketing-campaigns' ? '140mb' : '16mb';
+  express.json({ limit })(req, res, next);
+}, aiRoutes);
 app.use('/api/contracts', auth, requireAccess, pinGuard('contratos'), express.json({ limit: '12mb' }), contractRoutes);
 app.use('/api/portfolios', auth, requireAccess, pinGuard('portfolio'), express.json({ limit: '24mb' }), portfolioRoutes);
 app.use('/api/stores', auth, requireAccess, pinGuard('portfolio'), storeRoutes);
 app.use('/api/tokens', auth, requireAccess, pinGuard('api'), tokenRoutes);
 app.use('/api/shop-app/login', limiter(30, 15 * 60 * 1000));
-app.use('/api/shop-app', express.json({ limit: '40mb' }), shopAppRoutes);
+app.use('/api/shop-app', (req, res, next) => {
+  const isMarketingUpload = req.method === 'POST' && /^\/(?:ws\/)?ai\/marketing-campaigns$/.test(req.path);
+  express.json({ limit: isMarketingUpload ? '140mb' : '40mb' })(req, res, next);
+}, shopAppRoutes);
 app.use('/api/v1', limiter(300, 60 * 1000), publicApi);
 app.use('/api/public', publicPortfolioRoutes); // páginas públicas: sem login
 app.use('/api/public', publicCatalogRoutes);

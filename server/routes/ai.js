@@ -714,7 +714,7 @@ export function stopAiCampaignWorker() {
 }
 
 const NO_AI_CAMPAIGN_LIMIT = 100;
-const NO_AI_MEDIA_MAX_BYTES = 10 * 1024 * 1024;
+const NO_AI_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
 const NO_AI_INTERVALS = new Set([20, 30, 60, 120]);
 const NO_AI_CAMPAIGN_OPEN = ['running', 'paused'];
 const NO_AI_CAMPAIGN_LEASE_MS = 3 * 60 * 1000;
@@ -987,10 +987,10 @@ router.post('/marketing-campaigns', async (req, res) => {
   if (media) {
     const encoded = String(media.base64 || '').replace(/^data:[^,]*,/, '');
     if (!encoded || encoded.length > Math.ceil(NO_AI_MEDIA_MAX_BYTES * 4 / 3) + 4 || !/^[\da-z+/]+={0,2}$/i.test(encoded)) {
-      throw new AppError(400, 'O arquivo está vazio ou excede o limite de 10 MB.');
+      throw new AppError(400, 'O arquivo está vazio ou excede o limite de 100 MB.');
     }
     mediaData = Buffer.from(encoded, 'base64');
-    if (!mediaData.length || mediaData.length > NO_AI_MEDIA_MAX_BYTES) throw new AppError(400, 'O arquivo está vazio ou excede o limite de 10 MB.');
+    if (!mediaData.length || mediaData.length > NO_AI_MEDIA_MAX_BYTES) throw new AppError(400, 'O arquivo está vazio ou excede o limite de 100 MB.');
     mediaMimeType = String(media.mimeType).toLowerCase();
     mediaFileName = String(media.name || 'midia').split(/[\\/]/).pop().replace(/[^\w.-]/g, '_').slice(0, 120) || 'midia';
   }
