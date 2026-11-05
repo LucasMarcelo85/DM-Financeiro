@@ -35,6 +35,9 @@ const safeAgent = (agent, usage = {}) => ({
   usage,
 });
 const cleanPhone = (value) => onlyDigits(value).slice(-20);
+const instanceStoreScope = (req) => (req.forcedStore === undefined
+  ? { storeId: null }
+  : { OR: [{ storeId: null }, { storeId: req.forcedStore }] });
 // Números digitados à mão: 10-11 dígitos recebem o 55 do Brasil; os demais precisam trazer o código do país.
 function toPhone(value) {
   let digits = onlyDigits(value);
@@ -306,7 +309,7 @@ router.get('/', async (req, res) => {
   const [agents, instances, folders, prompts] = await Promise.all([
     prisma.aiAgent.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' } }),
     prisma.instance.findMany({
-      where: { userId: req.user.id, purpose: 'envio', storeId: null },
+      where: { userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) },
       select: { id: true, label: true, name: true, provider: true, metaPhoneDisplay: true, metaVerifyToken: true },
       orderBy: { id: 'asc' },
     }),
@@ -454,7 +457,7 @@ router.post('/agents', async (req, res) => {
   if (apiKey.length > 1000 || (apiKey && apiKey.length < 16)) throw new AppError(400, 'A chave informada parece inválida.');
   const instanceId = body.instanceId ? Number(body.instanceId) : null;
   if (instanceId !== null) {
-    const instance = await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', storeId: null } });
+    const instance = await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) } });
     if (!instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
     if (mode === 'atendimento' && instance.provider === 'meta' && !instance.metaAppSecret) {
       throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
@@ -508,7 +511,7 @@ router.put('/agents/:id', async (req, res) => {
   const instanceId = body.instanceId === undefined ? current.instanceId : body.instanceId ? Number(body.instanceId) : null;
   const active = body.active === undefined ? current.active : Boolean(body.active);
   if (body.active !== undefined && typeof body.active !== 'boolean') throw new AppError(400, 'O estado ativo do agente é inválido.');
-  const instance = instanceId ? await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', storeId: null } }) : null;
+  const instance = instanceId ? await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) } }) : null;
   if (instanceId && !instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
   if (mode === 'atendimento' && !instance) throw new AppError(400, 'Selecione a instância que receberá e responderá às mensagens.');
   if (mode === 'atendimento' && instance.provider === 'meta' && !instance.metaAppSecret) throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
@@ -1007,7 +1010,7 @@ router.post('/marketing-campaigns', async (req, res) => {
   if (unknown) throw new AppError(400, 'Um ou mais contatos não pertencem à sua lista. Atualize os contatos e tente novamente.');
 
   const instance = await prisma.instance.findFirst({
-    where: { id: instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+    where: { id: instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) },
   });
   if (!instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
   if (await getState(instance) !== 'open') throw new AppError(409, 'A instância selecionada está desconectada. Conecte o WhatsApp antes de iniciar.');
@@ -1061,7 +1064,7 @@ router.post('/marketing-campaigns/:id/:action', async (req, res) => {
   } else if (action === 'resume') {
     if (campaign.status !== 'paused') throw new AppError(409, 'A campanha não está pausada.');
     const instance = await prisma.instance.findFirst({
-      where: { id: campaign.instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+      where: { id: campaign.instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) },
     });
     if (!instance || await getState(instance) !== 'open') throw new AppError(409, 'Conecte a instância WhatsApp antes de retomar.');
     const remaining = await prisma.noAiMarketingCampaignItem.count({
