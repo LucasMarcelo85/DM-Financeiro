@@ -186,6 +186,21 @@ const posCents = (value, label, { allowZero = false } = {}) => {
   if (!Number.isSafeInteger(cents) || cents < (allowZero ? 0 : 1) || cents > 1_000_000_000) throw new AppError(400, `${label} inválido.`);
   return cents;
 };
+const POS_LAYOUT_FIELDS = [
+  'customerName', 'customerPhone', 'notes', 'discount', 'surcharge', 'paymentMethod',
+  'cashReceived', 'mixedFirst', 'mixedAmount', 'mixedSecond',
+];
+const DEFAULT_POS_LAYOUT = Object.fromEntries(POS_LAYOUT_FIELDS.map((field) => [field, { width: 'full', size: 'normal' }]));
+function cleanPosLayout(value = {}) {
+  const source = value && typeof value === 'object' && !Array.isArray(value) ? value : {};
+  return Object.fromEntries(POS_LAYOUT_FIELDS.map((field) => {
+    const item = source[field] && typeof source[field] === 'object' ? source[field] : {};
+    return [field, {
+      width: item.width === 'half' ? 'half' : 'full',
+      size: ['compact', 'normal', 'large'].includes(item.size) ? item.size : 'normal',
+    }];
+  }));
+}
 
 router.get('/pos/settings', async (req, res) => {
   const storeId = await storeScope(req);
@@ -194,19 +209,21 @@ router.get('/pos/settings', async (req, res) => {
   const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { name: true } }) : null;
   const receipt = { ...defaultReceipt, ...(settings?.receipt || {}) };
   if (!receipt.storeName) receipt.storeName = store?.name || req.user.name;
-  res.json({ receipt });
+  res.json({ receipt, layout: cleanPosLayout(settings?.layout) });
 });
 
 router.put('/pos/settings', async (req, res) => {
   const storeId = await storeScope(req);
   const scopeKey = customerScopeKey(storeId);
-  const receipt = posReceipt(req.body?.receipt);
+  const current = await prisma.posSettings.findUnique({ where: { userId_scopeKey: { userId: req.user.id, scopeKey } } });
+  const receipt = req.body?.receipt === undefined ? current?.receipt || defaultReceipt : posReceipt(req.body.receipt);
+  const layout = req.body?.layout === undefined ? cleanPosLayout(current?.layout) : cleanPosLayout(req.body.layout);
   await prisma.posSettings.upsert({
     where: { userId_scopeKey: { userId: req.user.id, scopeKey } },
-    create: { userId: req.user.id, storeId, scopeKey, receipt },
-    update: { receipt },
+    create: { userId: req.user.id, storeId, scopeKey, receipt, layout },
+    update: { receipt, layout },
   });
-  res.json({ receipt });
+  res.json({ receipt, layout });
 });
 
 router.post('/pos/checkout', async (req, res) => {

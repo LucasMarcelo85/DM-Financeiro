@@ -53,7 +53,7 @@ export default function StoreAppModal({ storeId, onClose }) {
   const toast = useToast();
   const [data, setData] = useState(null);
   const [cfg, setCfg] = useState({ enabled: false, name: '', color: '#F2A33A', userLimit: 10, productLimit: 0, auditEnabled: false, auditInstanceLimit: 0, limits: {} });
-  const [appNotifications, setAppNotifications] = useState({ enabled: false, instanceId: '', fallbackEnabled: false, fallbackInstanceId: '' });
+  const [appNotifications, setAppNotifications] = useState({ fallbackEnabled: false, fallbackInstanceId: '' });
   const [notificationInstances, setNotificationInstances] = useState([]);
   const [nu, setNu] = useState({ name: '', login: '', perms: ALL_PERMS, actions: {}, stockFlowIds: [], isPrimary: false });
   const [temporaryCredential, setTemporaryCredential] = useState(null);
@@ -71,8 +71,6 @@ export default function StoreAppModal({ storeId, onClose }) {
     setNotificationInstances(connectionData.instances || []);
     if (!preserveConfig) {
       setAppNotifications({
-        enabled: r.appNotifications.enabled,
-        instanceId: r.appNotifications.instanceId,
         fallbackEnabled: r.appNotifications.fallbackEnabled,
         fallbackInstanceId: r.appNotifications.fallbackInstanceId,
       });
@@ -161,43 +159,24 @@ export default function StoreAppModal({ storeId, onClose }) {
           </section>
 
           <section className="sapp-section">
-            <header><span className="sapp-section-number">2</span><div><h3>Notificações de pedidos</h3><p className="muted small">Configure qual WhatsApp receberá os avisos de novos pedidos do app.</p></div></header>
+            <header><span className="sapp-section-number">2</span><div><h3>Instância reserva para notificações</h3><p className="muted small">O usuário do app escolhe a própria instância principal nas configurações do catálogo.</p></div></header>
           <section className="banner" style={{ display: 'grid', gap: 10 }}>
-            <strong>Notificações de pedidos do app</strong>
-            <small className="muted">O destino é o WhatsApp cadastrado nas configurações de entrega da loja.</small>
+            <strong>Usar uma instância do administrador como reserva</strong>
+            <small className="muted">Ela só será usada se a instância principal escolhida pelo usuário do app falhar ao enviar.</small>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-              <input type="checkbox" checked={appNotifications.enabled}
+              <input type="checkbox" checked={appNotifications.fallbackEnabled}
+                disabled={!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)}
                 onChange={(e) => setAppNotifications({
                   ...appNotifications,
-                  enabled: e.target.checked,
-                  fallbackEnabled: e.target.checked && appNotifications.fallbackEnabled,
+                  fallbackEnabled: e.target.checked,
+                  fallbackInstanceId: e.target.checked ? appNotifications.fallbackInstanceId : '',
                 })} />
-              Receber notificações pela instância da loja
+              Se houver falha, usar uma instância da conta do administrador
             </label>
-            {appNotifications.enabled && <>
+            {!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)
+              && <small className="muted">Conecte uma instância na conta do administrador para habilitar a reserva.</small>}
+            {appNotifications.fallbackEnabled && <>
               <label style={{ display: 'grid', gap: 4 }}>
-                <span>Instância principal da loja</span>
-                <select className="input" value={appNotifications.instanceId}
-                  onChange={(e) => setAppNotifications({ ...appNotifications, instanceId: e.target.value })}>
-                  <option value="">Selecione uma instância</option>
-                  {notificationInstances.filter((instance) => (instance.storeId === Number(storeId)
-                    || String(instance.id) === appNotifications.instanceId)
-                    && (instance.connected || String(instance.id) === appNotifications.instanceId)).map((instance) => (
-                    <option key={instance.id} value={instance.id}>
-                      {instance.label || instance.metaPhoneDisplay || instance.name}
-                      {instance.storeId === null ? ' · conta do administrador (configuração anterior)' : ''}
-                      {instance.connected ? '' : ' · desconectada'}
-                    </option>
-                  ))}
-                </select>
-              </label>
-              <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-                <input type="checkbox" checked={appNotifications.fallbackEnabled}
-                  disabled={!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)}
-                  onChange={(e) => setAppNotifications({ ...appNotifications, fallbackEnabled: e.target.checked })} />
-                Se houver falha, usar uma instância da conta do administrador
-              </label>
-              {appNotifications.fallbackEnabled && <label style={{ display: 'grid', gap: 4 }}>
                 <span>Instância reserva do administrador</span>
                 <select className="input" value={appNotifications.fallbackInstanceId}
                   onChange={(e) => setAppNotifications({ ...appNotifications, fallbackInstanceId: e.target.value })}>
@@ -209,10 +188,8 @@ export default function StoreAppModal({ storeId, onClose }) {
                     </option>
                   ))}
                 </select>
-                <small className="muted">A instância reserva só será usada quando o envio pela instância da loja falhar.</small>
-              </label>}
-              {!notificationInstances.some((instance) => instance.storeId === Number(storeId) && instance.connected)
-                && <small className="muted">Conecte uma instância de envio nesta loja para receber notificações.</small>}
+              </label>
+              <small className="muted">A instância principal e o destino dos avisos são configurados pelo usuário do app.</small>
             </>}
           </section>
           </section>

@@ -913,6 +913,7 @@ model PosSettings {
   storeId   Int?     @map("store_id")
   scopeKey  String   @map("scope_key")
   receipt   Json     @default("{}")
+  layout    Json     @default("{}")
   updatedAt DateTime @default(now()) @updatedAt @map("updated_at")
 
   user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)

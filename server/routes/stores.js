@@ -2,7 +2,7 @@ import { Router } from 'express';
 import bcrypt from 'bcryptjs';
 import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
-import { AppError, normalizePhone } from '../utils/helpers.js';
+import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { addDomainToEasypanel, removeDomainFromEasypanel } from '../services/easypanel.js';
 import { appHost, checkDomainDns, forgetDomain } from '../services/domains.js';
@@ -339,41 +339,19 @@ router.put('/:id/app', async (req, res) => {
   if (req.body?.appNotifications !== undefined) {
     const raw = req.body.appNotifications || {};
     appNotifications = {
-      enabled: Boolean(raw.enabled),
-      instanceId: raw.instanceId ? Number(raw.instanceId) : null,
       fallbackEnabled: Boolean(raw.fallbackEnabled),
       fallbackInstanceId: raw.fallbackInstanceId ? Number(raw.fallbackInstanceId) : null,
     };
-    if (appNotifications.enabled && (!Number.isSafeInteger(appNotifications.instanceId) || appNotifications.instanceId < 1)) {
-      throw new AppError(400, 'Selecione a instância da loja para enviar as notificações.');
-    }
-    if (appNotifications.fallbackEnabled && (!appNotifications.enabled
-      || !Number.isSafeInteger(appNotifications.fallbackInstanceId) || appNotifications.fallbackInstanceId < 1)) {
+    if (appNotifications.fallbackEnabled
+      && (!Number.isSafeInteger(appNotifications.fallbackInstanceId) || appNotifications.fallbackInstanceId < 1)) {
       throw new AppError(400, 'Selecione a instância do administrador para usar como reserva.');
     }
-    if (appNotifications.enabled) {
-      if (!normalizePhone(store.config?.whatsapp)) {
-        throw new AppError(400, 'Informe o WhatsApp da loja nas configurações de entrega antes de ativar as notificações.');
-      }
-      let primary = await prisma.instance.findFirst({
-        where: { id: appNotifications.instanceId, userId: req.user.id, storeId: store.id, purpose: 'envio' },
+    if (appNotifications.fallbackEnabled) {
+      const fallback = await prisma.instance.findFirst({
+        where: { id: appNotifications.fallbackInstanceId, userId: req.user.id, storeId: null, purpose: 'envio' },
       });
-      if (!primary && appNotifications.instanceId === Number(store.config?.orderNotifications?.instanceId)) {
-        primary = await prisma.instance.findFirst({
-          where: { id: appNotifications.instanceId, userId: req.user.id, storeId: null, purpose: 'envio' },
-        });
-      }
-      if (!primary || await whatsapp.getState(primary) !== 'open') {
-        throw new AppError(400, 'A instância principal precisa estar conectada à loja.');
-      }
-      if (appNotifications.fallbackEnabled) {
-        const fallback = await prisma.instance.findFirst({
-          where: { id: appNotifications.fallbackInstanceId, userId: req.user.id, storeId: null, purpose: 'envio' },
-        });
-        if (appNotifications.fallbackInstanceId === appNotifications.instanceId
-          || !fallback || await whatsapp.getState(fallback) !== 'open') {
-          throw new AppError(400, 'A instância reserva precisa estar conectada à conta do administrador.');
-        }
+      if (!fallback || await whatsapp.getState(fallback) !== 'open') {
+        throw new AppError(400, 'A instância reserva precisa estar conectada à conta do administrador.');
       }
     }
   }
@@ -423,7 +401,7 @@ router.put('/:id/app', async (req, res) => {
               ...currentConfig,
               orderNotifications: {
                 ...currentConfig.orderNotifications,
-                ...appNotifications,
+                fallbackEnabled: appNotifications.fallbackEnabled,
                 fallbackInstanceId: appNotifications.fallbackEnabled ? appNotifications.fallbackInstanceId : null,
               },
             },

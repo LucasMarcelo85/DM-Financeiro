@@ -12,6 +12,19 @@ const METHODS = [
   ['cartao', 'Cartão'],
   ['pix', 'Pix'],
 ];
+const POS_LAYOUT_FIELDS = [
+  ['customerName', 'Cliente'],
+  ['customerPhone', 'Telefone do cliente'],
+  ['notes', 'Observações'],
+  ['discount', 'Desconto'],
+  ['surcharge', 'Acréscimo'],
+  ['paymentMethod', 'Forma de pagamento'],
+  ['cashReceived', 'Valor recebido em dinheiro'],
+  ['mixedFirst', 'Primeira forma de pagamento'],
+  ['mixedAmount', 'Valor da primeira forma'],
+  ['mixedSecond', 'Segunda forma de pagamento'],
+];
+const DEFAULT_POS_LAYOUT = Object.fromEntries(POS_LAYOUT_FIELDS.map(([key]) => [key, { width: 'full', size: 'normal' }]));
 const imageUrl = (image) => image?.url || '';
 const eligibleTier = (option, productQty, cartQty, cartCents) => option.scope === 'cart_quantity'
   ? cartQty >= (option.minQuantity || 1)
@@ -72,6 +85,8 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   const [mixedSecond, setMixedSecond] = useState('pix');
   const [mixedAmount, setMixedAmount] = useState('');
   const [cashReceived, setCashReceived] = useState('');
+  const [layout, setLayout] = useState(DEFAULT_POS_LAYOUT);
+  const [layoutForm, setLayoutForm] = useState(null);
   const [receipt, setReceipt] = useState(null);
   const [receiptForm, setReceiptForm] = useState(null);
   const [lastOrder, setLastOrder] = useState(null);
@@ -87,7 +102,10 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   }).catch((error) => toast(error.message, 'error')), [toast]);
   useEffect(() => {
     loadProducts();
-    api.get('/catalog/pos/settings').then((result) => setReceipt(result.receipt)).catch((error) => toast(error.message, 'error'));
+    api.get('/catalog/pos/settings').then((result) => {
+      setReceipt(result.receipt);
+      setLayout({ ...DEFAULT_POS_LAYOUT, ...(result.layout || {}) });
+    }).catch((error) => toast(error.message, 'error'));
     if (canSelectStockFlow) loadStockFlows();
   }, [loadProducts, loadStockFlows, toast, canSelectStockFlow]);
 
@@ -110,12 +128,28 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   const paymentBreakdown = useMemo(() => {
     if (method !== 'misto') return [{ method, amountCents: totalCents, receivedCents: method === 'dinheiro' ? Math.max(totalCents, cashValue) : totalCents }];
     return [
-      { method: mixedFirst, amountCents: splitFirstCents, receivedCents: mixedFirst === 'dinheiro' ? cashValue : splitFirstCents },
-      { method: mixedSecond, amountCents: Math.max(0, totalCents - splitFirstCents), receivedCents: mixedSecond === 'dinheiro' ? Math.max(0, totalCents - splitFirstCents, cashValue) : Math.max(0, totalCents - splitFirstCents) },
+      { method: mixedFirst, amountCents: splitFirstCents, receivedCents: mixedFirst === 'dinheiro' ? (cashReceived ? cashValue : splitFirstCents) : splitFirstCents },
+      { method: mixedSecond, amountCents: Math.max(0, totalCents - splitFirstCents), receivedCents: mixedSecond === 'dinheiro' ? (cashReceived ? cashValue : Math.max(0, totalCents - splitFirstCents)) : Math.max(0, totalCents - splitFirstCents) },
     ];
-  }, [method, totalCents, cashValue, mixedFirst, mixedSecond, splitFirstCents]);
+  }, [method, totalCents, cashValue, cashReceived, mixedFirst, mixedSecond, splitFirstCents]);
   const splitInvalid = method === 'misto' && (splitFirstCents < 1 || splitFirstCents >= totalCents || mixedFirst === mixedSecond);
+  const splitError = splitFirstCents < 1
+    ? totalCents < 2 ? 'O total precisa ser maior que R$ 0,01 para dividir o pagamento.' : 'Informe um valor maior que zero para a primeira forma.'
+    : splitFirstCents >= totalCents
+      ? 'O valor da primeira forma precisa ser menor que o total; o restante será pago pela segunda forma.'
+      : mixedFirst === mixedSecond ? 'Escolha duas formas de pagamento diferentes.' : '';
   const changeCents = paymentBreakdown.filter((payment) => payment.method === 'dinheiro').reduce((sum, payment) => sum + Math.max(0, payment.receivedCents - payment.amountCents), 0);
+
+  const fieldStyle = (key) => ({
+    gridColumn: layout[key]?.width === 'half' ? 'span 1' : '1 / -1',
+  });
+  const fieldClass = (key) => `pos-configurable-field pos-field-size-${layout[key]?.size || 'normal'}`;
+
+  useEffect(() => {
+    if (method === 'misto' && totalCents > 1 && (splitFirstCents < 1 || splitFirstCents >= totalCents)) {
+      setMixedAmount(centsToMasked(Math.floor(totalCents / 2)));
+    }
+  }, [method, totalCents, splitFirstCents]);
 
   function chooseProduct(product) {
     const variations = product.images || [];
@@ -186,6 +220,15 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     } catch (error) { toast(error.message, 'error'); }
   }
 
+  async function saveLayout() {
+    try {
+      const result = await api.put('/catalog/pos/settings', { layout: layoutForm });
+      setLayout({ ...DEFAULT_POS_LAYOUT, ...(result.layout || {}) });
+      setLayoutForm(null);
+      toast('Dimensões dos campos salvas.');
+    } catch (error) { toast(error.message, 'error'); }
+  }
+
   async function checkout() {
     if (!cart.length) return toast('Adicione produtos ao carrinho.', 'error');
     if (discountCents > subtotalCents) return toast('O desconto não pode superar o subtotal.', 'error');
@@ -208,6 +251,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
       setSurcharge('');
       setCashReceived('');
       setMixedAmount('');
+      setMethod('dinheiro');
       setCartOpen(false);
       loadProducts();
       if (canSelectStockFlow) loadStockFlows();
@@ -235,6 +279,16 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     else if (value === 'dinheiro') setCashReceived('');
   }
 
+  function changeMixedFirst(value) {
+    if (value === mixedSecond) setMixedSecond(mixedFirst);
+    setMixedFirst(value);
+  }
+
+  function changeMixedSecond(value) {
+    if (value === mixedFirst) setMixedFirst(mixedSecond);
+    setMixedSecond(value);
+  }
+
   function renderCart() {
     return (
       <>
@@ -253,20 +307,20 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
           ))}
         </div>
         <div className="pos-checkout-fields">
-          <label>Cliente (opcional)
+          <label className={fieldClass('customerName')} style={fieldStyle('customerName')}>Cliente (opcional)
             <input className="input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Consumidor final" maxLength={120} />
           </label>
-          {allowCustomers && <label>Telefone do cliente
+          {allowCustomers && <label className={fieldClass('customerPhone')} style={fieldStyle('customerPhone')}>Telefone do cliente
             <input className="input" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="DDD + telefone" inputMode="tel" maxLength={20} />
           </label>}
-          <label>Observações do pedido
+          <label className={fieldClass('notes')} style={fieldStyle('notes')}>Observações do pedido
             <textarea className="input" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={2} placeholder="Opcional" />
           </label>
           <div className="pos-adjustments">
-            <label>Desconto {moneyInput(discount, setDiscount, 'Valor do desconto')}</label>
-            <label>Acréscimo {moneyInput(surcharge, setSurcharge, 'Valor do acréscimo')}</label>
+            <label className={fieldClass('discount')} style={fieldStyle('discount')}>Desconto {moneyInput(discount, setDiscount, 'Valor do desconto')}</label>
+            <label className={fieldClass('surcharge')} style={fieldStyle('surcharge')}>Acréscimo {moneyInput(surcharge, setSurcharge, 'Valor do acréscimo')}</label>
           </div>
-          <label>Forma de pagamento
+          <label className={fieldClass('paymentMethod')} style={fieldStyle('paymentMethod')}>Forma de pagamento
             <select className="input" value={method} onChange={(event) => changeMethod(event.target.value)}>
               {METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}
               <option value="misto">Pagamento misto</option>
@@ -274,17 +328,21 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
           </label>
           {method === 'misto' ? (
             <div className="pos-mixed">
-              <label>Primeira forma
-                <select className="input" value={mixedFirst} onChange={(event) => setMixedFirst(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+              <label className={fieldClass('mixedFirst')} style={fieldStyle('mixedFirst')}>Primeira forma
+                <select className="input" value={mixedFirst} onChange={(event) => changeMixedFirst(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
               </label>
-              <label>Valor da primeira forma {moneyInput(mixedAmount, setMixedAmount, 'Valor da primeira forma de pagamento')}</label>
-              <label>Segunda forma
-                <select className="input" value={mixedSecond} onChange={(event) => setMixedSecond(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
+              <label className={fieldClass('mixedAmount')} style={fieldStyle('mixedAmount')}>Valor da primeira forma {moneyInput(mixedAmount, setMixedAmount, 'Valor da primeira forma de pagamento')}</label>
+              <label className={fieldClass('mixedSecond')} style={fieldStyle('mixedSecond')}>Segunda forma
+                <select className="input" value={mixedSecond} onChange={(event) => changeMixedSecond(event.target.value)}>{METHODS.map(([value, label]) => <option value={value} key={value}>{label}</option>)}</select>
               </label>
               <p className="muted">Restante: {brl(Math.max(0, totalCents - splitFirstCents))}</p>
+              {splitError && <p className="form-error" role="alert">{splitError}</p>}
+              {(mixedFirst === 'dinheiro' || mixedSecond === 'dinheiro') && <label className={fieldClass('cashReceived')} style={fieldStyle('cashReceived')}>Valor recebido em dinheiro (opcional)
+                {moneyInput(cashReceived, setCashReceived, 'Valor recebido em dinheiro')}
+              </label>}
             </div>
           ) : method === 'dinheiro' ? (
-            <label>Valor recebido (opcional)
+            <label className={fieldClass('cashReceived')} style={fieldStyle('cashReceived')}>Valor recebido (opcional)
               {moneyInput(cashReceived, setCashReceived, 'Valor recebido em dinheiro')}
             </label>
           ) : null}
@@ -303,7 +361,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     <section className="pos-page" ref={pageRef}>
       <header className="pos-header">
         <div>{onClose && <button type="button" className="btn btn-ghost btn-sm" onClick={onClose}>← Voltar</button>}<div><h1>Frente de caixa</h1><p className="muted">Venda rápida, estoque atualizado automaticamente.</p></div></div>
-        <div className="pos-header-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>{fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => setReceiptForm({ ...receipt })}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
+        <div className="pos-header-actions"><button type="button" className="btn btn-ghost btn-sm" onClick={() => setLayoutForm({ ...layout })}>Campos do caixa</button><button type="button" className="btn btn-ghost btn-sm" onClick={toggleFullscreen}>{fullscreen ? 'Sair da tela cheia' : 'Tela cheia'}</button><button type="button" className="btn btn-ghost btn-sm" onClick={() => receipt && setReceiptForm({ ...receipt })} disabled={!receipt}>Comprovante</button><button type="button" className="btn btn-primary pos-mobile-cart" onClick={() => setCartOpen(true)}>Carrinho · {cartCount}</button></div>
       </header>
       <div className="pos-layout">
         <section className="pos-products-panel">
@@ -350,6 +408,30 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
         </aside>
       </div>
       {scanning && <BarcodeScanner onDetected={scanCode} onClose={() => setScanning(false)} />}
+      {layoutForm && <Modal title="Dimensões dos campos do caixa" onClose={() => setLayoutForm(null)} wide
+        footer={<><button className="btn btn-ghost" onClick={() => setLayoutForm(null)}>Cancelar</button><button className="btn btn-primary" onClick={saveLayout}>Salvar layout</button></>}>
+        <p className="muted">Ajuste a largura e o tamanho de cada campo. O layout fica salvo separadamente para a loja atual.</p>
+        <div className="pos-layout-settings">
+          {POS_LAYOUT_FIELDS.map(([key, label]) => (
+            <fieldset key={key}>
+              <legend>{label}</legend>
+              <label>Largura
+                <select className="input" value={layoutForm[key]?.width || 'full'} onChange={(event) => setLayoutForm((current) => ({ ...current, [key]: { ...current[key], width: event.target.value } }))}>
+                  <option value="full">Largura total</option>
+                  <option value="half">Metade da linha</option>
+                </select>
+              </label>
+              <label>Tamanho
+                <select className="input" value={layoutForm[key]?.size || 'normal'} onChange={(event) => setLayoutForm((current) => ({ ...current, [key]: { ...current[key], size: event.target.value } }))}>
+                  <option value="compact">Compacto</option>
+                  <option value="normal">Normal</option>
+                  <option value="large">Amplo</option>
+                </select>
+              </label>
+            </fieldset>
+          ))}
+        </div>
+      </Modal>}
       {selection && (
         <Modal title={`Adicionar ${selection.product.name}`} onClose={() => setSelection(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setSelection(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => addToCart(selection.product, selection.imageId, selection.priceOptionId)} disabled={selection.product.stockEnabled && stockFor(selection.product, selection.imageId) < 1}>Adicionar ao carrinho</button></>}>
