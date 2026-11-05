@@ -134,6 +134,23 @@ export const fetchAllGroups = async (name) => asList(await evo('GET', `/group/fe
 
 export const connectInstance = (name) => evo('GET', `/instance/connect/${enc(name)}`);
 
+export async function fetchPhoneNumber(name) {
+  const data = await evo('GET', `/instance/fetchInstances?instanceName=${enc(name)}`);
+  const instances = Array.isArray(data)
+    ? data
+    : Array.isArray(data?.instances) ? data.instances
+      : Array.isArray(data?.instance) ? data.instance
+        : data?.instance ? [data.instance]
+        : [data];
+  const instance = instances.find((item) => [item?.name, item?.instanceName, item?.instance?.name, item?.instance?.instanceName].includes(name))
+    || (instances.length === 1 ? instances[0] : null);
+  const raw = instance?.ownerJid || instance?.owner || instance?.number || instance?.phoneNumber
+    || instance?.instance?.ownerJid || instance?.instance?.owner || instance?.instance?.number;
+  if (typeof raw !== 'string') return null;
+  const number = raw.split('@')[0].split(':')[0].replace(/\D/g, '');
+  return number || null;
+}
+
 // Retorna: 'open' | 'connecting' | 'close' | 'missing'
 export async function getState(name) {
   try {

@@ -254,7 +254,7 @@ router.patch('/team/users/:uid', shopAuth, needPrimary, async (req, res) => {
 
 router.use('/inventory', shopAuth, needPerm('estoque'), inventoryRoutes);
 
-// Lojista cadastra, edita e desativa produtos, mas não exclui nem muda preferências da conta.
+// Lojista administra os produtos da loja, sem alterar preferências globais da conta.
 router.use('/products', shopAuth, needPerm('produtos', 'pdv', 'estoque'), (req, _res, next) => {
   if (!req.shopPerms.includes('produtos')) {
     if (req.method !== 'GET' || req.path !== '/') throw new AppError(403, 'Seu acesso só libera a consulta de produtos para o PDV.', 'FORBIDDEN');
@@ -262,7 +262,7 @@ router.use('/products', shopAuth, needPerm('produtos', 'pdv', 'estoque'), (req, 
   }
   return needTab('produtos')(req, _res, next);
 }, (req, _res, next) => {
-  if (req.method === 'DELETE' || req.path.startsWith('/preferences') && req.method !== 'GET') throw new AppError(403, 'O aplicativo não permite esta ação.', 'FORBIDDEN');
+  if (req.path.startsWith('/preferences') && req.method !== 'GET') throw new AppError(403, 'O aplicativo não permite esta ação.', 'FORBIDDEN');
   next();
 }, productRoutes);
 

@@ -239,7 +239,15 @@ export function instanceRouter(purpose) {
         if (r.provider === 'evolution' && !configured) return publicInstance(r, { state: 'unknown', connected: false });
         try {
           const state = await wa.getState(r);
-          return publicInstance(r, { state, connected: state === 'open' });
+          let phoneNumber = null;
+          if (audit && state === 'open') {
+            try {
+              phoneNumber = await evo.fetchPhoneNumber(r.name);
+            } catch (error) {
+              console.warn(`[auditoria] não foi possível consultar o telefone de ${r.name}: ${error.message}`);
+            }
+          }
+          return publicInstance(r, { state, connected: state === 'open', ...(phoneNumber ? { phoneNumber } : {}) });
         } catch {
           failed = true;
           return publicInstance(r, { state: 'unknown', connected: false });

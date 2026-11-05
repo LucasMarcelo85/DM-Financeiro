@@ -233,7 +233,8 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
     await run(`d${inst.id}`, () => api.del(`${base}/${inst.id}`), audit ? 'Número removido.' : 'WhatsApp removido.');
   };
 
-  const title = (i) => i.label || (i.provider === 'meta' ? i.metaPhoneDisplay || `ID ${i.metaPhoneNumberId}` : formatDoc(i.name));
+  const phoneDisplay = (i) => i.metaPhoneDisplay || (i.phoneNumber ? formatStoredPhone(i.phoneNumber) : '');
+  const title = (i) => i.label || phoneDisplay(i) || (i.provider === 'meta' ? `ID ${i.metaPhoneNumberId}` : formatDoc(i.name));
   const status = (i) => (i.connected ? 'Conectado' : i.state === 'unknown' ? 'Sem resposta do servidor' : i.provider === 'meta' ? 'Token recusado pela Meta' : i.state === 'connecting' ? 'Aguardando leitura do QR Code' : 'Desconectado');
 
   return (
@@ -269,8 +270,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
                 <strong>{title(i)} <span className={`prov-badge prov-${i.provider}`}>{i.provider === 'meta' ? 'API oficial' : 'QR Code'}</span>{audit && <span className="pill">{i.auditScope?.startsWith('store:') ? appScopeLabel(i.auditScope) : 'Loja principal'}</span>}</strong>
                 <span>
                   {status(i)}
-                  {i.provider === 'meta' && i.metaPhoneDisplay && i.label ? ` · ${i.metaPhoneDisplay}` : ''}
-                  {i.provider !== 'meta' && i.label ? ` · ${formatDoc(i.name)}` : ''}
+                  {phoneDisplay(i) && i.label ? ` · ${phoneDisplay(i)}` : ''}
                 </span>
                 {audit && i.connected && i.provider === 'evolution' && (
                   <span className="inst-health">
