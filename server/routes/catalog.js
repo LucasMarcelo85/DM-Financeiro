@@ -13,6 +13,7 @@ import * as whatsapp from '../services/whatsapp.js';
 import { dateRange, importedDate } from '../utils/date-range.js';
 import { assertPin } from '../utils/pin.js';
 import { ensureDefaultStockFlow, resolveStockFlow } from '../services/inventory.js';
+import { workspaceEmailFor } from '../services/workspace.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -115,12 +116,24 @@ router.put('/settings', async (req, res) => {
   const token = current.token;
   const cfg = cleanCatalogConfig(b.config, { hasToken: Boolean(config.geo.superfreteToken || token) });
   if (cfg.orderNotifications.enabled) {
-    let instance = await prisma.instance.findFirst({
-      where: {
-        id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
-        ...(storeId === null ? { storeId } : { OR: [{ storeId }, { storeId: null }] }),
-      },
-    });
+    const workspace = req.shopUser && storeId !== null
+      ? await prisma.user.findUnique({ where: { email: workspaceEmailFor(storeId) }, select: { id: true } })
+      : null;
+    let instance = null;
+    if (req.shopUser && storeId !== null) {
+      if (workspace) {
+        instance = await prisma.instance.findFirst({
+          where: { id: cfg.orderNotifications.instanceId, userId: workspace.id, purpose: 'envio', storeId },
+        });
+      }
+    } else {
+      instance = await prisma.instance.findFirst({
+        where: {
+          id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
+          ...(storeId === null ? { storeId } : { OR: [{ storeId }, { storeId: null }] }),
+        },
+      });
+    }
     const previousInstanceId = current.cfg.orderNotifications?.instanceId;
     if (!instance && storeId !== null && cfg.orderNotifications.instanceId === previousInstanceId) {
       instance = await prisma.instance.findFirst({

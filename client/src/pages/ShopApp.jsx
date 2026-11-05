@@ -9,14 +9,12 @@ import Orders from './Orders.jsx';
 import Api from './Api.jsx';
 import Audit from './Audit.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
-import InstanceManager from '../components/InstanceManager.jsx';
 
 const TABS = [
   ['produtos', 'Produtos'],
   ['equipe', 'Gerenciar acessos'],
   ['pedidos', 'Pedidos e clientes'],
   ['pdv', 'Frente de caixa'],
-  ['entregas', 'Entregas e WhatsApp'],
   ['api', 'API e webhooks'],
   ['auditoria', 'Auditoria'],
   ['whatsapp', 'WhatsApp'],
@@ -28,11 +26,13 @@ const TABS = [
 ];
 const tabsFor = (perms = [], isPrimary = false) => TABS.filter(([key]) => key === 'produtos'
   ? perms.includes(key) || perms.includes('estoque')
-  : key === 'equipe'
-    ? isPrimary
-    : key === 'pedidos'
-      ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
-      : perms.includes(key));
+  : key === 'whatsapp'
+    ? perms.includes('whatsapp') || perms.includes('entregas')
+    : key === 'equipe'
+      ? isPrimary
+      : key === 'pedidos'
+        ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
+        : perms.includes(key));
 const firstTab = (perms, isPrimary) => tabsFor(perms, isPrimary)[0]?.[0] || '';
 const foregroundFor = (color) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
@@ -219,7 +219,7 @@ export default function ShopApp() {
     ['arquivados', 'Arquivados'],
     ['estrategia', 'Estratégia'],
     ['pdv', 'Frente de caixa'],
-    ['entregas', 'Entregas e WhatsApp'],
+    ['entregas', 'Entregas e notificações do catálogo'],
     ['api', 'API e webhooks'],
     ['auditoria', 'Auditoria'],
     ['whatsapp', 'WhatsApp'],
@@ -332,16 +332,16 @@ export default function ShopApp() {
                 : tab === 'pdv' ? <Orders key="shop-pdv" allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
                 : tab === 'api' ? <Api />
                   : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
-                    : WORKSPACE_TABS.includes(tab) ? <WorkspaceSection key={tab} area={tab} />
-                    : tab === 'entregas' ? <>
-                      <section className="card">
-                        <h2>WhatsApp conectado a este site</h2>
-                        <p className="muted">A conexão criada aqui pertence somente a esta loja e pode ser usada para avisos de pedidos.</p>
-                        <InstanceManager purpose="envio" />
-                        <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas, frete e notificações</button>
-                      </section>
+                    : tab === 'whatsapp' ? <>
+                      {perms.includes('entregas') && <section className="card" style={{ marginBottom: 16 }}>
+                        <h2>Entregas e notificações do catálogo</h2>
+                        <p className="muted">Configure frete, formas de entrega e o WhatsApp que recebe os avisos de novos pedidos.</p>
+                        <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas e notificações</button>
+                      </section>}
+                      <WorkspaceSection key={tab} area={tab} />
                       {catalogSettingsOpen && <CatalogSettings storeId={appStoreId} onClose={() => setCatalogSettingsOpen(false)} />}
-                    </> : null}
+                    </>
+                    : WORKSPACE_TABS.includes(tab) ? <WorkspaceSection key={tab} area={tab} /> : null}
       </main>
       {accountOpen && <Modal title="Usuário e senha" onClose={() => setAccountOpen(false)}>
         <div style={{ display: 'grid', gap: 12 }}>

@@ -7,6 +7,7 @@ import { readLimits } from './app-access.js';
 // lembretes, contratos, portfólio e IA do app, separados dos do dono. Ele nunca faz login nem aparece no admin.
 export const WORKSPACE_EMAIL_SUFFIX = '@workspace.invalid';
 const emailFor = (storeId) => `ws-${storeId}${WORKSPACE_EMAIL_SUFFIX}`;
+export const workspaceEmailFor = (storeId) => emailFor(storeId);
 
 export async function workspaceFor(store, owner) {
   const email = emailFor(store.id);

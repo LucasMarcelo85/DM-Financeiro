@@ -435,7 +435,8 @@ router.delete('/folders/:id/contacts/:phone', async (req, res) => {
 router.post('/agents', async (req, res) => {
   const agentCap = req.user.appLimits?.aiAgents;
   if (agentCap !== undefined && await prisma.aiAgent.count({ where: { userId: req.user.id } }) >= agentCap) {
-    throw new AppError(403, `Este app permite ${agentCap} ${agentCap === 1 ? 'agente' : 'agentes'} de IA.`, 'LIMIT_REACHED');
+    const guidance = req.shopUser ? ' Consulte seu gerenciador para aumentar o limite.' : '';
+    throw new AppError(403, `Este app permite ${agentCap} ${agentCap === 1 ? 'agente' : 'agentes'} de IA.${guidance}`, 'LIMIT_REACHED');
   }
   const body = req.body || {};
   const name = String(body.name || '').trim();

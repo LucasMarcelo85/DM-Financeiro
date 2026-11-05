@@ -126,12 +126,13 @@ export function instanceRouter(purpose) {
   }
 
   // Vagas de envio repartidas com os apps: o app respeita o próprio teto e a conta principal fica com o restante do plano.
-  async function assertEnvioRoom(user, storeId, total, globalLimit) {
+  async function assertEnvioRoom(user, req, storeId, total, globalLimit) {
     const stores = await prisma.store.findMany({ where: { userId: user.id }, select: { id: true, appLimits: true } });
     if (storeId) {
       const cap = readLimits(stores.find((s) => s.id === storeId)).instances;
       if (cap !== undefined && await prisma.instance.count({ where: { userId: user.id, purpose, storeId } }) >= cap) {
-        throw new AppError(403, `Este app liberou ${cap} ${cap === 1 ? 'WhatsApp de envio' : 'WhatsApps de envio'}. Peça ao administrador para ampliar o limite.`, 'LIMIT_REACHED');
+        const guidance = req.shopUser ? 'Consulte seu gerenciador para aumentar o limite.' : 'Peça ao administrador para ampliar o limite.';
+        throw new AppError(403, `Este app liberou ${cap} ${cap === 1 ? 'WhatsApp de envio' : 'WhatsApps de envio'}. ${guidance}`, 'LIMIT_REACHED');
       }
       return;
     }
@@ -146,13 +147,16 @@ export function instanceRouter(purpose) {
   async function assertCanAdd(user, req, auditScope, storeId = null) {
     const total = await prisma.instance.count({ where: { userId: user.id, purpose } });
     const globalLimit = limitOf(user);
-    if (!audit) await assertEnvioRoom(user, storeId, total, globalLimit);
+    if (!audit) await assertEnvioRoom(user, req, storeId, total, globalLimit);
     const scopeLimit = await auditScopeLimit(user, req, auditScope);
     const scopeCount = audit
       ? await prisma.instance.count({ where: { userId: user.id, purpose, auditScope } })
       : total;
     if (total >= globalLimit || scopeCount >= scopeLimit) {
-      throw new AppError(403, `O limite disponível é ${scopeLimit} ${scopeLimit === 1 ? noun : nouns} para este acesso. Ajuste o limite do app ou amplie o plano para adicionar mais.`, 'LIMIT_REACHED');
+      const guidance = req.shopUser
+        ? 'Consulte seu gerenciador para aumentar o limite.'
+        : 'Ajuste o limite do app ou amplie o plano para adicionar mais.';
+      throw new AppError(403, `O limite disponível é ${scopeLimit} ${scopeLimit === 1 ? noun : nouns} para este acesso. ${guidance}`, 'LIMIT_REACHED');
     }
   }
 

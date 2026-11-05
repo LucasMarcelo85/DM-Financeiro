@@ -71,6 +71,7 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
       setInfiniteHandle(r.providers?.find((p) => p.provider === 'infinitepay')?.handle || '');
     }).catch((e) => setError(e.message));
     const instanceQuery = new URLSearchParams({ includeOwner: '1' });
+    if (isShopMode()) instanceQuery.delete('includeOwner');
     if (activeStore) instanceQuery.set('store', activeStore);
     api.get(`/instances?${instanceQuery}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
   }, [settingsUrl]);
@@ -149,6 +150,9 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
                 onChange={(e) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, instanceId: e.target.value } }))}
               >
                 <option value="">Selecione uma instância</option>
+                {isShopMode() && f.orderNotifications.instanceId
+                  && !instances.some((instance) => String(instance.id) === f.orderNotifications.instanceId)
+                  && <option value={f.orderNotifications.instanceId} disabled>Instância anterior indisponível neste acesso</option>}
                 {instances.filter((instance) => (!activeStore || instance.storeId === Number(activeStore)
                   || (instance.storeId === null && !isShopMode())
                   || String(instance.id) === f.orderNotifications.instanceId)
@@ -191,7 +195,7 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
             <p className="muted small">
               Os avisos de pedidos do catálogo serão enviados para o WhatsApp da loja informado acima. Vendas registradas no PDV não geram notificações. Pagamentos confirmados pela InfinitePay também são notificados; marcações manuais de pagamento não enviam aviso.
             </p>
-            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore) || (instance.storeId === null && !isShopMode()))) && <p className="muted small">Conecte um WhatsApp{activeStore ? ' nesta loja ou na conta do administrador' : ' na conta'} para habilitar o envio.</p>}
+            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore) || (instance.storeId === null && !isShopMode()))) && <p className="muted small">{isShopMode() ? 'Conecte um WhatsApp nesta loja pela aba WhatsApp para habilitar o envio.' : `Conecte um WhatsApp${activeStore ? ' nesta loja ou na conta do administrador' : ' na conta'} para habilitar o envio.`}</p>}
           </>}
         </fieldset>
         <fieldset className="cs-box">

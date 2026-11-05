@@ -2,6 +2,7 @@ import { prisma } from '../prisma.js';
 import { defaultCatalogConfig } from '../utils/catalog.js';
 import { normalizePhone } from '../utils/helpers.js';
 import * as whatsapp from './whatsapp.js';
+import { workspaceEmailFor } from './workspace.js';
 
 const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
@@ -22,10 +23,20 @@ export async function notifyCatalogOrder(order, event) {
   const number = normalizePhone(cfg.whatsapp);
   if (!number || !Number.isInteger(notification.instanceId)) throw new Error('Configure o WhatsApp da loja para receber notificações e a instância de envio.');
 
+  const workspace = order.storeId === null ? null : await prisma.user.findUnique({
+    where: { email: workspaceEmailFor(order.storeId) },
+    select: { id: true },
+  });
   const instance = await prisma.instance.findFirst({
     where: {
-      id: notification.instanceId, userId: order.userId, purpose: 'envio',
-      ...(order.storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId: order.storeId }] }),
+      id: notification.instanceId, purpose: 'envio',
+      ...(order.storeId === null
+        ? { userId: order.userId, storeId: null }
+        : { OR: [
+          { userId: order.userId, storeId: order.storeId },
+          ...(workspace ? [{ userId: workspace.id, storeId: order.storeId }] : []),
+          { userId: order.userId, storeId: null },
+        ] }),
     },
   });
 

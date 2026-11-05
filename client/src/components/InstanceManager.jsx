@@ -312,7 +312,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
           {canAdd ? (
             <button className="btn btn-ghost" onClick={() => setChoose(true)} disabled={busy === 'add'}><Icon name="plus" size={18} /> {audit ? 'Adicionar outro número' : 'Adicionar outro WhatsApp'}</button>
           ) : (
-            <p className="muted small">{shop ? `Você usou ${data?.count ?? instances.length} de ${limit} conexões. Fale com a loja para ampliar o limite.` : `Você usou ${data?.count ?? instances.length} de ${limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.`}</p>
+            <p className="muted small">{shop ? `Você usou ${data?.count ?? instances.length} de ${limit} conexões. Consulte seu gerenciador para aumentar o limite.` : `Você usou ${data?.count ?? instances.length} de ${limit}. Para conectar mais, adquira limite extra ou mude para um plano maior.`}</p>
           )}
           {!shop && <BuyMore resource={audit ? 'auditInstances' : 'instances'} />}
         </div>

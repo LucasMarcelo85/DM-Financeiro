@@ -6,7 +6,7 @@ import { config } from '../config.js';
 import { AppError } from '../utils/helpers.js';
 import { limitsFor } from '../plans.js';
 import { computeAccess } from '../services/access.js';
-import { ACTION_BY_METHOD, hasAction, cleanActions } from '../services/app-access.js';
+import { ACTION_BY_METHOD, hasAction, cleanActions, readLimits } from '../services/app-access.js';
 import { instanceRouter } from './instances.js';
 import { tokenRoutes } from './api-tokens.js';
 import { catalogPaymentsRouter } from './catalog-payments.js';
@@ -49,7 +49,7 @@ const allowedPerms = (user, permissions, store) => {
   const tabs = limits.tabs;
   return permissions.filter((perm) => {
     if (perm === 'ia') return tabs.includes('ia');
-    if (perm === 'whatsapp') return tabs.includes('whatsapp') && limits.instances > 0;
+    if (perm === 'whatsapp') return tabs.includes('whatsapp') && limits.instances > 0 && (readLimits(store).wsInstances || 0) > 0;
     if (perm === 'contatos') return tabs.includes('clientes');
     if (perm === 'cobrancas') return tabs.includes('cobrancas');
     if (perm === 'contratos') return tabs.includes('contratos') && limits.contracts > 0;
@@ -295,7 +295,6 @@ router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   needPerm(area)(req, _res, next);
 }, catalogRoutes);
 
-router.use('/instances', shopAuth, needPerm('entregas'), needTab('pedidos'), instanceRouter('envio'));
 router.use('/catalog/payments', shopAuth, needPerm('entregas'), needTab('pedidos'), catalogPaymentsRouter);
 router.use('/tokens', shopAuth, needPerm('api'), needTab('api'), tokenRoutes);
 router.use('/audit/instances', shopAuth, needPerm('auditoria'), needTab('auditoria'), instanceRouter('auditoria'));
@@ -316,7 +315,10 @@ async function useWorkspace(req, _res, next) {
 }
 const workspaceArea = (path, areas, handler) => router.use(`/ws/${path}`, shopAuth, needAnyPerm(...areas), useWorkspace, handler);
 const SCHEDULING = ['cobrancas'];
-workspaceArea('instances', ['whatsapp', ...SCHEDULING, 'ia'], instanceRouter('envio'));
+const appInstanceAreas = ['whatsapp', 'entregas', ...SCHEDULING, 'ia'];
+const appInstanceRoutes = instanceRouter('envio');
+router.use('/instances', shopAuth, needAnyPerm(...appInstanceAreas), useWorkspace, appInstanceRoutes);
+workspaceArea('instances', appInstanceAreas, appInstanceRoutes);
 workspaceArea('contacts', ['contatos', ...SCHEDULING], contactRoutes);
 workspaceArea('schedules', SCHEDULING, scheduleRoutes);
 workspaceArea('receipts', SCHEDULING, receiptRoutes);
