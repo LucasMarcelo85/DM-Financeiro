@@ -402,7 +402,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (phone.replace(/\D/g, '').length < 10) return setError('Informe o seu telefone com DDD.');
     if (!type) return setError('Escolha a forma de entrega.');
     if (type === 'retirada' && !store.pickup?.enabled) return setError('A retirada não está disponível nesta loja.');
-    if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return setError('Excursão: informe o nome do galpão, a cidade e o endereço do galpão.');
+    if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return setError('Excursão: informe o nome da Excursão, a cidade e o endereço do galpão.');
     if (type === 'motoboy' && !canQuote) return setError('Motoboy: informe o CEP ou o endereço de entrega.');
     if (type === 'correios' && !zipOk) return setError('Correios: informe o CEP de destino.');
     if (needsQuote && !option) return setError('Calcule o frete antes de finalizar.');
@@ -471,7 +471,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (n === 1) return name.trim().length < 2 ? 'Informe o seu nome.' : phone.replace(/\D/g, '').length < 10 ? 'Informe o seu telefone com DDD.' : '';
     if (n === 2) {
       if (!type) return 'Escolha a forma de entrega.';
-      if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome do galpão, a cidade e o endereço do galpão.';
+      if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome da Excursão, a cidade e o endereço do galpão.';
       if (type === 'motoboy' && !canQuote) return 'Motoboy: informe o CEP ou o endereço de entrega.';
       if (type === 'correios' && !zipOk) return 'Correios: informe o CEP de destino.';
       if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
@@ -556,8 +556,8 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           {type === 'retirada' && <div className="cat-pickup-info"><IconSvg name="map-pin" size={22} /><span><strong>{store.pickup?.name || store.storeName || 'Retirada na loja'}</strong><small>{store.pickup?.address}</small></span></div>}
           {type === 'excursao' && (
             <div className="cat-fields">
-              <label><span>Nome do galpão *</span><input value={exc.warehouse} onChange={(e) => setExc({ ...exc, warehouse: e.target.value })} maxLength={120} /></label>
-              <label><span>Cidade do galpão *</span><input value={exc.city} onChange={(e) => setExc({ ...exc, city: e.target.value })} maxLength={80} /></label>
+              <label><span>Nome da Excursão *</span><input value={exc.warehouse} onChange={(e) => setExc({ ...exc, warehouse: e.target.value })} maxLength={120} /></label>
+              <label><span>Sua Cidade *</span><input value={exc.city} onChange={(e) => setExc({ ...exc, city: e.target.value })} maxLength={80} /></label>
               <label className="wide"><span>Endereço do galpão *</span><input value={exc.address} onChange={(e) => setExc({ ...exc, address: e.target.value })} maxLength={200} /></label>
             </div>
           )}
