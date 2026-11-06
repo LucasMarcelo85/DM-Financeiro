@@ -99,7 +99,12 @@ async function request(method, url, body) {
     /* resposta sem corpo */
   }
   if (!res.ok) {
-    if (shop && res.status === 401 && getShopToken()) { setShopToken(null); window.dispatchEvent(new Event('dm:shop-logout')); }
+    if (shop && res.status === 401 && getShopToken()) {
+      setShopToken(null);
+      window.dispatchEvent(new CustomEvent('dm:shop-logout', {
+        detail: { message: data?.error || 'Sua sessão expirou. Entre novamente no aplicativo.' },
+      }));
+    }
     if (shop && res.status === 403 && data?.code === 'PASSWORD_CHANGE_REQUIRED') window.dispatchEvent(new Event('dm:shop-password-required'));
     if (res.status === 402 && data?.code === 'PAYMENT_REQUIRED') window.dispatchEvent(new Event('dm:payment-required'));
     if (res.status === 423 && data?.code === 'PIN_REQUIRED') window.dispatchEvent(new Event('dm:pin-required')); // a aba foi travada de novo: a tela pede o PIN

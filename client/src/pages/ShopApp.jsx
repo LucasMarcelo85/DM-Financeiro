@@ -82,7 +82,7 @@ export default function ShopApp() {
       const allowedTabs = tabsFor(r.user.perms, r.user.isPrimary).map(([key]) => key);
       setTab((current) => allowedTabs.includes(current) ? current : firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
-    }).catch((e) => { if (active) toast(e.message, 'error'); });
+    }).catch((e) => { if (active && e.status !== 401) toast(e.message, 'error'); });
     return () => { active = false; };
   }, [authed]);
 
@@ -91,7 +91,10 @@ export default function ShopApp() {
   }, [q]);
 
   useEffect(() => {
-    const out = () => setAuthed(false);
+    const out = (event) => {
+      setAuthed(false);
+      setLoginError(event.detail?.message || 'Sua sessão expirou. Entre novamente no aplicativo.');
+    };
     window.addEventListener('dm:shop-logout', out);
     return () => window.removeEventListener('dm:shop-logout', out);
   }, []);

@@ -11,6 +11,7 @@ import Modal from '../components/Modal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { brl, centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
+import { importCsvBatches } from '../lib/csv.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 import InventoryManager from '../components/InventoryManager.jsx';
 import LabelPrinter from '../components/LabelPrinter.jsx';
