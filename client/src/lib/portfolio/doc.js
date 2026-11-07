@@ -273,7 +273,7 @@ export const boxOf = (el, device, products = CAT.products, catalog = CAT.catalog
     ? { ...el.box[device], h: Math.max(el.box[device].h, catgridMetrics(el, device, products, catalog).height) }
     : el.box[device]);
 
-export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) {
+export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog, compactCatalog = false) {
   const base = new Map(doc.elements.map((el) => [el.id, boxOf(el, device, products, catalog)]));
   const footerIds = new Set(doc.elements.filter((el) => el.region === 'footer').map((el) => el.id));
   const expansions = [];
@@ -284,10 +284,12 @@ export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.
   for (const el of grids) {
     const original = el.box[device];
     const shift = expansions.reduce((sum, item) => sum + (original.y >= item.bottom ? item.delta : 0), 0);
-    const naturalHeight = Math.max(original.h, catgridMetrics(el, device, products, catalog).height);
+    const naturalHeight = compactCatalog
+      ? catgridMetrics(el, device, products, catalog).height
+      : Math.max(original.h, catgridMetrics(el, device, products, catalog).height);
     const delta = naturalHeight - original.h;
     base.set(el.id, { ...base.get(el.id), y: original.y + shift, h: naturalHeight });
-    if (delta > 0) expansions.push({ bottom: original.y + original.h, delta });
+    if (delta !== 0) expansions.push({ bottom: original.y + original.h, delta });
   }
 
   for (const el of doc.elements) {
@@ -310,7 +312,7 @@ export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.
     const bodyBoxes = doc.elements
       .filter((el) => !footerIds.has(el.id) && !el.box[device].hide)
       .map((el) => base.get(el.id));
-    const footerTop = Math.max(doc.heights[device] || 700, bottomOf(bodyBoxes)) + 24;
+    const footerTop = Math.max(compactCatalog ? 0 : doc.heights[device] || 700, bottomOf(bodyBoxes)) + 24;
     for (const el of doc.elements) {
       if (!footerIds.has(el.id)) continue;
       const box = base.get(el.id);
@@ -320,7 +322,7 @@ export function layoutBoxes(doc, device, products = CAT.products, catalog = doc.
   return base;
 }
 
-export const pageHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) => Math.max(doc.heights[device] || 700, bottomOf([...layoutBoxes(doc, device, products, catalog).values()]) + 24);
+export const pageHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog, compactCatalog = false) => Math.max(compactCatalog ? 0 : doc.heights[device] || 700, bottomOf([...layoutBoxes(doc, device, products, catalog, compactCatalog).values()]) + 24);
 export const contentHeight = (doc, device, products = CAT.products, catalog = doc.catalog || CAT.catalog) => {
   const boxes = layoutBoxes(doc, device, products, catalog);
   const content = doc.elements.filter((el) => el.region !== 'footer' && !el.box[device].hide).map((el) => boxes.get(el.id));

@@ -596,10 +596,20 @@ export function PageCredit({ theme }) {
 
 // A área livre da página (elementos posicionados). `children` entra por cima dos elementos (alças de edição).
 export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public', animate = true, products, shop, onLink, onCart, cartCount = 0, replay = 0, children, minHeight, viewportFixed = true, fixedContainer = null }) {
+  const [catalogFilter, setCatalogFilter] = useState({ q: '', cat: '' });
   setCatalogContext(products, doc.catalog);
   const W = DESIGN_W[device];
-  const H = Math.max(minHeight || 0, pageHeight(doc, device, products, doc.catalog));
-  const boxes = layoutBoxes(doc, device, products, doc.catalog);
+  const compactCatalog = doc.kind === 'catalog' && mode === 'public' && Boolean(catalogFilter.q.trim() || catalogFilter.cat);
+  const only = doc.catalog?.display === 'only' && doc.catalog.onlyCategory ? doc.catalog.onlyCategory : '';
+  const selected = doc.catalog?.display === 'selected' ? new Set(doc.catalog.selectedProductIds || []) : null;
+  const filterText = catalogFilter.q.trim().toLowerCase();
+  const layoutProducts = compactCatalog
+    ? (products || []).filter((product) => (!only || product.category === only) && (!selected || selected.has(product.id))
+      && (!catalogFilter.cat || product.category === catalogFilter.cat)
+      && (!filterText || product.name.toLowerCase().includes(filterText) || product.category.toLowerCase().includes(filterText)))
+    : products;
+  const H = Math.max(minHeight || 0, pageHeight(doc, device, layoutProducts, doc.catalog, compactCatalog));
+  const boxes = layoutBoxes(doc, device, layoutProducts, doc.catalog, compactCatalog);
   const viewportWidth = typeof document === 'undefined' ? 0 : document.documentElement.clientWidth;
   const offsetX = fixedContainer
     ? Math.max(0, (fixedContainer.clientWidth - W * scale) / 2)
@@ -617,7 +627,7 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
             <RegionTag key={region} className={`pv-region pv-region-${region}`} data-region={region} aria-label={region === 'body' ? 'Conteúdo principal' : undefined}>
               {doc.elements.map((el, i) => {
                 if ((el.region || (el.t === 'menu' ? 'header' : 'body')) !== region) return null;
-                const box = boxes.get(el.id) || boxOf(el, device, products, doc.catalog);
+                const box = boxes.get(el.id) || boxOf(el, device, layoutProducts, doc.catalog);
                 const fixed = mode === 'public' && viewportFixed && el.fixed && !box.hide;
                 const fixedStyle = fixed ? {
                   position: fixedContainer ? 'absolute' : 'fixed',
@@ -641,7 +651,7 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
       </div>
     </div>
   );
-  return doc.kind === 'catalog' ? <CatalogScope doc={doc} products={products} shop={shop} mode={mode}>{body}</CatalogScope> : body;
+  return doc.kind === 'catalog' ? <CatalogScope doc={doc} products={products} shop={shop} mode={mode} filter={catalogFilter} onFilterChange={setCatalogFilter}>{body}</CatalogScope> : body;
 }
 
 // Variáveis de cor e fonte da página (usadas pelo fundo, rodapé, cartões e botões).

@@ -180,9 +180,10 @@ const CatCtx = createContext(null);
 const sortBR = (a, b) => a.localeCompare(b, 'pt-BR');
 
 // Compartilha busca, categoria e carrinho entre os elementos "Busca" e "Produtos" da mesma página.
-export function CatalogScope({ doc, products, shop, mode, children }) {
-  const [q, setQ] = useState('');
-  const [cat, setCat] = useState('');
+export function CatalogScope({ doc, products, shop, mode, filter, onFilterChange, children }) {
+  const { q, cat } = filter;
+  const setQ = (value) => onFilterChange((current) => ({ ...current, q: value }));
+  const setCat = (value) => onFilterChange((current) => ({ ...current, cat: value }));
   const value = useMemo(() => ({ catalog: doc.catalog, theme: doc.theme, products: products || [], shop, mode, q, setQ, cat, setCat }), [doc.catalog, doc.theme, products, shop, mode, q, cat]);
   return <CatCtx.Provider value={value}>{children}</CatCtx.Provider>;
 }
