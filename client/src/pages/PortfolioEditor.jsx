@@ -20,7 +20,7 @@ import { IMAGE_ACCEPT, fitImage } from '../lib/contract/image.js';
 import { loadImage } from '../lib/portfolio/imageTools.js';
 
 const PALETTE = [
-  { t: 'text', icon: 'text' }, { t: 'image', icon: 'image' }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
+  { t: 'text', icon: 'text' }, { t: 'image', icon: 'image', label: 'Imagem, GIF ou vídeo' }, { t: 'image-url', icon: 'link', label: 'Imagem ou GIF por URL', quick: true }, { t: 'icon', icon: 'logo' }, { t: 'button', icon: 'button' },
   { t: 'shape', icon: 'shape' }, { t: 'spacer', icon: 'align-middle' }, { t: 'video', icon: 'video' }, { t: 'carousel', icon: 'layers' }, { t: 'menu', icon: 'list' }, { t: 'products', icon: 'grid' }, { t: 'modal', icon: 'layers' },
   { t: 'footer', icon: 'file', label: 'Rodapé', quick: true },
   { t: 'catsearch', icon: 'text', catalog: true }, { t: 'catgrid', icon: 'grid', catalog: true },
@@ -57,6 +57,9 @@ export default function PortfolioEditor() {
   const [categories, setCategories] = useState([]);
   const [pages, setPages] = useState([]);
   const [imageTool, setImageTool] = useState(null); // { id, tool }
+  const [imageUrlOpen, setImageUrlOpen] = useState(false);
+  const [imageUrl, setImageUrl] = useState('');
+  const [imageUrlBusy, setImageUrlBusy] = useState(false);
   const [catalogCfg, setCatalogCfg] = useState(false);
   const [converted, setConverted] = useState(false);
   const [interacting, setInteracting] = useState(false);
@@ -305,7 +308,7 @@ export default function PortfolioEditor() {
 
   async function imageFromFile(file, at) {
     try {
-      const { src } = await fitImage(file, 1600);
+      const { src } = file.type.startsWith('video/') ? await videoToGif(file) : await fitImage(file, 1600);
       const img = await loadImage(src);
       const w = Math.min(420, DESIGN_W[deviceRef.current] - 40);
       const h = Math.round(w * (img.naturalHeight / img.naturalWidth));
@@ -314,9 +317,41 @@ export default function PortfolioEditor() {
     } catch (e) { toast(e.message, 'error'); return null; }
   }
 
+  async function imageFromUrl() {
+    const value = imageUrl.trim();
+    let url;
+    try { url = new URL(value); } catch { toast('Informe uma URL válida de imagem ou GIF.', 'error'); return; }
+    if (url.protocol !== 'https:' || url.username || url.password) {
+      toast('Use uma URL pública HTTPS, sem usuário ou senha.', 'error');
+      return;
+    }
+    if (url.href.length > 2048) {
+      toast('A URL da imagem é muito longa.', 'error');
+      return;
+    }
+    setImageUrlBusy(true);
+    try {
+      const dimensions = await new Promise((resolve, reject) => {
+        const img = new Image();
+        img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight });
+        img.onerror = () => reject(new Error('Não foi possível carregar a imagem. Verifique se a URL é pública e aponta para uma imagem ou GIF.'));
+        img.src = url.href;
+      });
+      if (!dimensions.w || !dimensions.h) throw new Error('A URL não retornou uma imagem válida.');
+      const w = Math.min(420, DESIGN_W[deviceRef.current] - 40);
+      const h = Math.round(w * (dimensions.h / dimensions.w));
+      const added = addNew('image', { src: url.href, box: { desktop: { x: 60, y: 60, w, h } } });
+      if (added) {
+        setImageUrlOpen(false);
+        setImageUrl('');
+      }
+    } catch (e) { toast(e.message, 'error'); } finally { setImageUrlBusy(false); }
+  }
+
   function addFromPalette(t, codeType) {
     if (t === 'footer') { addFooter(); return; }
     if (t === 'image') { pendingAdd.current = null; fileRef.current?.click(); return; }
+    if (t === 'image-url') { setImageUrlOpen(true); return; }
     if (t === 'products' && !products.length) toast('Cadastre produtos na aba Produtos/Serviços para escolher aqui.', 'error');
     const base = t === 'text' ? { box: { desktop: { x: 60, y: 60, w: 420, h: 70, fs: 28 } } }
       : t === 'custom' ? { name: 'JavaScript' }
@@ -495,7 +530,7 @@ export default function PortfolioEditor() {
           </div>
           {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
             <button key={`${p.t}-${p.codeType || p.label || ''}`} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t, p.codeType)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); if (p.codeType) e.dataTransfer.setData('text/pv-code-type', p.codeType); e.dataTransfer.effectAllowed = 'copy'; } }}
-              title={p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
+              title={p.t === 'image-url' ? 'Adicionar imagem ou GIF a partir de uma URL' : p.t === 'image' ? 'Selecionar uma imagem ou vídeo para converter em GIF' : p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
               <EIcon name={p.icon} size={20} />
               <span>{p.label || ELEMENT_LABELS[p.t]}</span>
             </button>
@@ -564,8 +599,14 @@ export default function PortfolioEditor() {
         const f = e.target.files?.[0]; e.target.value = '';
         if (!f) return;
         const sel = selectedRef.current && findElement(docRef.current, selectedRef.current);
-        if (sel?.t === 'image' && !sel.src) { try { patchSelected({ src: (await fitImage(f, 1600)).src }, 'src'); } catch (er) { toast(er.message, 'error'); } } else imageFromFile(f);
+        if (sel?.t === 'image' && !sel.src && !f.type.startsWith('video/')) { try { patchSelected({ src: (await fitImage(f, 1600)).src }, 'src'); } catch (er) { toast(er.message, 'error'); } } else imageFromFile(f);
       }} />
+
+      {imageUrlOpen && <Modal title="Adicionar imagem ou GIF por URL" onClose={() => setImageUrlOpen(false)}
+        footer={<><button type="button" className="btn btn-ghost" onClick={() => setImageUrlOpen(false)}>Cancelar</button><button type="button" className="btn btn-primary" onClick={imageFromUrl} disabled={imageUrlBusy || !imageUrl.trim()}>{imageUrlBusy ? 'Verificando...' : 'Adicionar'}</button></>}>
+        <label className="ce-field"><span>URL pública HTTPS</span><input className="input" type="url" value={imageUrl} onChange={(e) => setImageUrl(e.target.value)} placeholder="https://exemplo.com/imagem.gif" autoFocus /></label>
+        <p className="muted">A imagem precisa estar disponível publicamente. GIFs animados mantêm a animação.</p>
+      </Modal>}
 
       {toolEl && toolEl.src && (
         <ImageEditor src={toolEl.src} initial={imageTool.tool} onClose={() => setImageTool(null)}

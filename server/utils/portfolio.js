@@ -63,9 +63,15 @@ function color(v, d) {
 // Cor opcional: '' = "usar a cor do tema".
 const optColor = (v) => (v === '' || v == null ? '' : color(v, ''));
 
-// Imagem: só data URL de PNG/JPEG/WebP/GIF (SVG fica de fora de propósito). Vazio = sem imagem.
+// Imagem: data URL ou URL HTTPS pública de PNG/JPEG/WebP/GIF (SVG fica de fora).
 function image(v) {
   if (v === '' || v == null) return '';
+  if (typeof v === 'string' && v.length <= 2048) {
+    try {
+      const url = new URL(v);
+      if (url.protocol === 'https:' && url.hostname && !url.username && !url.password) return url.href;
+    } catch { /* validação abaixo retorna erro explícito */ }
+  }
   const m = typeof v === 'string' && v.length <= MAX_IMAGE_CHARS ? IMG_PREFIX.exec(v) : null;
   if (!m || !B64.test(v.slice(m[0].length))) {
     throw new AppError(400, 'Uma das imagens não é válida. Use PNG, JPG, WebP ou GIF de até ~2,5 MB.');
