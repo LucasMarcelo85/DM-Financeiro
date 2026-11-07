@@ -119,28 +119,29 @@ router.put('/settings', async (req, res) => {
     const workspace = req.shopUser && storeId !== null
       ? await prisma.user.findUnique({ where: { email: workspaceEmailFor(storeId) }, select: { id: true } })
       : null;
+    const primaryInstanceId = cfg.orderNotifications.instanceId;
     let instance = null;
-    if (req.shopUser && storeId !== null) {
+    if (primaryInstanceId && req.shopUser && storeId !== null) {
       if (workspace) {
         instance = await prisma.instance.findFirst({
-          where: { id: cfg.orderNotifications.instanceId, userId: workspace.id, purpose: 'envio', storeId },
+          where: { id: primaryInstanceId, userId: workspace.id, purpose: 'envio', storeId },
         });
       }
-    } else {
+    } else if (primaryInstanceId) {
       instance = await prisma.instance.findFirst({
         where: {
-          id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio',
+          id: primaryInstanceId, userId: req.user.id, purpose: 'envio',
           ...(storeId === null ? { storeId } : { OR: [{ storeId }, { storeId: null }] }),
         },
       });
     }
     const previousInstanceId = current.cfg.orderNotifications?.instanceId;
-    if (!instance && storeId !== null && cfg.orderNotifications.instanceId === previousInstanceId) {
+    if (!instance && primaryInstanceId && storeId !== null && primaryInstanceId === previousInstanceId) {
       instance = await prisma.instance.findFirst({
-        where: { id: cfg.orderNotifications.instanceId, userId: req.user.id, purpose: 'envio', storeId: null },
+        where: { id: primaryInstanceId, userId: req.user.id, purpose: 'envio', storeId: null },
       });
     }
-    if (!instance || await whatsapp.getState(instance) !== 'open') {
+    if ((!instance || await whatsapp.getState(instance) !== 'open') && !cfg.orderNotifications.fallbackEnabled) {
       throw new AppError(400, storeId === null
         ? 'Selecione uma instância de WhatsApp conectada da conta.'
         : 'Selecione uma instância de WhatsApp conectada desta loja.');

@@ -3,46 +3,37 @@ import { api } from '../api.js';
 import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { copyText } from '../lib/portfolio/share.js';
+import { SHOP_PERMISSION_GROUPS } from '../lib/shop-permissions.js';
 
-const PERM_LABELS = [
-  ['whatsapp', 'WhatsApp (conexões do app)'],
-  ['contatos', 'Clientes (contatos)'],
-  ['cobrancas', 'Cobranças'],
-  ['contratos', 'Contratos'],
-  ['auditoria', 'Auditoria e conversas WhatsApp'],
-  ['portfolio', 'Portfólio (o app edita a página principal da loja)'],
-  ['produtos', 'Produtos (cadastrar, editar e desativar)'],
-  ['estoque', 'Estoque e movimentações'],
-  ['pedidos', 'Pedidos'],
-  ['clientes', 'Clientes dos pedidos'],
-  ['arquivados', 'Arquivados'],
-  ['estrategia', 'Estratégia de vendas e regiões'],
-  ['pdv', 'Frente de caixa (PDV)'],
-  ['entregas', 'Entregas e frete'],
-  ['api', 'API e webhooks da loja'],
-  ['ia', 'IA (o usuário do app usa o próprio token)'],
-];
-const ALL_PERMS = PERM_LABELS.map(([k]) => k);
+const ALL_PERMS = SHOP_PERMISSION_GROUPS.flatMap(({ permissions }) => permissions.map(([key]) => key));
 const LIMIT_FIELDS = [
-  ['wsInstances', 'Conexões de WhatsApp do app (menus WhatsApp e cobranças)'],
+  ['wsInstances', 'WhatsApps de envio (cobranças e notificações; auditoria usa conexões separadas)'],
   ['contracts', 'Contratos'],
   ['apiTokens', 'Tokens de API'],
   ['aiAgents', 'Agentes de IA'],
 ];
 
 // Cada menu que o dono tem pode ser liberado inteiro para o acesso; não há ver/criar/editar/excluir separados.
-function PermMatrix({ labels, perms, disabled, onChange }) {
+function PermMatrix({ groups, perms, disabled, onChange }) {
+  const labels = groups.flatMap(({ permissions }) => permissions);
   function toggle(key, on) {
-    const next = labels.map(([k]) => k).filter((k) => (k === key ? on : perms.includes(k)));
+    const next = labels.map(([permission]) => permission).filter((permission) => (permission === key ? on : perms.includes(permission)));
     onChange({ perms: next, actions: {} });
   }
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(15rem, 1fr))', gap: '6px 14px' }}>
-      {labels.map(([key, label]) => (
-        <label key={key} className="small" style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
-          <input type="checkbox" disabled={disabled} checked={perms.includes(key)} onChange={(e) => toggle(key, e.target.checked)} />
-          {label}
-        </label>
+    <div style={{ display: 'grid', gap: 14 }}>
+      {groups.map(({ title, permissions }) => (
+        <section key={title} style={{ display: 'grid', gap: 7 }}>
+          <strong className="small">{title}</strong>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(16rem, 1fr))', gap: '10px 14px' }}>
+            {permissions.map(([key, label, description]) => (
+              <label key={key} className="small" style={{ display: 'grid', gridTemplateColumns: 'auto 1fr', gap: '2px 8px', alignItems: 'start' }}>
+                <input type="checkbox" disabled={disabled} checked={perms.includes(key)} onChange={(e) => toggle(key, e.target.checked)} />
+                <span><strong>{label}</strong><small className="muted" style={{ display: 'block' }}>{description}</small></span>
+              </label>
+            ))}
+          </div>
+        </section>
       ))}
     </div>
   );
@@ -60,8 +51,12 @@ export default function StoreAppModal({ storeId, onClose }) {
   const [busy, setBusy] = useState(false);
   const [step, setStep] = useState(0);
   const initializedFlowsStoreId = useRef(null);
-  const permissionLabels = PERM_LABELS.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
-    && (key !== 'auditoria' || cfg.auditEnabled && Number(cfg.auditInstanceLimit) > 0));
+  const permissionGroups = SHOP_PERMISSION_GROUPS.map(({ title, permissions }) => ({
+    title,
+    permissions: permissions.filter(([key]) => (data?.availablePerms || ALL_PERMS).includes(key)
+      && (key !== 'auditoria' || cfg.auditEnabled && Number(cfg.auditInstanceLimit) > 0)),
+  })).filter(({ permissions }) => permissions.length > 0);
+  const permissionLabels = permissionGroups.flatMap(({ permissions }) => permissions);
 
   const load = useCallback((preserveConfig = false) => Promise.all([
     api.get(`/stores/${storeId}/app`),
@@ -159,10 +154,10 @@ export default function StoreAppModal({ storeId, onClose }) {
           </section>
 
           <section className="sapp-section">
-            <header><span className="sapp-section-number">2</span><div><h3>Instância reserva para notificações</h3><p className="muted small">O usuário do app escolhe a própria instância principal nas configurações do catálogo.</p></div></header>
+            <header><span className="sapp-section-number">2</span><div><h3>Instância reserva para notificações</h3><p className="muted small">Será usada se a instância principal do app falhar ou não estiver configurada.</p></div></header>
           <section className="banner" style={{ display: 'grid', gap: 10 }}>
             <strong>Usar uma instância do administrador como reserva</strong>
-            <small className="muted">Ela só será usada se a instância principal escolhida pelo usuário do app falhar ao enviar.</small>
+            <small className="muted">Ela será usada se a instância principal escolhida pelo usuário do app falhar ou não estiver configurada.</small>
             <label style={{ display: 'flex', gap: 8, alignItems: 'center' }}>
               <input type="checkbox" checked={appNotifications.fallbackEnabled}
                 disabled={!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)}
@@ -171,7 +166,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                   fallbackEnabled: e.target.checked,
                   fallbackInstanceId: e.target.checked ? appNotifications.fallbackInstanceId : '',
                 })} />
-              Se houver falha, usar uma instância da conta do administrador
+              Se falhar ou não houver instância principal, usar uma instância da conta do administrador
             </label>
             {!appNotifications.fallbackEnabled && !notificationInstances.some((instance) => instance.storeId === null && instance.connected)
               && <small className="muted">Conecte uma instância na conta do administrador para habilitar a reserva.</small>}
@@ -276,7 +271,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                 </div>
                 <details className="sapp-user-details">
                   <summary>Permissões, estoque e usuário principal</summary>
-                  <PermMatrix labels={permissionLabels} perms={u.perms} disabled={busy}
+                  <PermMatrix groups={permissionGroups} perms={u.perms} disabled={busy}
                     onChange={({ perms, actions }) => perms.length && run(() => api.patch(`/stores/${storeId}/app/users/${u.id}`, { perms, actions }), 'Permissões salvas.')} />
                   <div className="sapp-flow-list">
                     <strong className="small">Fluxos de estoque permitidos</strong>
@@ -310,7 +305,8 @@ export default function StoreAppModal({ storeId, onClose }) {
             <p className="muted small" style={{ margin: 0 }}>Uma senha provisória será gerada após criar o acesso. O usuário deverá cadastrar uma senha nova ao entrar.</p>
             <details className="sapp-create-perms" open>
               <summary>Áreas que esta pessoa poderá usar ({nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm)).length} selecionadas)</summary>
-              <PermMatrix labels={permissionLabels} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))}
+              <p className="muted small">WhatsApp de envio é usado em cobranças e notificações. Auditoria usa conexões próprias, separadas. Liberar uma área não conecta o WhatsApp automaticamente.</p>
+              <PermMatrix groups={permissionGroups} perms={nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm))}
                 onChange={({ perms, actions }) => setNu({ ...nu, perms, actions })} />
             </details>
             <details className="sapp-create-perms">

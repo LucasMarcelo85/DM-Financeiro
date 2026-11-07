@@ -21,13 +21,13 @@ export async function notifyCatalogOrder(order, event) {
   const notification = cfg.orderNotifications;
   if (!notification?.enabled) return false;
   const number = normalizePhone(cfg.whatsapp);
-  if (!number || !Number.isInteger(notification.instanceId)) throw new Error('Configure o WhatsApp da loja para receber notificações e a instância de envio.');
+  if (!number) throw new Error('Configure o WhatsApp da loja para receber notificações.');
 
   const workspace = order.storeId === null ? null : await prisma.user.findUnique({
     where: { email: workspaceEmailFor(order.storeId) },
     select: { id: true },
   });
-  const instance = await prisma.instance.findFirst({
+  const instance = Number.isInteger(notification.instanceId) ? await prisma.instance.findFirst({
     where: {
       id: notification.instanceId, purpose: 'envio',
       ...(order.storeId === null
@@ -38,7 +38,7 @@ export async function notifyCatalogOrder(order, event) {
           { userId: order.userId, storeId: null },
         ] }),
     },
-  });
+  }) : null;
 
   const lines = (Array.isArray(order.items) ? order.items : [])
     .map((item) => `• ${item.qty}x ${item.name}${item.variation ? ` (${item.variation})` : ''} — ${brl(item.totalCents)}`);
@@ -48,6 +48,7 @@ export async function notifyCatalogOrder(order, event) {
 
   let primaryError;
   try {
+    if (!Number.isInteger(notification.instanceId)) throw new Error('Nenhuma instância principal de notificação foi configurada.');
     if (!instance) throw new Error('A instância principal de notificação não pertence mais à conta ou a esta loja.');
     if (await whatsapp.getState(instance) !== 'open') throw new Error('A instância principal de notificação está desconectada.');
     await whatsapp.sendText(instance, number, text);

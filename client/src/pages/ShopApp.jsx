@@ -9,16 +9,17 @@ import Orders from './Orders.jsx';
 import Api from './Api.jsx';
 import Audit from './Audit.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
+import { SHOP_PERMISSION_GROUPS } from '../lib/shop-permissions.js';
 
 const TABS = [
   ['produtos', 'Produtos'],
   ['equipe', 'Gerenciar acessos'],
-  ['pedidos', 'Pedidos e clientes'],
+  ['pedidos', 'Pedidos e clientes do catálogo e PDV'],
   ['pdv', 'Frente de caixa'],
   ['api', 'API e webhooks'],
-  ['auditoria', 'Auditoria'],
+  ['auditoria', 'Auditoria WhatsApp'],
   ['whatsapp', 'WhatsApp'],
-  ['contatos', 'Clientes'],
+  ['contatos', 'Clientes de cobranças'],
   ['cobrancas', 'Cobranças'],
   ['contratos', 'Contratos'],
   ['portfolio', 'Portfólio'],
@@ -214,25 +215,6 @@ export default function ShopApp() {
     );
   }
 
-  const TEAM_PERMS = [
-    ['produtos', 'Produtos'],
-    ['estoque', 'Estoque'],
-    ['pedidos', 'Pedidos'],
-    ['clientes', 'Clientes'],
-    ['arquivados', 'Arquivados'],
-    ['estrategia', 'Estratégia'],
-    ['pdv', 'Frente de caixa'],
-    ['entregas', 'Entregas e notificações do catálogo'],
-    ['api', 'API e webhooks'],
-    ['auditoria', 'Auditoria'],
-    ['whatsapp', 'WhatsApp'],
-    ['contatos', 'Clientes (contatos)'],
-      ['cobrancas', 'Cobranças'],
-    ['contratos', 'Contratos'],
-    ['portfolio', 'Portfólio (página própria)'],
-    ['ia', 'IA'],
-  ];
-
   function TeamManagement() {
     const toast = useToast();
     const [data, setData] = useState(null);
@@ -269,11 +251,14 @@ export default function ShopApp() {
     if (!data) return <p className="muted">Carregando acessos...</p>;
     return (
       <section className="card shop-team">
-        <header><div><h1>Gerenciar acessos</h1><p className="muted">Você só pode compartilhar as áreas e os fluxos de estoque liberados no seu próprio acesso.</p></div></header>
+        <header><div><h1>Gerenciar acessos</h1><p className="muted">Você só pode compartilhar as áreas e os fluxos de estoque liberados no seu próprio acesso. WhatsApp de envio (cobranças e notificações) e conexão de auditoria são recursos separados; liberar uma área não conecta um número.</p></div></header>
         {!data.users.length && <p className="muted">O criador ainda não cadastrou outros usuários.</p>}
         {data.users.map((user) => {
           const draft = drafts[user.id] || { perms: [], stockFlowIds: [], active: user.active };
-          const availablePerms = TEAM_PERMS.filter(([key]) => data.availablePerms.includes(key));
+          const permissionGroups = SHOP_PERMISSION_GROUPS.map(({ title, permissions }) => ({
+            title,
+            permissions: permissions.filter(([key]) => data.availablePerms.includes(key)),
+          })).filter(({ permissions }) => permissions.length > 0);
           return (
             <article className="shop-team-user" key={user.id}>
               <div className="shop-team-user-head">
@@ -281,13 +266,19 @@ export default function ShopApp() {
                 <label className="small"><input type="checkbox" checked={draft.active} onChange={(event) => setDrafts((rows) => ({ ...rows, [user.id]: { ...draft, active: event.target.checked } }))} /> Ativo</label>
               </div>
               <strong className="small">Áreas liberadas</strong>
-              <div className="shop-team-options">
-                {availablePerms.map(([key, label]) => <label key={key} className="small">
-                  <input type="checkbox" checked={draft.perms.includes(key)} onChange={(event) => setDrafts((rows) => ({
-                    ...rows,
-                    [user.id]: { ...draft, perms: event.target.checked ? [...draft.perms, key] : draft.perms.filter((perm) => perm !== key) },
-                  }))} /> {label}
-                </label>)}
+              <div style={{ display: 'grid', gap: 14 }}>
+                {permissionGroups.map(({ title, permissions }) => <section key={title} style={{ display: 'grid', gap: 7 }}>
+                  <strong className="small">{title}</strong>
+                  <div className="shop-team-options">
+                    {permissions.map(([key, label, description]) => <label key={key} className="small">
+                      <input type="checkbox" checked={draft.perms.includes(key)} onChange={(event) => setDrafts((rows) => ({
+                        ...rows,
+                        [user.id]: { ...draft, perms: event.target.checked ? [...draft.perms, key] : draft.perms.filter((perm) => perm !== key) },
+                      }))} /> {label}
+                      <small className="muted" style={{ display: 'block', marginLeft: 24 }}>{description}</small>
+                    </label>)}
+                  </div>
+                </section>)}
               </div>
               {draft.perms.includes('estoque') && <><strong className="small">Fluxos de estoque</strong>
                 <div className="shop-team-options">

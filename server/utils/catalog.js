@@ -132,8 +132,8 @@ export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
   const fallbackInstanceId = !fallbackEnabled || notifications.fallbackInstanceId === '' || notifications.fallbackInstanceId === null || notifications.fallbackInstanceId === undefined
     ? null
     : intIn(notifications.fallbackInstanceId, 1, Number.MAX_SAFE_INTEGER, 'Instância reserva de notificação');
-  if (notificationsEnabled && (!whatsapp || !notificationInstanceId)) {
-    throw new AppError(400, 'Informe o WhatsApp da loja e escolha uma instância para receber as notificações.');
+  if (notificationsEnabled && (!whatsapp || (!notificationInstanceId && !(fallbackEnabled && fallbackInstanceId)))) {
+    throw new AppError(400, 'Informe o WhatsApp da loja e escolha uma instância principal ou configure uma instância reserva para receber as notificações.');
   }
   if (notificationsEnabled && fallbackEnabled && !fallbackInstanceId) {
     throw new AppError(400, 'Escolha a instância da conta do administrador para usar como reserva.');

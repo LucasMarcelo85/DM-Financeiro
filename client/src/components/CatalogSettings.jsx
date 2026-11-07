@@ -143,13 +143,13 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
           />
           {f.orderNotifications.enabled && <>
             <label className="field">
-              <span>Instância que enviará as notificações</span>
+              <span>Instância principal de envio</span>
               <select
                 className="input"
                 value={f.orderNotifications.instanceId}
                 onChange={(e) => setF((current) => ({ ...current, orderNotifications: { ...current.orderNotifications, instanceId: e.target.value } }))}
               >
-                <option value="">Selecione uma instância</option>
+                <option value="">Nenhuma — usar a reserva, se estiver ativa</option>
                 {isShopMode() && f.orderNotifications.instanceId
                   && !instances.some((instance) => String(instance.id) === f.orderNotifications.instanceId)
                   && <option value={f.orderNotifications.instanceId} disabled>Instância anterior indisponível neste acesso</option>}
@@ -164,6 +164,7 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
                   </option>
                 ))}
               </select>
+              <small className="muted">A principal é uma conexão de envio desta loja. A auditoria usa conexões próprias e não substitui esta configuração.</small>
             </label>
             {activeStore && !isShopMode() && <>
               <Check
@@ -189,13 +190,17 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
                     </option>
                   ))}
                 </select>
-                <small className="muted">Ela será usada somente quando o envio pela instância da loja falhar.</small>
+                <small className="muted">Será usada se a conexão principal falhar ou não estiver configurada.</small>
               </label>}
             </>}
             <p className="muted small">
               Os avisos de pedidos do catálogo serão enviados para o WhatsApp da loja informado acima. Vendas registradas no PDV não geram notificações. Pagamentos confirmados pela InfinitePay também são notificados; marcações manuais de pagamento não enviam aviso.
             </p>
-            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore) || (instance.storeId === null && !isShopMode()))) && <p className="muted small">{isShopMode() ? 'Conecte um WhatsApp nesta loja pela aba WhatsApp para habilitar o envio.' : `Conecte um WhatsApp${activeStore ? ' nesta loja ou na conta do administrador' : ' na conta'} para habilitar o envio.`}</p>}
+            {!instances.some((instance) => instance.connected && (!activeStore || instance.storeId === Number(activeStore) || (instance.storeId === null && !isShopMode()))) && <p className="muted small">{isShopMode()
+              ? f.orderNotifications.fallbackEnabled && f.orderNotifications.fallbackInstanceId
+                ? 'Não há conexão de envio ativa nesta loja. Os avisos usarão a instância reserva configurada pelo criador do aplicativo.'
+                : 'Conecte um WhatsApp de envio nesta loja ou solicite ao criador que configure uma instância reserva.'
+              : `Conecte um WhatsApp${activeStore ? ' nesta loja ou na conta do administrador' : ' na conta'} para habilitar o envio.`}</p>}
           </>}
         </fieldset>
         <fieldset className="cs-box">

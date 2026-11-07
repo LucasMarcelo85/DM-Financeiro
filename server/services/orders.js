@@ -155,6 +155,7 @@ export async function createOrder(userSlug, body = {}) {
     if (address.length < 3) throw new AppError(400, 'Excursão: informe o endereço do galpão.');
     delivery = { type, warehouse, city, address, state: line(d.state, 2).toUpperCase(), note: 'Frete a combinar com a loja.' };
   } else if (type === 'motoboy' || type === 'correios') {
+    if (type === 'correios' && !line(d.number, 20)) throw new AppError(400, 'Correios: informe o número do endereço de entrega.');
     const q = await quoteShipping(ctx, type, d, subtotalCents);
     let opt = q.options[0];
     if (type === 'correios') {

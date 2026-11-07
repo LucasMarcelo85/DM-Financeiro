@@ -405,6 +405,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return setError('Excursão: informe o nome da Excursão, a cidade e o endereço do galpão.');
     if (type === 'motoboy' && !canQuote) return setError('Motoboy: informe o CEP ou o endereço de entrega.');
     if (type === 'correios' && !zipOk) return setError('Correios: informe o CEP de destino.');
+    if (type === 'correios' && !String(addr.number || '').trim()) return setError('Correios: informe o número do endereço de entrega.');
     if (needsQuote && !option) return setError('Calcule o frete antes de finalizar.');
     if (paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return setError('Escolha uma forma de pagamento online disponível para esta entrega.');
     setBusy(true);
@@ -474,6 +475,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
       if (type === 'excursao' && (exc.warehouse.trim().length < 2 || exc.city.trim().length < 2 || exc.address.trim().length < 3)) return 'Excursão: informe o nome da Excursão, a cidade e o endereço do galpão.';
       if (type === 'motoboy' && !canQuote) return 'Motoboy: informe o CEP ou o endereço de entrega.';
       if (type === 'correios' && !zipOk) return 'Correios: informe o CEP de destino.';
+      if (type === 'correios' && !String(addr.number || '').trim()) return 'Correios: informe o número do endereço de entrega.';
       if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
     }
     if (n === 3 && paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return 'Escolha um provedor de pagamento online conectado para esta entrega.';
@@ -579,7 +581,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
                 )}
                 {type === 'correios' && (
                   <>
-                    <label><span>Número</span><input value={addr.number} onChange={setA('number')} maxLength={20} /></label>
+                    <label><span>Número *</span><input value={addr.number} onChange={setA('number')} maxLength={20} required /></label>
                     <label><span>Complemento</span><input value={addr.complement} onChange={setA('complement')} maxLength={80} /></label>
                   </>
                 )}
