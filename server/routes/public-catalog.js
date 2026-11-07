@@ -13,8 +13,8 @@ const brl = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', curren
 // Imagem do produto (o endereço nunca muda: cada troca de imagem cria uma nova linha, então pode ficar em cache por 1 ano).
 router.get('/product-image/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const img = Number.isInteger(id) ? await prisma.productImage.findUnique({ where: { id }, select: { mime: true, data: true, product: { select: { active: true } } } }) : null;
-  if (!img || !img.product.active) throw new AppError(404, 'Sem imagem.');
+  const img = Number.isInteger(id) ? await prisma.productImage.findUnique({ where: { id }, select: { mime: true, data: true, externalUrl: true, product: { select: { active: true } } } }) : null;
+  if (!img || !img.product.active || img.externalUrl || !img.mime || !img.data) throw new AppError(404, 'Sem imagem.');
   res.set({ 'Content-Type': img.mime, 'Cache-Control': 'public, max-age=31536000, immutable', 'Cross-Origin-Resource-Policy': 'cross-origin', 'X-Content-Type-Options': 'nosniff' });
   res.send(Buffer.from(img.data));
 });

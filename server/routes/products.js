@@ -10,7 +10,7 @@ import { ensureDefaultStockFlow, syncProductStock } from '../services/inventory.
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true, externalUrl: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = {
   images: imgSelect,
@@ -96,12 +96,12 @@ async function setActiveStockFlows(tx, req, productId, storeId, requestedFlowIds
 function createData(data, userId, storeId) {
   const { images, priceOptions, ...product } = data;
   if (priceOptions.some((option) => option.id !== undefined)) throw new AppError(400, 'Não envie formas de preço existentes ao cadastrar um item.');
-  if (images.some((image) => !image.upload)) throw new AppError(400, 'Envie novamente as imagens do produto.');
+  if (images.some((image) => !image.upload && !image.externalUrl)) throw new AppError(400, 'Envie novamente as imagens do produto.');
   return {
     ...product,
     userId,
     storeId,
-    images: { create: images.map((image, position) => ({ position, isPrimary: image.isPrimary, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload.mime, data: image.upload.data })) },
+    images: { create: images.map((image, position) => ({ position, isPrimary: image.isPrimary, label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode, priceCents: image.priceCents, stockQuantity: image.stockQuantity, mime: image.upload?.mime || null, data: image.upload?.data || null, externalUrl: image.externalUrl || null })) },
     priceOptions: { create: priceOptions.map((option, position) => ({ ...option, position })) },
   };
 }
@@ -156,13 +156,13 @@ router.get('/export', async (req, res) => {
   const products = await prisma.product.findMany({
     where, orderBy: [{ createdAt: 'asc' }, { id: 'asc' }],
     include: {
-      images: { select: { position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, stockQuantity: true, mime: true, data: true }, orderBy: { position: 'asc' } },
+      images: { select: { position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, stockQuantity: true, mime: true, data: true, externalUrl: true }, orderBy: { position: 'asc' } },
       priceOptions: optionSelect,
     },
   });
   res.json({ rows: products.map((product) => {
     const images = product.images.map((image) => ({
-      data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}`,
+      ...(image.externalUrl ? { url: image.externalUrl } : { data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}` }),
       label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode,
     }));
     return {
@@ -320,7 +320,7 @@ router.patch('/:id', async (req, res) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
       if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
-      else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload.mime, data: im.upload.data } });
+      else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload?.mime || null, data: im.upload?.data || null, externalUrl: im.externalUrl || null } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });
     for (const [position, option] of priceOptions.entries()) {

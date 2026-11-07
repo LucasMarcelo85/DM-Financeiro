@@ -626,8 +626,9 @@ model ProductImage {
   barcode    String @default("")
   priceCents Int?   @map("price_cents")
   stockQuantity Int @default(0) @map("stock_quantity")
-  mime       String
-  data       Bytes
+  mime       String?
+  data       Bytes?
+  externalUrl String? @map("external_url")
 
   product Product @relation(fields: [productId], references: [id], onDelete: Cascade)
 

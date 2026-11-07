@@ -20,7 +20,7 @@ const numIn = (v, min, max, label) => {
   return Math.round(n * 100) / 100;
 };
 
-// ---------- Imagens (data URL de PNG/JPEG/WebP, conferidas pelo conteúdo, não só pelo texto) ----------
+// ---------- Imagens (data URL validada pelo conteúdo ou URL HTTPS externa) ----------
 const MAGIC = {
   'image/png': (b) => b.length > 8 && b[0] === 0x89 && b[1] === 0x50 && b[2] === 0x4e && b[3] === 0x47,
   'image/jpeg': (b) => b.length > 3 && b[0] === 0xff && b[1] === 0xd8 && b[2] === 0xff,
@@ -35,6 +35,17 @@ export function decodeProductImage(src) {
   return { mime: m[1], data: buf };
 }
 
+function cleanProductImageUrl(value) {
+  if (typeof value !== 'string' || value.length > 2048) return '';
+  try {
+    const url = new URL(value.trim());
+    if (url.protocol !== 'https:' || !url.hostname || url.username || url.password) return '';
+    return url.href;
+  } catch {
+    return '';
+  }
+}
+
 export function cleanBarcode(value) {
   const code = String(value ?? '').trim();
   if (!code) return '';
@@ -43,7 +54,7 @@ export function cleanBarcode(value) {
 }
 
 // ---------- Produto / serviço ----------
-// `images`: [{ id }] (mantém uma imagem que já existe) ou [{ data: 'data:image/...' }] (nova), com `label` (variação).
+// `images`: [{ id }], [{ data: 'data:image/...' }] ou [{ url: 'https://...' }], com `label` (variação).
 export function cleanProduct(b = {}) {
   const kind = PRODUCT_KINDS.has(b.kind) ? b.kind : 'produto';
   const name = line(b.name, 120);
@@ -88,6 +99,11 @@ export function cleanProduct(b = {}) {
     if (!isPrimary && !label && !Number.isInteger(im.id)) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
     const out = { isPrimary, label, size, color, colorHex, barcode: isPrimary ? '' : cleanBarcode(im.barcode), priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
     if (im.data) out.upload = decodeProductImage(im.data);
+    else if (im.url !== undefined || im.externalUrl !== undefined) {
+      const externalUrl = cleanProductImageUrl(im.externalUrl ?? im.url);
+      if (!externalUrl) throw new AppError(400, 'Informe uma URL HTTPS válida para a imagem do produto.');
+      out.externalUrl = externalUrl;
+    }
     else if (Number.isInteger(im.id)) out.id = im.id;
     else throw new AppError(400, 'Imagem inválida.');
     return out;
@@ -216,12 +232,12 @@ export const publicProduct = (p) => {
     barcode: image.barcode || '',
     priceCents: image.priceCents,
     stockQuantity: image.stockQuantity ?? 0,
-    url: `/api/public/product-image/${image.id}`,
+    url: image.externalUrl || `/api/public/product-image/${image.id}`,
   });
   return {
     id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, barcode: p.barcode || '', priceCents: p.priceCents,
     stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
-    mainImage: mainImage ? { id: mainImage.id, url: `/api/public/product-image/${mainImage.id}` } : null,
+    mainImage: mainImage ? { id: mainImage.id, url: mainImage.externalUrl || `/api/public/product-image/${mainImage.id}` } : null,
     images: images.filter((image) => !image.isPrimary).map(imageDto),
     priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
   };
