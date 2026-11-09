@@ -316,6 +316,10 @@ a.stat-card:hover { border-color: var(--amber); box-shadow: 0 4px 16px rgba(15, 
 .contact-info .tag { margin-top: 0.35rem; }
 .contact-actions { display: flex; align-items: center; gap: 0.25rem; width: 100%; justify-content: flex-end; border-top: 1px solid var(--line); padding-top: 0.6rem; }
 .contact-actions .btn { margin-right: auto; }
+.contact-selection-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: .55rem .9rem; margin: .85rem 0; padding: .7rem .85rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.contact-selection-toolbar .btn-group { margin-left: auto; }
+.contact-card.is-selected { border-color: var(--amber); background: #fffaf0; }
+.contact-select { display: inline-flex; align-items: center; min-height: 2rem; }
 
 /* ---------- Lista de cobranças e lembretes ---------- */
 .sched-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 0.7rem; }

@@ -71,7 +71,7 @@ router.get('/', async (req, res) => {
   }
   const [rows, total] = await Promise.all([
     prisma.contact.findMany({ where, orderBy: { name: 'asc' }, take: limit, include: withCount }),
-    prisma.contact.count({ where: { userId: req.user.id } }),
+    prisma.contact.count({ where }),
   ]);
   res.json({ contacts: rows.map(contactDTO), total });
 });
@@ -139,6 +139,26 @@ router.delete('/:id', async (req, res) => {
   const c = await owned(req);
   await prisma.contact.delete({ where: { id: c.id } }); // apaga também as cobranças/lembretes deste cliente
   res.json({ ok: true, removedSchedules: c._count.schedules });
+});
+
+router.post('/bulk-delete', async (req, res) => {
+  const ids = [...new Set((Array.isArray(req.body?.ids) ? req.body.ids : [])
+    .map(Number).filter((id) => Number.isInteger(id) && id > 0))];
+  if (!ids.length || ids.length > 5000) throw new AppError(400, 'Selecione de 1 a 5.000 clientes para excluir.');
+
+  const result = await prisma.$transaction(async (tx) => {
+    const contacts = await tx.contact.findMany({
+      where: { userId: req.user.id, id: { in: ids } },
+      select: { id: true },
+    });
+    const ownedIds = contacts.map((contact) => contact.id);
+    if (!ownedIds.length) throw new AppError(404, 'Nenhum dos clientes selecionados foi encontrado.');
+    const removedSchedules = await tx.schedule.count({ where: { userId: req.user.id, contactId: { in: ownedIds } } });
+    const deleted = await tx.contact.deleteMany({ where: { userId: req.user.id, id: { in: ownedIds } } });
+    return { removed: deleted.count, removedSchedules };
+  });
+
+  res.json(result);
 });
 
 export default router;

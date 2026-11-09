@@ -12,6 +12,7 @@ import { digits, formatStoredPhone, initials, maskCNPJ, maskCPF, maskPhone, plur
 const maskAnyDoc = (v) => (digits(v).length > 11 ? maskCNPJ(v) : maskCPF(v));
 const maskCEP = (v) => { const d = digits(v).slice(0, 8); return d.length > 5 ? `${d.slice(0, 5)}-${d.slice(5)}` : d; };
 const EXTRA = ['document', 'zip', 'street', 'number', 'complement', 'district', 'city', 'state'];
+const MAX_SELECTED_CONTACTS = 5000;
 const CONTACT_CSV_COLUMNS = [
   { key: 'name', type: 'string' }, { key: 'phone', type: 'string' }, { key: 'email', type: 'string' },
   { key: 'notes', type: 'string' }, { key: 'document', type: 'string' }, { key: 'zip', type: 'string' },
@@ -83,10 +84,12 @@ export default function Contacts() {
   const [data, setData] = useState(null);
   const [form, setForm] = useState(params.get('novo') ? {} : null);
   const [confirmDel, setConfirmDel] = useState(null);
+  const [selectedIds, setSelectedIds] = useState([]);
+  const [bulkDeleteOpen, setBulkDeleteOpen] = useState(false);
 
   const load = useCallback(() => {
     const t = setTimeout(() => {
-      api.get(`/contacts?q=${encodeURIComponent(q)}`).then(setData).catch((e) => toast(e.message, 'error'));
+      api.get(`/contacts?q=${encodeURIComponent(q)}&limit=500`).then(setData).catch((e) => toast(e.message, 'error'));
     }, q ? 250 : 0);
     return () => clearTimeout(t);
   }, [q, toast]);
@@ -100,7 +103,49 @@ export default function Contacts() {
       await api.del(`/contacts/${c.id}`);
       toast('Cliente excluído.');
       setData((d) => ({ ...d, total: d.total - 1, contacts: d.contacts.filter((x) => x.id !== c.id) }));
+      setSelectedIds((ids) => ids.filter((id) => id !== c.id));
     } catch (e) { toast(e.message, 'error'); }
+  }
+
+  const visibleIds = data?.contacts.map((contact) => contact.id) || [];
+  const visibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.includes(id));
+  function toggleVisible() {
+    if (visibleSelected) {
+      setSelectedIds((current) => current.filter((id) => !visibleIds.includes(id)));
+      return;
+    }
+    const next = [...new Set([...selectedIds, ...visibleIds])];
+    if (next.length > MAX_SELECTED_CONTACTS) {
+      toast(`Selecione até ${MAX_SELECTED_CONTACTS.toLocaleString('pt-BR')} clientes por vez.`, 'error');
+      return;
+    }
+    setSelectedIds(next);
+  }
+  function toggleContact(id) {
+    if (selectedIds.includes(id)) {
+      setSelectedIds((current) => current.filter((item) => item !== id));
+      return;
+    }
+    if (selectedIds.length >= MAX_SELECTED_CONTACTS) {
+      toast(`Selecione até ${MAX_SELECTED_CONTACTS.toLocaleString('pt-BR')} clientes por vez.`, 'error');
+      return;
+    }
+    setSelectedIds((current) => [...current, id]);
+  }
+  async function removeSelected() {
+    setBulkDeleteOpen(false);
+    try {
+      const result = await api.post('/contacts/bulk-delete', { ids: selectedIds });
+      setData((current) => ({
+        ...current,
+        total: Math.max(0, current.total - result.removed),
+        contacts: current.contacts.filter((contact) => !selectedIds.includes(contact.id)),
+      }));
+      setSelectedIds([]);
+      toast(`${plural(result.removed, 'cliente excluído', 'clientes excluídos')}${result.removedSchedules ? ` e ${plural(result.removedSchedules, 'cobrança/lembrete removido', 'cobranças/lembretes removidos')}` : ''}.`);
+    } catch (error) {
+      toast(error.message, 'error');
+    }
   }
 
   return (
@@ -130,6 +175,25 @@ export default function Contacts() {
         <input className="input" type="search" value={q} onChange={(e) => setQ(e.target.value)} placeholder="Buscar por nome, telefone ou e-mail" aria-label="Buscar cliente" />
       </div>
 
+      {data && (data.total > 0 || selectedIds.length > 0) && (
+        <div className="contact-selection-toolbar">
+          <label className="sender">
+            <input type="checkbox" checked={visibleSelected} onChange={toggleVisible} />
+            Selecionar {q ? 'resultados' : 'clientes exibidos'} ({data.contacts.length})
+          </label>
+          <span className="muted small">{selectedIds.length} selecionado(s) · {data.total} encontrado(s)</span>
+          {selectedIds.length > 0 && (
+            <div className="btn-group">
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSelectedIds([])}>Limpar seleção</button>
+              <button type="button" className="btn btn-danger btn-sm" onClick={() => setBulkDeleteOpen(true)}>
+                <Icon name="trash" size={16} /> Excluir selecionados
+              </button>
+            </div>
+          )}
+          {data.total > data.contacts.length && <small className="muted">Mostrando os primeiros {data.contacts.length}; refine a busca para localizar outros clientes.</small>}
+        </div>
+      )}
+
       {data === null ? <p className="muted">Carregando...</p> : data.contacts.length === 0 ? (
         <section className="empty-hero">
           <span className="action-icon action-icon-lg"><Icon name="user" size={32} /></span>
@@ -140,7 +204,10 @@ export default function Contacts() {
       ) : (
         <ul className="contact-grid">
           {data.contacts.map((c) => (
-            <li key={c.id} className="contact-card">
+            <li key={c.id} className={`contact-card${selectedIds.includes(c.id) ? ' is-selected' : ''}`}>
+              <label className="contact-select" aria-label={`Selecionar ${c.name}`}>
+                <input type="checkbox" checked={selectedIds.includes(c.id)} onChange={() => toggleContact(c.id)} />
+              </label>
               <span className="avatar">{initials(c.name)}</span>
               <div className="contact-info">
                 <strong title={c.name}>{c.name}</strong>
@@ -165,6 +232,12 @@ export default function Contacts() {
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmDel(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => remove(confirmDel)}>Excluir</button></>}>
           <p><strong>{confirmDel.name}</strong> será removido.{' '}
             {confirmDel.scheduleCount > 0 ? `As ${plural(confirmDel.scheduleCount, 'cobrança', 'cobranças')} deste cliente também serão apagadas.` : 'Ele não tem cobranças.'}</p>
+        </Modal>
+      )}
+      {bulkDeleteOpen && (
+        <Modal title={`Excluir ${selectedIds.length} clientes?`} onClose={() => setBulkDeleteOpen(false)}
+          footer={<><button type="button" className="btn btn-ghost" onClick={() => setBulkDeleteOpen(false)}>Cancelar</button><button type="button" className="btn btn-danger" onClick={removeSelected}>Excluir selecionados</button></>}>
+          <p>Os clientes selecionados e suas cobranças/lembretes agendados serão removidos. Os pagamentos já registrados permanecem no histórico.</p>
         </Modal>
       )}
     </>
