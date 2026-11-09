@@ -139,6 +139,7 @@ export default function ShopApp() {
       setIsPrimary(Boolean(r.user.isPrimary));
       setTab(firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
+      setForm((current) => ({ ...current, password: '' }));
       setAuthed(true);
     } catch (err) {
       setLoginError(err.message);
@@ -172,6 +173,7 @@ export default function ShopApp() {
 
   function logout() {
     setShopToken(null);
+    setForm((current) => ({ ...current, password: '' }));
     setAuthed(false);
   }
 
@@ -188,7 +190,7 @@ export default function ShopApp() {
         <header style={bar}><strong style={{ fontSize: 18 }}>{info.name}</strong></header>
         <form onSubmit={login} style={{ width: 'min(calc(100% - 32px), 26rem)', margin: 'clamp(24px, 8vh, 64px) auto', padding: 'clamp(20px, 4vw, 32px)', display: 'grid', gap: 16, background: '#fff', border: '1px solid var(--line)', borderRadius: 16, boxShadow: '0 12px 36px #0f223814' }}>
           <h1 style={{ margin: 0 }}>Entrar</h1>
-          <label className="field"><span>Usuário</span><input className="input" value={form.login} onChange={(e) => { setLoginError(''); setForm({ ...form, login: e.target.value }); }} placeholder="Digite seu usuário" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" aria-label="Usuário" required /></label>
+          <label className="field"><span>Usuário</span><input className="input" value={form.login} onChange={(e) => { setLoginError(''); setForm({ ...form, login: e.target.value }); }} placeholder="Digite o usuário fornecido pela loja" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" aria-label="Usuário" required /></label>
           <label className="field"><span>Senha</span><input className="input" type="password" value={form.password} onChange={(e) => { setLoginError(''); setForm({ ...form, password: e.target.value }); }} placeholder="Digite sua senha" autoComplete="current-password" aria-label="Senha" required /></label>
           {loginError && <p className="form-error" role="alert">{loginError}</p>}
           <button className="btn btn-primary" style={{ minHeight: 48, fontSize: 16 }} disabled={busy || !form.login.trim() || !form.password}>{busy ? 'Entrando...' : 'Entrar'}</button>

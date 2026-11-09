@@ -106,10 +106,12 @@ export default function StoreAppModal({ storeId, onClose }) {
         <div className="sapp" style={{ display: 'grid', gap: 14 }}>
           <p className="muted small">O lojista instala este aplicativo no celular. Configure o app em etapas; as alterações gerais só são aplicadas ao clicar em “Salvar configuração”.</p>
           {temporaryCredential && <section className="banner" style={{ display: 'grid', gap: 8 }}>
-            <strong>Senha provisória de {temporaryCredential.name}</strong>
-            <p className="muted small" style={{ margin: 0 }}>Envie esta senha ao usuário. No primeiro acesso, ele precisará cadastrar uma senha nova. Ela não será exibida novamente.</p>
+            <strong>Acesso de {temporaryCredential.name}</strong>
+            <p className="muted small" style={{ margin: 0 }}>Envie o usuário e a senha provisória. No primeiro acesso, será necessário cadastrar uma senha nova. A senha provisória não será exibida novamente.</p>
+            <span className="small">Usuário: <code>{temporaryCredential.login}</code></span>
             <code style={{ fontSize: 16, userSelect: 'all' }}>{temporaryCredential.password}</code>
             <button type="button" className="btn btn-ghost btn-sm" onClick={async () => toast((await copyText(temporaryCredential.password)) ? 'Senha copiada!' : 'Copie a senha manualmente.')}>Copiar senha</button>
+            <button type="button" className="btn btn-ghost btn-sm" onClick={async () => toast((await copyText(`Link: ${link}\nUsuário: ${temporaryCredential.login}\nSenha provisória: ${temporaryCredential.password}`)) ? 'Link e dados de acesso copiados!' : 'Copie o link e os dados de acesso manualmente.')}>Copiar link e dados de acesso</button>
           </section>}
 
           <section className="banner" aria-label="Link do aplicativo" style={{ display: 'grid', gap: 10 }}>
@@ -262,7 +264,7 @@ export default function StoreAppModal({ storeId, onClose }) {
                       if (window.confirm(`Criar uma senha provisória para ${u.name}? O usuário precisará cadastrar uma senha nova ao entrar.`)) {
                         run(async () => {
                           const result = await api.post(`/stores/${storeId}/app/users/${u.id}/reset-password`);
-                          setTemporaryCredential({ name: u.name, password: result.temporaryPassword });
+                          setTemporaryCredential({ name: u.name, login: u.login, password: result.temporaryPassword });
                         }, 'Senha provisória criada.');
                       }
                     }}>Resetar senha</button>
@@ -327,7 +329,7 @@ export default function StoreAppModal({ storeId, onClose }) {
               onClick={() => run(async () => {
                 const perms = nu.perms.filter((perm) => permissionLabels.some(([key]) => key === perm));
                 const result = await api.post(`/stores/${storeId}/app/users`, { ...nu, perms });
-                setTemporaryCredential({ name: result.user.name, password: result.temporaryPassword });
+                setTemporaryCredential({ name: result.user.name, login: result.user.login, password: result.temporaryPassword });
                 setNu({ name: '', login: '', perms: data.availablePerms.filter((perm) => perm !== 'auditoria' || cfg.auditEnabled), actions: {}, stockFlowIds: data.flows.map((flow) => flow.id), isPrimary: false });
               }, 'Acesso criado.')}>Criar acesso</button>
           </div>
