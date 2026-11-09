@@ -72,6 +72,8 @@ export default function ShopApp() {
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
   const [loginError, setLoginError] = useState('');
+  const [showLoginPassword, setShowLoginPassword] = useState(false);
+  const [showNewPassword, setShowNewPassword] = useState(false);
   const [accountOpen, setAccountOpen] = useState(false);
   const [passwordForm, setPasswordForm] = useState({ currentPassword: '', newPassword: '', confirmPassword: '' });
   const [passwordBusy, setPasswordBusy] = useState(false);
@@ -162,8 +164,9 @@ export default function ShopApp() {
       setProfile(result.user);
       setMustChangePassword(false);
       setPasswordForm({ currentPassword: '', newPassword: '', confirmPassword: '' });
+      setShowNewPassword(false);
       setAccountOpen(false);
-      toast('Senha atualizada.');
+      toast(mustChangePassword ? 'Senha cadastrada. Use essa senha nos próximos acessos.' : 'Senha atualizada.');
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -174,6 +177,8 @@ export default function ShopApp() {
   function logout() {
     setShopToken(null);
     setForm((current) => ({ ...current, password: '' }));
+    setShowLoginPassword(false);
+    setShowNewPassword(false);
     setAuthed(false);
   }
 
@@ -191,7 +196,8 @@ export default function ShopApp() {
         <form onSubmit={login} style={{ width: 'min(calc(100% - 32px), 26rem)', margin: 'clamp(24px, 8vh, 64px) auto', padding: 'clamp(20px, 4vw, 32px)', display: 'grid', gap: 16, background: '#fff', border: '1px solid var(--line)', borderRadius: 16, boxShadow: '0 12px 36px #0f223814' }}>
           <h1 style={{ margin: 0 }}>Entrar</h1>
           <label className="field"><span>Usuário</span><input className="input" value={form.login} onChange={(e) => { setLoginError(''); setForm({ ...form, login: e.target.value }); }} placeholder="Digite o usuário fornecido pela loja" autoCapitalize="none" autoCorrect="off" spellCheck={false} autoComplete="username" aria-label="Usuário" required /></label>
-          <label className="field"><span>Senha</span><input className="input" type="password" value={form.password} onChange={(e) => { setLoginError(''); setForm({ ...form, password: e.target.value }); }} placeholder="Digite sua senha" autoComplete="current-password" aria-label="Senha" required /></label>
+          <label className="field"><span>Senha</span><input className="input" type={showLoginPassword ? 'text' : 'password'} value={form.password} onChange={(e) => { setLoginError(''); setForm({ ...form, password: e.target.value }); }} placeholder="Digite sua senha" autoComplete="current-password" aria-label="Senha" required /></label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowLoginPassword((visible) => !visible)}>{showLoginPassword ? 'Ocultar senha' : 'Mostrar senha'}</button>
           {loginError && <p className="form-error" role="alert">{loginError}</p>}
           <button className="btn btn-primary" style={{ minHeight: 48, fontSize: 16 }} disabled={busy || !form.login.trim() || !form.password}>{busy ? 'Entrando...' : 'Entrar'}</button>
         </form>
@@ -209,12 +215,13 @@ export default function ShopApp() {
         <form onSubmit={changePassword} style={{ maxWidth: 420, margin: '40px auto', padding: 16, display: 'grid', gap: 12 }}>
           <h1 style={{ margin: 0 }}>Cadastre sua senha</h1>
           <p className="muted" style={{ margin: 0 }}>Esta é uma senha provisória. Para continuar, escolha uma senha nova com pelo menos 6 caracteres.</p>
-          <input className="input" type="password" value={passwordForm.newPassword}
+          <label className="field"><span>Nova senha</span><input className="input" type={showNewPassword ? 'text' : 'password'} value={passwordForm.newPassword}
             onChange={(e) => setPasswordForm({ ...passwordForm, newPassword: e.target.value })}
-            placeholder="Nova senha" autoComplete="new-password" aria-label="Nova senha" />
-          <input className="input" type="password" value={passwordForm.confirmPassword}
+            placeholder="Nova senha" autoComplete="new-password" aria-label="Nova senha" minLength={6} maxLength={72} required /></label>
+          <label className="field"><span>Confirme a nova senha</span><input className="input" type={showNewPassword ? 'text' : 'password'} value={passwordForm.confirmPassword}
             onChange={(e) => setPasswordForm({ ...passwordForm, confirmPassword: e.target.value })}
-            placeholder="Confirme a nova senha" autoComplete="new-password" aria-label="Confirme a nova senha" />
+            placeholder="Confirme a nova senha" autoComplete="new-password" aria-label="Confirme a nova senha" maxLength={72} required /></label>
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setShowNewPassword((visible) => !visible)}>{showNewPassword ? 'Ocultar senha' : 'Mostrar senha'}</button>
           <button className="btn btn-primary" disabled={passwordBusy || passwordForm.newPassword.length < 6 || !passwordForm.confirmPassword}>
             {passwordBusy ? 'Salvando...' : 'Cadastrar senha'}
           </button>
