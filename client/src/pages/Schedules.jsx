@@ -9,7 +9,7 @@ import PayModal from '../components/PayModal.jsx';
 import ScheduleItem from '../components/ScheduleItem.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, firstName, isoToBR, todayISO } from '../lib/format.js';
-import { KIND, dueInMonthISO } from '../lib/schedule.js';
+import { KIND, dueInMonthISO, overdueDues } from '../lib/schedule.js';
 
 const WEEK = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const short = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: c % 100 ? 2 : 0 });
@@ -65,17 +65,17 @@ function CalendarView({ items, renderItem, kind }) {
           const key = iso(d);
           const list = byDay[key] || [];
           return (
-            <button key={key} type="button" className={`cal-cell ${key === today ? 'is-today' : ''} ${key === selected ? 'is-selected' : ''}`} onClick={() => setSelected(key === selected ? null : key)} aria-label={`Dia ${d}, ${list.length} ${list.length === 1 ? 'vencimento' : 'vencimentos'}`}>
+            <button key={key} type="button" className={`cal-cell ${key === today ? 'is-today' : ''} ${key === selected ? 'is-selected' : ''} ${list.some((s) => overdueDues(s, today).includes(key)) ? 'has-overdue' : ''}`} onClick={() => setSelected(key === selected ? null : key)} aria-label={`Dia ${d}, ${list.length} ${list.length === 1 ? 'vencimento' : 'vencimentos'}${list.some((s) => overdueDues(s, today).includes(key)) ? ', com cobrança em atraso' : ''}`}>
               <span className="cal-num">{d}</span>
               <span className="cal-chips">
                 {list.slice(0, 2).map((s) => (
-                  <span key={s.id} className={`cal-chip is-${s.status} kind-${s.kind}`}>
+                  <span key={s.id} className={`cal-chip is-${s.status} kind-${s.kind} ${overdueDues(s, today).includes(key) ? 'is-overdue' : ''}`}>
                     {firstName(s.contact?.name)}{s.amountCents != null ? ` · ${short(s.amountCents)}` : ''}
                   </span>
                 ))}
                 {list.length > 2 && <span className="cal-more">+{list.length - 2}</span>}
               </span>
-              {list.length > 0 && <span className="cal-dots">{list.slice(0, 3).map((s) => <i key={s.id} className={`is-${s.status} kind-${s.kind}`} />)}</span>}
+              {list.length > 0 && <span className="cal-dots">{list.slice(0, 3).map((s) => <i key={s.id} className={`is-${s.status} kind-${s.kind} ${overdueDues(s, today).includes(key) ? 'is-overdue' : ''}`} />)}</span>}
             </button>
           );
         })}
@@ -85,6 +85,7 @@ function CalendarView({ items, renderItem, kind }) {
         <span><i className="is-ativa kind-cobranca" /> Ativa</span>
         <span><i className="is-pausada" /> Pausada</span>
         <span><i className="is-concluida" /> Enviada</span>
+        {kind === 'cobranca' && <span><i className="is-overdue" /> Em atraso</span>}
       </div>
 
       <div className="cal-day">
@@ -179,14 +180,18 @@ export default function Schedules({ kind }) {
   }
 
   const counts = useMemo(() => {
-    const c = { todas: 0, ativa: 0, pausada: 0, concluida: 0 };
-    (items || []).forEach((s) => { c.todas += 1; c[s.status] += 1; });
+    const c = { todas: 0, ativa: 0, pausada: 0, concluida: 0, atrasada: 0 };
+    (items || []).forEach((s) => {
+      c.todas += 1;
+      c[s.status] += 1;
+      if (overdueDues(s).length > 0) c.atrasada += 1;
+    });
     return c;
   }, [items]);
 
   const visible = useMemo(() => {
     const term = q.trim().toLowerCase();
-    return (items || []).filter((s) => (filter === 'todas' || s.status === filter) && (!term || s.contact?.name.toLowerCase().includes(term)));
+    return (items || []).filter((s) => (filter === 'todas' || (filter === 'atrasada' ? overdueDues(s).length > 0 : s.status === filter)) && (!term || s.contact?.name.toLowerCase().includes(term)));
   }, [items, filter, q]);
 
   const renderItem = (s) => (
@@ -226,7 +231,11 @@ export default function Schedules({ kind }) {
         {view === 'lista' && (
           <>
             <div className="chips" role="group" aria-label="Filtrar por situação">
-              {[['todas', 'Todas'], ['ativa', 'Ativas'], ['pausada', 'Pausadas'], ['concluida', 'Concluídas']].map(([k, label]) => (
+              {[
+                ['todas', 'Todas'],
+                ...(kind === 'cobranca' ? [['atrasada', 'Em atraso']] : []),
+                ['ativa', 'Ativas'], ['pausada', 'Pausadas'], ['concluida', 'Concluídas'],
+              ].map(([k, label]) => (
                 <button key={k} className={`chip ${filter === k ? 'is-on' : ''}`} onClick={() => setFilter(k)}>{label} <span>{counts[k]}</span></button>
               ))}
             </div>

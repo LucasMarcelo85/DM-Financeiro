@@ -3,7 +3,7 @@ import Icon from './Icon.jsx';
 import Stars from './Stars.jsx';
 import { brl, formatStoredPhone, initials, isoToBR } from '../lib/format.js';
 import { clientHabit } from '../lib/billing.js';
-import { KIND, beforeText, dueText, nextText, statusInfo } from '../lib/schedule.js';
+import { KIND, beforeText, dueText, nextText, overdueDues, statusInfo } from '../lib/schedule.js';
 
 export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onDelete, onPaid, onUndo }) {
   const st = statusInfo(s);
@@ -11,6 +11,8 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
   const canToggle = s.status === 'ativa' || s.status === 'pausada';
   const isBill = s.kind === 'cobranca';
   const lastPaid = isBill ? s.payments?.[0] : null; // pagamento do vencimento mais recente
+  const overdue = overdueDues(s);
+  const overdueTotal = overdue.length * (s.amountCents || 0);
 
   return (
     <li className={`sched kind-${s.kind} ${s.status === 'pausada' ? 'is-paused' : ''}`}>
@@ -23,8 +25,15 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
         <div className="sched-meta">
           <span className={`tag ${s.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{s.recurrence === 'mensal' ? 'Mensal' : 'Avulsa'}</span>
           <span className={`pill ${st.cls}`}>{st.label}</span>
+          {overdue.length > 0 && <span className="pill pill-failed">Em atraso</span>}
           <span>{dueText(s)} · avisa {beforeText(s.daysBefore)}, {s.sendTime}</span>
         </div>
+        {overdue.length > 0 && (
+          <div className="sched-overdue">
+            <strong>{overdue.length} {overdue.length === 1 ? 'vencimento não pago' : 'vencimentos não pagos'}</strong>
+            <span>{overdue.map((date) => isoToBR(date)).join(', ')} · {brl(overdueTotal)}</span>
+          </div>
+        )}
         <div className="sched-next">
           {nextText(s)}
           <span className="muted"> · {formatStoredPhone(s.contact?.phone)}</span>

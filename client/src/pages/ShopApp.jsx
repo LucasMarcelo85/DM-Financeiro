@@ -9,6 +9,7 @@ import Orders from './Orders.jsx';
 import Api from './Api.jsx';
 import Audit from './Audit.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
+import Icon from '../components/Icon.jsx';
 import { SHOP_PERMISSION_GROUPS } from '../lib/shop-permissions.js';
 
 const TABS = [
@@ -35,6 +36,11 @@ const tabsFor = (perms = [], isPrimary = false) => TABS.filter(([key]) => key ==
         ? ['pedidos', 'clientes', 'arquivados', 'estrategia'].some((perm) => perms.includes(perm))
         : perms.includes(key));
 const firstTab = (perms, isPrimary) => tabsFor(perms, isPrimary)[0]?.[0] || '';
+const TAB_ICONS = {
+  produtos: 'box', equipe: 'users', pedidos: 'receipt', pdv: 'cart', api: 'link',
+  auditoria: 'eye', whatsapp: 'chat', contatos: 'user', cobrancas: 'money',
+  contratos: 'file', portfolio: 'globe', ia: 'sparkles',
+};
 const foregroundFor = (color) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(color)?.[1] || 'F2A33A';
   const channel = (offset) => {
@@ -303,39 +309,60 @@ export default function ShopApp() {
   setWorkspaceMode(WORKSPACE_TABS.includes(tab));
 
   return (
-    <>
-      <header className="shop-app-bar" style={{ ...bar, display: 'block', padding: 0 }}>
-        <div className="shop-app-top">
-          <strong className="shop-app-title">{info.name}</strong>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}>Usuário</button>
-          <button type="button" className="btn btn-ghost btn-sm" onClick={logout}>Sair</button>
+    <div className="shop-shell shell">
+      <aside className="sidebar shop-sidebar">
+        <div className="sidebar-top shop-sidebar-brand">
+            <strong title={info.name}>{info.name}</strong>
         </div>
-        {tabs.length > 1 && <nav role="tablist" aria-label="Áreas do aplicativo" className="shop-app-nav">
-          {tabs.map(([key, label]) => (
-            <button key={key} type="button" role="tab" aria-selected={tab === key} className={`btn btn-sm ${tab === key ? 'btn-primary' : 'btn-ghost'}`}
-              ref={tab === key ? (node) => node?.scrollIntoView?.({ block: 'nearest', inline: 'center' }) : undefined} onClick={() => setTab(key)}>{label}</button>
+        <nav role="tablist" aria-label="Menu principal" className="nav shop-app-nav">
+            {tabs.map(([key, label]) => (
+              <button key={key} type="button" role="tab" aria-selected={tab === key} aria-controls="shop-app-panel"
+                className={`nav-link ${tab === key ? 'is-active' : ''}`} onClick={() => setTab(key)}>
+                <Icon name={TAB_ICONS[key] || 'list'} size={19} /><span>{label}</span>
+              </button>
           ))}
-        </nav>}
-      </header>
-      <main id="shop-app-panel" role="tabpanel" className={['pdv', 'pedidos', 'auditoria'].includes(tab) ? 'shop-panel-wide' : ''} style={{ padding: 16, maxWidth: 1100, margin: '0 auto' }}>
-        {!perms ? <p className="muted">Carregando...</p>
-          : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
+        </nav>
+        <div className="sidebar-user shop-sidebar-user">
+            <div className="sidebar-user-info">
+              <strong title={profile?.name}>{profile?.name || info.name}</strong>
+              <code title={profile?.login}>{profile?.login}</code>
+            </div>
+            <button className="btn btn-ghost-light btn-sm" onClick={() => setAccountOpen(true)}>
+              <Icon name="gear" size={16} /> Usuário e senha
+            </button>
+            <button className="btn btn-ghost-light btn-sm" onClick={logout}>
+              <Icon name="logout" size={16} /> Sair
+            </button>
+        </div>
+      </aside>
+      <main className="main shop-main">
+        <header className="shop-main-head">
+            <strong className="shop-main-title">{info.name}</strong>
+            <div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}><Icon name="gear" size={16} /> Usuário</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={logout}><Icon name="logout" size={16} /> Sair</button>
+            </div>
+        </header>
+        <section id="shop-app-panel" role="tabpanel" aria-label={tabs.find(([key]) => key === tab)?.[1] || 'Área do aplicativo'} className={`shop-app-panel ${['pdv', 'pedidos', 'auditoria'].includes(tab) ? 'shop-panel-wide' : ''}`}>
+            {!perms ? <p className="muted">Carregando...</p>
+              : !tabs.length ? <p className="muted">Seu acesso ainda não tem nenhuma área liberada. Fale com a loja.</p>
             : tab === 'produtos' ? <Products allow={perms} />
-              : tab === 'equipe' ? <TeamManagement />
-              : tab === 'pedidos' ? <Orders key="shop-orders" allow={perms} />
-                : tab === 'pdv' ? <Orders key="shop-pdv" allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
-                : tab === 'api' ? <Api />
-                  : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
-                    : tab === 'whatsapp' ? <>
-                      {perms.includes('entregas') && <section className="card" style={{ marginBottom: 16 }}>
-                        <h2>Entregas e notificações do catálogo</h2>
-                        <p className="muted">Configure frete, formas de entrega e o WhatsApp que recebe os avisos de novos pedidos.</p>
-                        <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas e notificações</button>
-                      </section>}
-                      <WorkspaceSection key={tab} area={tab} />
-                      {catalogSettingsOpen && <CatalogSettings storeId={appStoreId} onClose={() => setCatalogSettingsOpen(false)} />}
-                    </>
-                    : WORKSPACE_TABS.includes(tab) ? <WorkspaceSection key={tab} area={tab} /> : null}
+                : tab === 'equipe' ? <TeamManagement />
+                  : tab === 'pedidos' ? <Orders key="shop-orders" allow={perms} />
+                    : tab === 'pdv' ? <Orders key="shop-pdv" allow={perms} initialTab="pos" onClosePOS={otherTab ? () => setTab(otherTab) : null} />
+                      : tab === 'api' ? <Api />
+                        : tab === 'auditoria' ? <Audit canReply={auditCanSend} />
+                          : tab === 'whatsapp' ? <>
+                            {perms.includes('entregas') && <section className="card" style={{ marginBottom: 16 }}>
+                              <h2>Entregas e notificações do catálogo</h2>
+                              <p className="muted">Configure frete, formas de entrega e o WhatsApp que recebe os avisos de novos pedidos.</p>
+                              <button type="button" className="btn btn-primary" onClick={() => setCatalogSettingsOpen(true)}>Configurar entregas e notificações</button>
+                            </section>}
+                            <WorkspaceSection key={tab} area={tab} />
+                            {catalogSettingsOpen && <CatalogSettings storeId={appStoreId} onClose={() => setCatalogSettingsOpen(false)} />}
+                          </>
+                            : WORKSPACE_TABS.includes(tab) ? <WorkspaceSection key={tab} area={tab} /> : null}
+        </section>
       </main>
       {accountOpen && <Modal title="Usuário e senha" onClose={() => setAccountOpen(false)}>
         <div style={{ display: 'grid', gap: 12 }}>
@@ -359,6 +386,6 @@ export default function ShopApp() {
           </form>
         </div>
       </Modal>}
-    </>
+    </div>
   );
 }

@@ -78,10 +78,11 @@ async function prepareInput(provider, apiKey, input, attachments) {
   return { text: [input, ...notes].filter(Boolean).join('\n\n'), media };
 }
 
-export async function complete({ provider, model, apiKey, prompt, history = [], input, attachments = [] }) {
+export async function complete({ provider, model, apiKey, prompt, history = [], input, attachments = [], maxTokens = 1200 }) {
   let data;
   const prepared = await prepareInput(provider, apiKey, input, attachments);
   const userText = prepared.text || 'O cliente enviou uma mídia.';
+  const outputLimit = Number.isInteger(maxTokens) ? Math.min(12000, Math.max(256, maxTokens)) : 1200;
   if (provider === 'openai') {
     data = await postJson(ENDPOINTS.openai, { Authorization: `Bearer ${apiKey}` }, {
       model,
@@ -98,7 +99,7 @@ export async function complete({ provider, model, apiKey, prompt, history = [], 
           ] : userText,
         },
       ],
-      max_tokens: 1200,
+      max_tokens: outputLimit,
     });
     const choice = data.choices?.[0];
     return {
@@ -123,7 +124,7 @@ export async function complete({ provider, model, apiKey, prompt, history = [], 
           ],
         },
       ],
-      max_tokens: 1200,
+      max_tokens: outputLimit,
     });
     return {
       text: (data.content || []).filter((item) => item.type === 'text').map((item) => item.text).join('').trim(),
@@ -139,7 +140,7 @@ export async function complete({ provider, model, apiKey, prompt, history = [], 
         ...history.map((item) => ({ role: item.role === 'assistant' ? 'model' : 'user', parts: [{ text: item.content }] })),
         { role: 'user', parts: [...prepared.media.map((item) => ({ inlineData: { mimeType: item.mime, data: item.base64 } })), { text: userText }] },
       ],
-      generationConfig: { maxOutputTokens: 1200 },
+      generationConfig: { maxOutputTokens: outputLimit },
     });
     return {
       text: (data.candidates?.[0]?.content?.parts || []).map((part) => part.text || '').join('').trim(),

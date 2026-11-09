@@ -1,5 +1,5 @@
 // Regras de calendário no navegador (espelham o servidor, que é quem decide o envio de fato).
-import { addDaysISO, fmtRun, isoDay, isoToBR } from './format.js';
+import { addDaysISO, fmtRun, isoDay, isoToBR, todayISO } from './format.js';
 
 const pad = (n) => String(n).padStart(2, '0');
 const iso = (y, m0, d) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
@@ -60,6 +60,11 @@ export function renderPreview(text, { name, amountCents, dueISO }) {
 
 export const dueText = (s) => (s.recurrence === 'mensal' ? `Vence todo dia ${isoDay(s.dueDate)}` : `Vence em ${isoToBR(s.dueDate)}`);
 export const beforeText = (days) => (days === 0 ? 'no dia do vencimento' : days === 1 ? '1 dia antes' : `${days} dias antes`);
+
+export function overdueDues(s, today = todayISO()) {
+  if (s.kind !== 'cobranca' || !Array.isArray(s.payable)) return [];
+  return s.payable.filter((dueDate) => dueDate < today);
+}
 
 export function statusInfo(s) {
   if (s.status === 'pausada') return { label: 'Pausada', cls: 'pill-partial' };

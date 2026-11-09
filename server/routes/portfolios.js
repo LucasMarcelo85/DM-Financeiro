@@ -9,6 +9,7 @@ import { isValidDomain, normalizeDomain } from '../utils/domain.js';
 import { KINDS, cleanPortfolioDoc, cleanPortfolioName, emptyPortfolioDoc } from '../utils/portfolio.js';
 import { isValidSlug, pickSlug, slugify } from '../utils/slug.js';
 import { storeScope } from '../utils/store.js';
+import { generatePortfolioPlan, buildPortfolioDocuments } from '../services/ai-portfolio.js';
 
 // Portfólio do usuário logado: páginas públicas personalizáveis.
 // Endereço: dominio/<portfolioSlug do usuário> = página principal; dominio/<portfolioSlug>/<slug da página> = as demais.
@@ -150,6 +151,91 @@ router.get('/', async (req, res) => {
   const rows = await prisma.portfolio.findMany({ where: { userId: req.user.id, storeId }, orderBy: [{ isMain: 'desc' }, { updatedAt: 'desc' }], select: summarySelect });
   const { userSlug, owner } = await addressFor(req.user, storeId);
   res.json({ portfolios: rows.map((p) => summaryDTO(p, userSlug, owner)), limit: limitsFor(req.user).portfolios, used: await prisma.portfolio.count({ where: { userId: req.user.id } }), catalogProducts: limitsFor(req.user).catalogProducts, userSlug, domain: domainDTO(owner) });
+});
+
+router.post('/ai-build', async (req, res) => {
+  const body = req.body || {};
+  const providers = new Set(['gemini', 'openai', 'claude']);
+  const defaults = { gemini: 'gemini-2.0-flash', openai: 'gpt-4o-mini', claude: 'claude-3-5-haiku-latest' };
+  const provider = String(body.provider || '');
+  const model = String(body.model || defaults[provider] || '').trim();
+  const apiKey = String(body.apiKey || '').trim();
+  const siteName = String(body.siteName || '').trim();
+  const prompt = String(body.prompt || '').trim();
+  const pageCount = Number(body.pageCount);
+  if (!providers.has(provider)) throw new AppError(400, 'Escolha Gemini, ChatGPT ou Claude.');
+  if (!/^[\w.-]{2,100}$/.test(model)) throw new AppError(400, 'Informe um identificador de modelo válido.');
+  if (apiKey.length < 16 || apiKey.length > 1000) throw new AppError(400, 'Informe uma chave de API válida.');
+  if (siteName.length > 120 || prompt.length < 20 || prompt.length > 4000) throw new AppError(400, 'Informe o nome do site e uma descrição entre 20 e 4.000 caracteres.');
+  if (!Number.isInteger(pageCount) || pageCount < 1 || pageCount > 5) throw new AppError(400, 'Escolha de 1 a 5 páginas para o site.');
+
+  const storeId = await storeScope(req);
+  const count = await assertCanCreate(req.user, storeId);
+  const limit = limitsFor(req.user).portfolios;
+  const used = await prisma.portfolio.count({ where: { userId: req.user.id } });
+  if (pageCount > limit - used) {
+    throw new AppError(403, `Seu plano tem espaço para ${Math.max(0, limit - used)} ${limit - used === 1 ? 'página' : 'páginas'}. Reduza a quantidade ou libere espaço no portfólio.`, 'LIMIT_REACHED');
+  }
+
+  const rawAttachments = body.attachments ?? [];
+  if (!Array.isArray(rawAttachments) || rawAttachments.length > 4) throw new AppError(400, 'Envie no máximo quatro imagens de referência.');
+  let totalBytes = 0;
+  const attachments = rawAttachments.map((item, index) => {
+    const mime = String(item?.mime || '').toLowerCase();
+    const base64 = String(item?.base64 || '');
+    const name = String(item?.name || `referencia-${index + 1}`).slice(0, 100);
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime) || base64.length > 2_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+      throw new AppError(400, `A imagem ${index + 1} é inválida ou muito grande.`);
+    }
+    const buffer = Buffer.from(base64, 'base64');
+    if (!buffer.length || buffer.length > 1_000_000 || buffer.toString('base64').replace(/=+$/, '') !== base64.replace(/=+$/, '')) {
+      throw new AppError(400, `A imagem ${index + 1} deve ser válida e ter até 1 MB.`);
+    }
+    totalBytes += buffer.length;
+    return { kind: 'image', mime, base64, name, size: buffer.length, dataUrl: `data:${mime};base64,${base64}` };
+  });
+  if (totalBytes > 2_500_000) throw new AppError(400, 'As imagens juntas ultrapassam o limite de 2,5 MB.');
+
+  const plan = await generatePortfolioPlan({ provider, model, apiKey, request: { siteName, prompt }, pageCount, attachments });
+  if (plan.pages.length !== pageCount) throw new AppError(502, 'A IA não criou a quantidade de páginas solicitada. Tente novamente.', 'AI_SITE_INVALID_RESPONSE');
+
+  const created = [];
+  try {
+    for (let index = 0; index < plan.pages.length; index += 1) {
+      const { page, userSlug } = await createPage(req.user, {
+        name: plan.pages[index].name,
+        data: emptyPortfolioDoc('site'),
+        count: count + index,
+        kind: 'site',
+        storeId,
+      });
+      created.push({ page, userSlug });
+    }
+    const paths = created.map(({ page, userSlug }, index) => ({
+      name: plan.pages[index].name,
+      path: pagePath(userSlug, page),
+    }));
+    const documents = buildPortfolioDocuments(plan, attachments, paths);
+    const { owner } = await addressFor(req.user, storeId);
+    const saved = [];
+    for (let index = 0; index < created.length; index += 1) {
+      const cleanData = cleanPortfolioDoc(documents[index].data, 'site');
+      const page = await prisma.portfolio.update({
+        where: { id: created[index].page.id },
+        data: { data: cleanData },
+      });
+      saved.push(summaryDTO(page, created[index].userSlug, owner));
+    }
+    res.status(201).json({ siteName: plan.siteName, portfolios: saved });
+  } catch (error) {
+    try {
+      await prisma.portfolio.deleteMany({ where: { id: { in: created.map(({ page }) => page.id) }, userId: req.user.id } });
+    } catch (cleanupError) {
+      console.error(`[portfolio] geração IA falhou (${error.message}) e não foi possível limpar páginas parciais: ${cleanupError.message}`);
+      throw new AppError(500, 'A geração falhou e páginas parciais permaneceram no portfólio. Atualize a lista antes de tentar novamente.', 'AI_SITE_CLEANUP_FAILED');
+    }
+    throw error;
+  }
 });
 
 router.put('/domain', async (req, res) => {

@@ -14,7 +14,7 @@ export const setPinToken = (t) => { pinToken = t || null; };
 const STORE_KEY = 'dm:store';
 export const getActiveStore = () => (/^\/app(\/|$)/.test(window.location.pathname) ? null : localStorage.getItem(STORE_KEY) || null);
 export const setActiveStore = (id) => { if (id) localStorage.setItem(STORE_KEY, String(id)); else localStorage.removeItem(STORE_KEY); };
-const SCOPED = /^\/(products|catalog|inventory|portfolios)(\/|\?|$)/;
+const SCOPED = /^\/(products|catalog|inventory|portfolios|ai)(\/|\?|$)/;
 const AUDIT_SCOPE_KEY = 'dm:audit-scope';
 export const getActiveAuditScope = () => {
   const scope = sessionStorage.getItem(AUDIT_SCOPE_KEY) || 'main';

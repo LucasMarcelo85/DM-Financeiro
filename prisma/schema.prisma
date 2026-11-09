@@ -753,6 +753,7 @@ model Order {
   surchargeCents Int     @default(0) @map("surcharge_cents")
   paymentId     String?  @map("payment_id")
   paymentProofUrl String? @map("payment_proof_url")
+  aiConversationId Int?  @map("ai_conversation_id")
   paidAt        DateTime? @map("paid_at")
   createdAt     DateTime @default(now()) @map("created_at")
   deletedAt     DateTime? @map("deleted_at")
@@ -929,6 +930,7 @@ model PosSettings {
 model AiAgent {
   id              Int      @id @default(autoincrement())
   userId          Int      @map("user_id")
+  storeId         Int?     @map("store_id")
   instanceId      Int?     @map("instance_id")
   name            String
   provider        String
@@ -940,6 +942,7 @@ model AiAgent {
   active          Boolean  @default(true)
   contactIds      Json     @default("[]") @map("contact_ids")
   schedule        Json     @default("{}")
+  dataAccess      Json     @default("{\"orders\":true,\"products\":false,\"billing\":false}") @map("data_access")
   createdAt       DateTime @default(now()) @map("created_at")
   updatedAt       DateTime @updatedAt @map("updated_at")
 
@@ -950,6 +953,7 @@ model AiAgent {
   campaigns    AiCampaign[]
 
   @@index([userId, mode])
+  @@index([userId, storeId])
   @@index([instanceId, active])
   @@map("ai_agents")
 }
@@ -1042,6 +1046,8 @@ model NoAiMarketingCampaignItem {
 model AiAction {
   id          Int      @id @default(autoincrement())
   agentId     Int      @map("agent_id")
+  kind        String   @default("notify")
+  config      Json     @default("{}")
   name        String
   trigger     String
   targetPhone String   @map("target_phone")
@@ -1101,12 +1107,15 @@ model AiFolderContact {
 model AiConversation {
   id        Int      @id @default(autoincrement())
   userId    Int      @map("user_id")
+  storeId   Int?     @map("store_id")
   agentId   Int?     @map("agent_id")
   agentName String   @default("") @map("agent_name")
   agentMode String   @default("atendimento") @map("agent_mode")
   phone     String
   name      String   @default("")
   status    String   @default("active")
+  labels    String[] @default([])
+  note      String   @default("")
   interruptedAt DateTime? @map("interrupted_at")
   updatedAt DateTime @updatedAt @map("updated_at")
   createdAt DateTime @default(now()) @map("created_at")
@@ -1118,6 +1127,7 @@ model AiConversation {
   @@unique([agentId, phone])
   @@index([agentId, updatedAt])
   @@index([userId, updatedAt])
+  @@index([userId, storeId, updatedAt])
   @@map("ai_conversations")
 }
 

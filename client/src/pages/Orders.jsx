@@ -393,7 +393,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
             <option value="">Todas as entregas</option><option value="retirada">Retirada</option><option value="excursao">Excursão</option><option value="motoboy">Motoboy</option><option value="correios">Correios</option>
           </select>}
           {tab === 'orders' && <select className="input" value={source} onChange={(e) => setSource(e.target.value)} aria-label="Origem do pedido">
-            <option value="">Todas as origens</option><option value="catalog">Catálogo</option><option value="pdv">Frente de caixa (PDV)</option>
+            <option value="">Todas as origens</option><option value="catalog">Catálogo</option><option value="pdv">Frente de caixa (PDV)</option><option value="ai">Atendimento IA</option>
           </select>}
           {tab === 'customers' && <>
             <select className="input" value={customerKind} onChange={(e) => setCustomerKind(e.target.value)} aria-label="Tipo de cliente">
@@ -453,7 +453,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
                   <strong className="od-code">#{o.code}</strong>
                   <span className={`pill ${o.status === 'novo' ? 'pill-partial' : 'pill-sent'}`}>{o.status === 'novo' ? 'Novo' : 'Atendido'}</span>
                   <span className={`pill ${o.paymentStatus === 'paid' ? 'pill-sent' : 'pill-partial'}`}>{o.paymentStatus === 'paid' ? `Pago · ${PAYMENT_PROVIDER[o.paymentProvider] || 'online'}` : o.paymentStatus === 'pending' ? 'Pagamento pendente' : 'Não pago'}</span>
-                  {o.source === 'pdv' ? <span className="tag">Frente de caixa</span> : <span className="tag">{TYPE[o.deliveryType]}</span>}
+                  {o.source === 'pdv' ? <span className="tag">Frente de caixa</span> : <span className="tag">{o.source === 'ai' ? 'Atendimento IA' : TYPE[o.deliveryType]}</span>}
                   <span className="muted small od-date">{dateTimeBR(o.createdAt)}{isLog ? ` · apaga em ${plural(daysLeft, 'dia', 'dias')}` : ''}</span>
                 </div>
                 <div className="od-cust">{can('clientes') && o.customerPhone ? <button type="button" className="od-customer-link" onClick={() => openCustomer(o.customerPhone)}>{o.customerName}</button> : <strong>{o.customerName}</strong>}{o.customerPhone && <a href={wa} target="_blank" rel="noopener noreferrer">{formatStoredPhone(o.customerPhone)}</a>}</div>

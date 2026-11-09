@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useRef, useState } from 'react';
 import { Link, useNavigate } from 'react-router-dom';
-import { api, getActiveStore } from '../api.js';
+import { api, getActiveStore, isShopMode, shopSlug } from '../api.js';
 import BuyMore from '../components/BuyMore.jsx';
 import HelpNote from '../components/HelpNote.jsx';
 import StoreBar from '../components/StoreBar.jsx';
@@ -9,6 +9,7 @@ import { useAuth } from '../auth.jsx';
 import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import NewPortfolioWizard from '../components/portfolio/NewPortfolioWizard.jsx';
+import AiPortfolioBuilder from '../components/portfolio/AiPortfolioBuilder.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { dateBR, plural } from '../lib/format.js';
@@ -83,6 +84,7 @@ export default function Portfolios() {
   const { user, appMode } = useAuth();
   const [data, setData] = useState(null);
   const [newOpen, setNewOpen] = useState(false);
+  const [aiBuilderOpen, setAiBuilderOpen] = useState(false);
   const [appOpen, setAppOpen] = useState(false);
   const [busy, setBusy] = useState('');
   const [confirmDel, setConfirmDel] = useState(null);
@@ -96,6 +98,12 @@ export default function Portfolios() {
 
   const count = data?.used ?? data?.portfolios.length ?? 0;
   const full = data && count >= data.limit;
+
+  function finishAiBuild(portfolios) {
+    setAiBuilderOpen(false);
+    load();
+    if (portfolios?.[0]?.id) nav(`/portfolio/${portfolios[0].id}`);
+  }
 
   async function create(options) {
     setBusy('create');
@@ -213,6 +221,9 @@ export default function Portfolios() {
             : <HelpNote topic="portfolio">{data ? `Você usou ${count} de ${plural(data.limit, 'página', 'páginas')} do seu plano.` : ''}</HelpNote>}
         </div>
         {!appMode && getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
+        {!appMode && <button className="btn btn-ghost" onClick={() => setAiBuilderOpen(true)} disabled={!data || full || !!busy}>
+          <Icon name="sparkles" size={18} /> Construtor IA
+        </button>}
         {!appMode && <label className={`btn btn-ghost ${!data || full || busy ? 'is-disabled' : ''}`} aria-disabled={!data || full || !!busy}>
           Importar
           <input type="file" accept=".json,application/json" hidden onChange={importFile} disabled={!data || full || !!busy} />
@@ -222,6 +233,9 @@ export default function Portfolios() {
 
       {!appMode && <StoreBar manage />}
       {appOpen && <StoreAppModal storeId={getActiveStore()} onClose={() => setAppOpen(false)} />}
+      {aiBuilderOpen && <AiPortfolioBuilder onClose={() => setAiBuilderOpen(false)} onCreated={finishAiBuild}
+        availablePages={Math.max(1, (data?.limit || 1) - count)}
+        credentialScope={isShopMode() ? `shop:${shopSlug()}` : `user:${user?.id || 'unknown'}:store:${getActiveStore() || 'main'}`} />}
 
       {full && !appMode && (
         <div className="banner banner-amber">
@@ -251,6 +265,7 @@ export default function Portfolios() {
           <h2>Crie sua primeira página</h2>
           <p>Arraste textos, imagens, ícones, botões e formas para onde quiser, com desenho próprio para computador, tablet e celular. Depois copie o link e envie para quem quiser.</p>
           {getActiveStore() && <button className="btn btn-ghost" onClick={() => setAppOpen(true)}><Icon name="box" size={18} /> Criar app</button>}
+        {!appMode && <button className="btn btn-ghost" onClick={() => setAiBuilderOpen(true)} disabled={!data || full || !!busy}><Icon name="sparkles" size={18} /> Construtor IA</button>}
         <button className="btn btn-primary" onClick={() => setNewOpen(true)}>Nova página</button>
         </section>
       ) : (

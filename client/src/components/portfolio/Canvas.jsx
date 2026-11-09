@@ -234,7 +234,7 @@ function MenuView({ el, device, mode }) {
   const link = (it) => {
     const href = mode === 'public' ? linkHref(it.link) : '';
     return href
-      ? <a key={it.id} href={href} target={href.startsWith('#') ? undefined : '_blank'} rel="noopener noreferrer" onClick={() => setOpen(false)}>{it.label}</a>
+      ? <a key={it.id} href={href} target={href.startsWith('#') || href.startsWith('/') ? undefined : '_blank'} rel="noopener noreferrer" onClick={() => setOpen(false)}>{it.label}</a>
       : <span key={it.id}>{it.label}</span>;
   };
   if (!burger) return <nav className="pv-menu is-bar" style={style} aria-label={el.title || 'Menu'}>{items.map(link)}</nav>;

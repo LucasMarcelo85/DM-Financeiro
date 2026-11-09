@@ -36,6 +36,7 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     instanceId: initial?.instanceId || '',
     contactIds: initial?.contactIds || [],
     active: initial?.active ?? true,
+    dataAccess: { orders: true, products: false, billing: false, ...(initial?.dataAccess || {}) },
     schedule: { enabled: false, days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', from: '', until: '', ...(initial?.schedule || {}) },
   }));
   const setSchedule = (key, value) => setForm((current) => ({ ...current, schedule: { ...current.schedule, [key]: value } }));
@@ -55,6 +56,9 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     ...data.builtinPrompts.filter((item) => item.mode === form.mode).map((item) => ({ ...item, key: item.id, group: 'Modelos prontos' })),
   ], [data.prompts, data.builtinPrompts, form.mode]);
   const set = (key) => (event) => setForm((current) => ({ ...current, [key]: event.target.value }));
+  const toggleDataAccess = (key) => (event) => setForm((current) => ({
+    ...current, dataAccess: { ...current.dataAccess, [key]: event.target.checked },
+  }));
   const setMode = (mode) => setForm((current) => {
     const isDefault = !current.prompt.trim() || [...data.builtinPrompts, ...data.prompts].some((item) => item.content === current.prompt);
     const next = isDefault ? (data.templates[mode] || current.prompt) : current.prompt;
@@ -146,12 +150,22 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
             <input className="input" type="password" autoComplete="new-password" value={form.apiKey} onChange={set('apiKey')} required={!editing} maxLength={1000} placeholder={editing ? '••••••••••••' : 'Cole a chave de API do provedor'} />
           </label>
           {form.mode === 'atendimento' ? (
-            <label className="field"><span>Instância para atendimento</span>
-              <select className="input" value={form.instanceId} onChange={set('instanceId')} required>
-                <option value="">Selecione uma instância WhatsApp</option>
-                {data.instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.displayName} · {instance.provider === 'meta' ? 'API Meta' : 'QR Code'}</option>)}
-              </select>
-            </label>
+            <>
+              <label className="field"><span>Instância para atendimento</span>
+                <select className="input" value={form.instanceId} onChange={set('instanceId')} required>
+                  <option value="">Selecione uma instância WhatsApp</option>
+                  {data.instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.displayName} · {instance.provider === 'meta' ? 'API Meta' : 'QR Code'}</option>)}
+                </select>
+              </label>
+              <fieldset className="ai-schedule">
+                <legend>Dados do sistema que este agente pode consultar</legend>
+                <small>Os dados são limitados ao cliente identificado pelo telefone e à loja selecionada. Desative o que não for necessário.</small>
+                <label className="ai-checkbox"><input type="checkbox" checked={form.dataAccess.orders} onChange={toggleDataAccess('orders')} /> Pedidos, itens e status de pagamento</label>
+                <label className="ai-checkbox"><input type="checkbox" checked={form.dataAccess.products} onChange={toggleDataAccess('products')} /> Produtos ativos, preços e estoque da loja</label>
+                <label className="ai-checkbox"><input type="checkbox" checked={form.dataAccess.billing} onChange={toggleDataAccess('billing')} /> Cobranças e pagamentos confirmados</label>
+                <small>Pix enviado manualmente ou comprovante recebido não comprova pagamento. A IA só informa como pago o que o sistema/provider confirmou.</small>
+              </fieldset>
+            </>
           ) : (
             <>
               <label className="field"><span>Instância para envio</span>
@@ -245,9 +259,16 @@ function ChatPanel({ conversation, onClose, onChanged }) {
   const toast = useToast();
   const [messages, setMessages] = useState([]);
   const [text, setText] = useState('');
+  const [note, setNote] = useState(conversation?.note || '');
+  const [labelsText, setLabelsText] = useState((conversation?.labels || []).join(', '));
   const [sending, setSending] = useState(false);
   const orphan = conversation?.agentDeleted;
   const interrupted = conversation?.status === 'interrupted';
+  const labelsKey = (conversation?.labels || []).join('\u0000');
+  useEffect(() => {
+    setNote(conversation?.note || '');
+    setLabelsText(labelsKey.replaceAll('\u0000', ', '));
+  }, [conversation?.id, conversation?.note, labelsKey]);
   async function control(action) {
     try {
       if (action === 'delete') {
@@ -283,6 +304,22 @@ function ChatPanel({ conversation, onClose, onChanged }) {
     } catch (error) { toast(error.message, 'error'); }
     finally { setSending(false); }
   }
+  async function saveNote() {
+    try {
+      await api.put(`/ai/conversations/${conversation.id}/note`, { note });
+      toast('Anotação salva.');
+      await onChanged();
+    } catch (error) { toast(error.message, 'error'); }
+  }
+  async function saveLabels() {
+    try {
+      const labels = labelsText.split(',').map((label) => label.trim()).filter(Boolean);
+      const result = await api.put(`/ai/conversations/${conversation.id}/labels`, { labels });
+      setLabelsText(result.labels.join(', '));
+      toast('Etiquetas atualizadas.');
+      await onChanged();
+    } catch (error) { toast(error.message, 'error'); }
+  }
   if (!conversation) return <div className="ai-chat-empty"><Icon name="chat" size={28} /><p>Selecione uma conversa para visualizar as mensagens em tempo real.</p></div>;
   const roleLabel = { user: 'Cliente', human: 'Atendente', error: 'Aviso', action: 'Função' };
   return (
@@ -298,6 +335,12 @@ function ChatPanel({ conversation, onClose, onChanged }) {
         </div>
       </header>
       {interrupted && <div className="ai-interrupted-note">Conversa interrompida: o agente não responde automaticamente até ser retomado.</div>}
+      <div className="ai-chat-context">
+        <label className="field"><span>Etiquetas <small>(separe por vírgula)</small></span><input className="input" value={labelsText} onChange={(event) => setLabelsText(event.target.value)} maxLength={1200} disabled={orphan} placeholder="VIP, retorno, aguardando pagamento" /></label>
+        {!orphan && <button type="button" className="btn btn-ghost btn-sm" onClick={saveLabels}>Salvar etiquetas</button>}
+        <label className="field"><span>Bloco de anotações interno</span><textarea className="input" rows={3} value={note} onChange={(event) => setNote(event.target.value)} maxLength={20000} disabled={orphan} placeholder="Anote informações importantes desta conversa..." /></label>
+        {!orphan && <button type="button" className="btn btn-ghost btn-sm" onClick={saveNote}>Salvar anotação</button>}
+      </div>
       <div className="ai-chat-messages">
         {messages.map((message) => (
           <article key={message.id} className={`ai-bubble ${message.role === 'user' ? 'is-inbound' : message.role === 'human' ? 'is-human' : message.role === 'error' ? 'is-error' : message.role === 'action' ? 'is-action' : 'is-ai'}`}>
@@ -467,7 +510,7 @@ export default function AiService() {
             {conversations.map((conversation) => (
               <button type="button" className={`ai-conversation-item ${selectedConversation?.id === conversation.id ? 'is-selected' : ''}`} key={conversation.id} onClick={() => setSelectedConversation(conversation)}>
                 <span className="ai-avatar">{(conversation.name || conversation.phone).slice(0, 1).toUpperCase()}</span>
-                <span className="ai-conversation-summary"><strong>{conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
+                <span className="ai-conversation-summary"><strong>{conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
                 <time>{fmtDate(conversation.updatedAt)}</time>
               </button>
             ))}

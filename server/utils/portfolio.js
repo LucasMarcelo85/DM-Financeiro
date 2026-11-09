@@ -83,6 +83,8 @@ function image(v) {
 function cleanUrl(v) {
   let s = typeof v === 'string' ? v.trim() : '';
   if (!s || s.length > 2000 || /\s/.test(s)) return '';
+  if (s.startsWith('//') || s.includes('\\')) return '';
+  if (s.startsWith('/') && !s.startsWith('//') && !s.includes('\\')) return s;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(s)) s = `https://${s}`; // "meusite.com.br" -> https://meusite.com.br
   try {
     const u = new URL(s);

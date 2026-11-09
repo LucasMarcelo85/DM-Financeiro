@@ -57,6 +57,8 @@ export function linkHref(l) {
   if (l.kind === 'email') return emailOk(l.email) ? `mailto:${String(l.email).trim()}` : '';
   let u = String(l.url || '').trim();
   if (!u || /\s/.test(u)) return '';
+  if (u.startsWith('//') || u.includes('\\')) return '';
+  if (u.startsWith('/') && !u.startsWith('//') && !u.includes('\\')) return u;
   if (!/^[a-z][a-z0-9+.-]*:/i.test(u)) u = `https://${u}`;
   return /^https?:\/\//i.test(u) ? u : ''; // nunca javascript:, data: etc.
 }

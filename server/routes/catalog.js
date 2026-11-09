@@ -14,6 +14,7 @@ import { dateRange, importedDate } from '../utils/date-range.js';
 import { assertPin } from '../utils/pin.js';
 import { ensureDefaultStockFlow, resolveStockFlow } from '../services/inventory.js';
 import { workspaceEmailFor } from '../services/workspace.js';
+import { notifyAiPaymentConfirmed } from '../services/catalog-payments.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -23,7 +24,7 @@ function orderWhere(userId, filters = {}, { archived = false, includeStatus = tr
   const where = { userId, storeId, deletedAt: archived ? { not: null } : null };
   if (includeStatus && (filters.status === 'novo' || filters.status === 'atendido')) where.status = filters.status;
   if (filters.deliveryType === 'retirada' || filters.deliveryType === 'excursao' || filters.deliveryType === 'motoboy' || filters.deliveryType === 'correios') where.deliveryType = filters.deliveryType;
-  if (filters.source === 'pdv' || filters.source === 'catalog') where.source = filters.source;
+  if (filters.source === 'pdv' || filters.source === 'catalog' || filters.source === 'ai') where.source = filters.source;
   const requestedDays = Number(filters.days);
   const days = [7, 30, 60, config.orderRetentionDays].includes(requestedDays) ? requestedDays : config.orderRetentionDays;
   where[archived ? 'deletedAt' : 'createdAt'] = { gte: new Date(Date.now() - days * 86400000) };
@@ -712,6 +713,7 @@ router.patch('/orders/:id', async (req, res) => {
   });
   if (updated.count !== 1) throw new AppError(409, 'O pedido foi alterado em outra tela. Atualize e tente novamente.');
   const saved = await prisma.order.findUnique({ where: { id: o.id } });
+  if (saved.paymentStatus === 'paid' && o.paymentStatus !== 'paid') await notifyAiPaymentConfirmed(saved);
   await prisma.orderStrategyRecord.updateMany({
     where: { orderId: saved.id },
     data: { paid: saved.paymentStatus === 'paid', totalCents: saved.totalCents },

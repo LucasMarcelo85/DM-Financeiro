@@ -4,6 +4,7 @@ import { AppError } from '../utils/helpers.js';
 import * as infinitePay from './infinitepay.js';
 import { notifyCatalogOrder } from './catalog-notifications.js';
 import { emitApiWebhook } from './api-webhooks.js';
+import { sendText } from './whatsapp.js';
 
 const scopeFor = (storeId) => storeId ? `store:${storeId}` : 'main';
 const safeUrl = (value) => {
@@ -87,6 +88,7 @@ async function markPaid(order, { paymentId, proofUrl }) {
   if (updated.count) await prisma.orderStrategyRecord.updateMany({ where: { orderId: order.id }, data: { paid: true } });
   if (updated.count && order.paymentStatus !== 'paid') {
     const paidOrder = { ...order, paymentStatus: 'paid', paymentProvider: 'infinitepay', paymentId: String(paymentId || order.paymentId || '') };
+    await notifyAiPaymentConfirmed(paidOrder);
     notifyCatalogOrder(paidOrder, 'paid').catch((e) => console.error(`[catálogo] falha na notificação de pagamento do pedido ${order.id}: ${e.message}`));
     emitApiWebhook({
       userId: order.userId, storeId: order.storeId, event: 'order.paid',
@@ -97,6 +99,38 @@ async function markPaid(order, { paymentId, proofUrl }) {
         paidAt: paidOrder.paidAt?.toISOString() || new Date().toISOString(),
       },
     }).catch((e) => console.error(`[api-webhook] pagamento do pedido ${order.id}: ${e.message}`));
+  }
+}
+
+export async function notifyAiPaymentConfirmed(order) {
+  if (order.source !== 'ai' || !order.aiConversationId) return;
+  const content = `Pagamento confirmado pelo sistema: cobrança ${order.code}, R$ ${(order.totalCents / 100).toFixed(2).replace('.', ',')}.`;
+  let conversation;
+  try {
+    conversation = await prisma.aiConversation.findFirst({
+      where: { id: order.aiConversationId, storeId: order.storeId },
+      include: { agent: { include: { instance: true } } },
+    });
+  } catch (error) {
+    console.error(`[ia] pagamento ${order.code} confirmado, mas não foi possível carregar a conversa para notificar: ${error.message}`);
+    return;
+  }
+  if (!conversation?.agent?.instance) return;
+  try {
+    await sendText(conversation.agent.instance, conversation.phone, `Pagamento confirmado! Recebemos R$ ${(order.totalCents / 100).toFixed(2).replace('.', ',')} referente à cobrança ${order.code}. Obrigado!`);
+  } catch (error) {
+    console.error(`[ia] pagamento ${order.code} confirmado, mas não foi possível notificar o cliente: ${error.message}`);
+    try {
+      await prisma.aiMessage.create({ data: { conversationId: conversation.id, role: 'error', content: `Pagamento confirmado, mas a notificação automática não foi enviada: ${error.message}` } });
+    } catch (saveError) {
+      console.error(`[ia] não foi possível registrar a falha da notificação do pagamento ${order.code}: ${saveError.message}`);
+    }
+    return;
+  }
+  try {
+    await prisma.aiMessage.create({ data: { conversationId: conversation.id, role: 'action', content } });
+  } catch (error) {
+    console.error(`[ia] notificação do pagamento ${order.code} foi enviada, mas não entrou no histórico: ${error.message}`);
   }
 }
 
