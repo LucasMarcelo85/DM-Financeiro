@@ -149,16 +149,24 @@ export default function CsvTransfer({ resource, title, filename, exportUrl, colu
             <div className="csv-transfer-body">
               <p className="muted">{description} Escolha um CSV exportado nesta área. A importação não apaga registros.</p>
               {importDestination && (
-                <label className="field">
-                  <span>{importDestination.label}</span>
-                  <select className="input" value={importDestination.value} onChange={(event) => importDestination.onChange(event.target.value)} disabled={busy}>
-                    {importDestination.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
-                  </select>
-                </label>
+                <>
+                  <label className="field">
+                    <span>{importDestination.label}</span>
+                    <select className="input" value={importDestination.value} onChange={(event) => importDestination.onChange(event.target.value)} disabled={busy || importDestination.disabled}>
+                      {importDestination.options.map(([value, label]) => <option key={value} value={value}>{label}</option>)}
+                    </select>
+                  </label>
+                  {importDestination.emptyMessage && <p className="muted small">{importDestination.emptyMessage}</p>}
+                  {importDestination.disabled && importDestination.onCreateFolder && (
+                    <button type="button" className="btn btn-ghost btn-sm" onClick={importDestination.onCreateFolder} disabled={busy}>
+                      {importDestination.createFolderLabel || 'Criar pasta'}
+                    </button>
+                  )}
+                </>
               )}
               <label className="field">
                 <span>Arquivo CSV</span>
-                <input className="input" type="file" accept=".csv,text/csv" onChange={chooseFile} disabled={busy} />
+                <input className="input" type="file" accept=".csv,text/csv" onChange={chooseFile} disabled={busy || importDestination?.disabled} />
               </label>
               {rows && (
                 <div className="csv-preview">
@@ -174,7 +182,7 @@ export default function CsvTransfer({ resource, title, filename, exportUrl, colu
               {error && <p className="form-error" role="alert">{error}</p>}
               <div className="modal-footer">
                 <button type="button" className="btn btn-ghost" onClick={close}>Cancelar</button>
-                <button type="button" className="btn btn-primary" onClick={importFile} disabled={busy || !rows?.length}><Icon name="upload" size={18} /> {busy ? 'Importando...' : 'Importar registros'}</button>
+                <button type="button" className="btn btn-primary" onClick={importFile} disabled={busy || importDestination?.disabled || !rows?.length}><Icon name="upload" size={18} /> {busy ? 'Importando...' : 'Importar registros'}</button>
               </div>
             </div>
           )}

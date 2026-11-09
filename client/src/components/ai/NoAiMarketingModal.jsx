@@ -72,7 +72,7 @@ export default function NoAiMarketingModal({ data, onClose }) {
 
   const filteredFolders = useMemo(() => data.folders.map((folder) => ({
     ...folder,
-    filteredContacts: folder.contacts.filter((contact) => `${contact.name || ''} ${contact.phone}`.toLowerCase().includes(query.toLowerCase())),
+    filteredContacts: folder.contacts.filter((contact) => `${contact.name || ''} ${contact.phone} ${(contact.labels || []).join(' ')}`.toLowerCase().includes(query.toLowerCase())),
   })).filter((folder) => folder.filteredContacts.length), [data.folders, query]);
   const selected = useMemo(() => new Set(selectedPhones), [selectedPhones]);
   const current = campaigns?.find((campaign) => OPEN.includes(campaign.status));
@@ -94,11 +94,13 @@ export default function NoAiMarketingModal({ data, onClose }) {
     }
     const fresh = unique.filter((phone) => !selected.has(phone));
     if (selected.size + fresh.length > MAX_CONTACTS) {
-      setError(`Cada campanha pode ter até ${MAX_CONTACTS} contatos. Remova alguns para selecionar mais.`);
+      setError(`Cada campanha pode ter até ${MAX_CONTACTS.toLocaleString('pt-BR')} contatos. Remova alguns para selecionar mais.`);
       return;
     }
     setSelectedPhones((old) => [...old, ...fresh]);
   }
+  const allFilteredPhones = [...new Set(filteredFolders.flatMap((folder) => folder.filteredContacts.map((contact) => contact.phone)))];
+  const allFilteredSelected = allFilteredPhones.length > 0 && allFilteredPhones.every((phone) => selected.has(phone));
 
   async function chooseMedia(event) {
     const file = event.target.files?.[0];
@@ -226,10 +228,13 @@ export default function NoAiMarketingModal({ data, onClose }) {
 
             <section className="noai-contact-picker">
               <div className="noai-section-head">
-                <div><strong>Destinatários</strong><small className="muted">Selecione de 1 a {MAX_CONTACTS} contatos já cadastrados.</small></div>
-                <strong>{selectedPhones.length}/{MAX_CONTACTS}</strong>
+                <div><strong>Destinatários</strong><small className="muted">Selecione de 1 a {MAX_CONTACTS.toLocaleString('pt-BR')} contatos já cadastrados.</small></div>
+                <strong>{selectedPhones.length}/{MAX_CONTACTS.toLocaleString('pt-BR')}</strong>
               </div>
               <input className="input" type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Buscar contatos..." aria-label="Buscar contatos" />
+              <button type="button" className="btn btn-ghost btn-sm" onClick={() => toggleContacts(allFilteredPhones)} disabled={!allFilteredPhones.length}>
+                {allFilteredSelected ? 'Desmarcar todos os resultados' : 'Selecionar todos os resultados'}
+              </button>
               <div className="noai-contact-groups">
                 {filteredFolders.map((folder) => {
                   const phones = folder.filteredContacts.map((contact) => contact.phone);
@@ -241,10 +246,10 @@ export default function NoAiMarketingModal({ data, onClose }) {
                       {folder.filteredContacts.slice(0, 100).map((contact) => (
                         <label className="noai-contact" key={`${folder.id}-${contact.phone}`}>
                           <input type="checkbox" checked={selected.has(contact.phone)} onChange={() => toggleContacts([contact.phone])} />
-                          <span><strong>{contact.name || 'Sem nome'}</strong><small>{formatStoredPhone(contact.phone)}</small></span>
+                          <span><strong>{contact.name || 'Sem nome'}</strong><small>{formatStoredPhone(contact.phone)}</small>{contact.labels?.length > 0 && <span className="ai-contact-labels">{contact.labels.map((label) => <small key={label}>{label}</small>)}</span>}</span>
                         </label>
                       ))}
-                      {folder.filteredContacts.length > 100 && <small className="muted">Refine a busca para ver mais contatos.</small>}
+                      {folder.filteredContacts.length > 100 && <small className="muted">Exibindo 100. Use a busca para localizar outros contatos; “Selecionar lista” inclui todos.</small>}
                     </fieldset>
                   );
                 })}

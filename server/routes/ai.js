@@ -81,6 +81,24 @@ async function loadFolders(userId) {
   ];
 }
 
+function addConversationLabels(folders, conversations) {
+  const labelsByPhone = new Map();
+  for (const conversation of conversations) {
+    const phone = toPhone(conversation.phone) || cleanPhone(conversation.phone);
+    if (!phone) continue;
+    const labels = labelsByPhone.get(phone) || new Set();
+    conversation.labels.forEach((label) => labels.add(label));
+    labelsByPhone.set(phone, labels);
+  }
+  return folders.map((folder) => ({
+    ...folder,
+    contacts: folder.contacts.map((contact) => ({
+      ...contact,
+      labels: [...(labelsByPhone.get(toPhone(contact.phone) || cleanPhone(contact.phone)) || [])],
+    })),
+  }));
+}
+
 async function ownedFolder(userId, id) {
   const folderId = Number(id);
   const folder = Number.isInteger(folderId) ? await prisma.aiContactFolder.findFirst({ where: { id: folderId, userId } }) : null;
@@ -448,7 +466,7 @@ export async function receiveOwnMessage(instance, { phone, text, externalId, typ
 
 router.get('/', async (req, res) => {
   const scopedStoreId = await agentStoreId(req);
-  const [agents, instances, folders, prompts] = await Promise.all([
+  const [agents, instances, rawFolders, prompts, conversations] = await Promise.all([
     prisma.aiAgent.findMany({ where: { userId: req.user.id, storeId: scopedStoreId }, orderBy: { updatedAt: 'desc' } }),
     prisma.instance.findMany({
       where: { userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) },
@@ -457,7 +475,13 @@ router.get('/', async (req, res) => {
     }),
     loadFolders(req.user.id),
     prisma.aiPrompt.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' } }),
+    prisma.aiConversation.findMany({
+      where: { userId: req.user.id, storeId: scopedStoreId, labels: { isEmpty: false } },
+      select: { phone: true, labels: true },
+      orderBy: { updatedAt: 'desc' },
+    }),
   ]);
+  const folders = addConversationLabels(rawFolders, conversations);
   const enriched = await Promise.all(agents.map(async (agent) => safeAgent(agent, await usageFor(agent.id))));
   res.json({
     agents: enriched,
@@ -571,7 +595,11 @@ router.post('/folders/:id/contacts', async (req, res) => {
     rows.set(phone, String(item?.name || '').trim().slice(0, 120));
   }
   if (!rows.size) throw new AppError(400, invalid.length ? `Telefone inválido: ${invalid[0]}. Use DDD + número, por exemplo (85) 99999-9999.` : 'Informe ao menos um contato.');
-  if ((await prisma.aiFolderContact.count({ where: { folderId: folder.id } })) + rows.size > 5000) throw new AppError(400, 'Cada pasta pode ter até 5.000 contatos.');
+  const [currentCount, existingCount] = await Promise.all([
+    prisma.aiFolderContact.count({ where: { folderId: folder.id } }),
+    prisma.aiFolderContact.count({ where: { folderId: folder.id, phone: { in: [...rows.keys()] } } }),
+  ]);
+  if (currentCount + rows.size - existingCount > 5000) throw new AppError(400, 'Cada pasta pode ter até 5.000 contatos.');
   await prisma.$transaction([...rows].map(([phone, name]) => prisma.aiFolderContact.upsert({
     where: { folderId_phone: { folderId: folder.id, phone } },
     create: { folderId: folder.id, phone, name },
@@ -602,7 +630,7 @@ router.post('/agents', async (req, res) => {
   const monthlyLimit = Number(body.monthlyLimit);
   const active = body.active === undefined ? true : body.active;
   const apiKey = String(body.apiKey || '').trim();
-  const contactIds = cleanPhoneList(body.contactIds, 500);
+  const contactIds = cleanPhoneList(body.contactIds, 3001);
   const dataAccess = cleanDataAccess(body.dataAccess);
   if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome do agente deve ter entre 2 e 80 caracteres.');
   if (!PROVIDERS.has(provider)) throw new AppError(400, 'Escolha Gemini, ChatGPT ou Claude.');
@@ -622,7 +650,7 @@ router.post('/agents', async (req, res) => {
   }
   if (mode === 'atendimento' && !instanceId) throw new AppError(400, 'Selecione a instância que receberá e responderá às mensagens.');
   if (mode === 'marketing' && contactIds.length === 0) throw new AppError(400, 'Selecione ao menos um contato para o agente de marketing.');
-  if (mode === 'marketing' && contactIds.length > 100) throw new AppError(400, 'Cada agente de marketing pode ter até 100 contatos selecionados.');
+  if (mode === 'marketing' && contactIds.length > 3000) throw new AppError(400, 'Cada agente de marketing pode ter até 3.000 contatos selecionados.');
   if (mode === 'atendimento' && instanceId && body.active !== false) {
     const conflict = await prisma.aiAgent.findFirst({ where: { userId: req.user.id, storeId: scopedStoreId, instanceId, mode, active: true } });
     if (conflict) throw new AppError(409, 'Esta instância já está vinculada a outro agente de atendimento ativo.');
@@ -660,7 +688,7 @@ router.put('/agents/:id', async (req, res) => {
   const model = String(body.model ?? current.model).trim();
   const monthlyLimit = Number(body.monthlyLimit ?? current.monthlyLimit);
   const apiKey = String(body.apiKey || '').trim();
-  const contactIds = Array.isArray(body.contactIds) ? cleanPhoneList(body.contactIds, 500) : current.contactIds;
+  const contactIds = Array.isArray(body.contactIds) ? cleanPhoneList(body.contactIds, 3001) : current.contactIds;
   const dataAccess = body.dataAccess === undefined ? current.dataAccess : cleanDataAccess(body.dataAccess);
   if (name.length < 2 || name.length > 80 || !PROVIDERS.has(provider) || !['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Confira o nome, provedor e tipo do agente.');
   if (prompt.length < 20 || prompt.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
@@ -675,7 +703,7 @@ router.put('/agents/:id', async (req, res) => {
   if (mode === 'atendimento' && !instance) throw new AppError(400, 'Selecione a instância que receberá e responderá às mensagens.');
   if (mode === 'atendimento' && instance.provider === 'meta' && !instance.metaAppSecret) throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
   if (mode === 'marketing' && contactIds.length === 0) throw new AppError(400, 'Selecione ao menos um contato para o agente de marketing.');
-  if (mode === 'marketing' && contactIds.length > 100) throw new AppError(400, 'Cada agente de marketing pode ter até 100 contatos selecionados.');
+  if (mode === 'marketing' && contactIds.length > 3000) throw new AppError(400, 'Cada agente de marketing pode ter até 3.000 contatos selecionados.');
   if (mode === 'atendimento' && instanceId && active) {
     const conflict = await prisma.aiAgent.findFirst({ where: { userId: req.user.id, storeId: scopedStoreId, instanceId, mode, active: true, NOT: { id: current.id } } });
     if (conflict) throw new AppError(409, 'Esta instância já está vinculada a outro agente de atendimento ativo.');
@@ -746,7 +774,7 @@ function parseCampaignDate(value, label) {
 async function campaignDto(campaign, { items = true } = {}) {
   const [counts, list, agent] = await Promise.all([
     prisma.aiCampaignItem.groupBy({ by: ['status'], where: { campaignId: campaign.id }, _count: { _all: true } }),
-    items ? prisma.aiCampaignItem.findMany({ where: { campaignId: campaign.id }, orderBy: { position: 'asc' }, take: 100 }) : [],
+    items ? prisma.aiCampaignItem.findMany({ where: { campaignId: campaign.id }, orderBy: { position: 'asc' }, take: 3000 }) : [],
     prisma.aiAgent.findUnique({ where: { id: campaign.agentId }, select: { name: true, schedule: true } }),
   ]);
   const by = Object.fromEntries(counts.map((row) => [row.status, row._count._all]));
@@ -871,7 +899,7 @@ export function stopAiCampaignWorker() {
   stopNoAiMarketingWorker();
 }
 
-const NO_AI_CAMPAIGN_LIMIT = 100;
+const NO_AI_CAMPAIGN_LIMIT = 3000;
 const NO_AI_MEDIA_MAX_BYTES = 100 * 1024 * 1024;
 const NO_AI_INTERVALS = new Set([20, 30, 60, 120]);
 const NO_AI_CAMPAIGN_OPEN = ['running', 'paused'];
@@ -1054,7 +1082,7 @@ router.post('/agents/:id/campaign', async (req, res) => {
   const effectiveStart = new Date(Math.max(startAt.getTime(), now));
   if (endAt <= effectiveStart) throw new AppError(400, 'O término deve ser depois do início.');
   const selectedPhones = [...new Set((Array.isArray(agent.contactIds) ? agent.contactIds : []).filter(Boolean))];
-  if (selectedPhones.length > 100) throw new AppError(400, 'Cada campanha pode ter até 100 contatos.');
+  if (selectedPhones.length > 3000) throw new AppError(400, 'Cada campanha pode ter até 3.000 contatos.');
   if (!selectedPhones.length) throw new AppError(400, 'Selecione ao menos um contato.');
   const intervalMs = Math.floor((endAt.getTime() - effectiveStart.getTime()) / selectedPhones.length);
   if (intervalMs < CAMPAIGN_MIN_INTERVAL_MS) {
@@ -1158,7 +1186,7 @@ router.post('/marketing-campaigns', async (req, res) => {
 
   const selectedPhones = Array.isArray(body.contactPhones) ? [...new Set(body.contactPhones.map(toPhone).filter(Boolean))] : [];
   if (!selectedPhones.length || selectedPhones.length > NO_AI_CAMPAIGN_LIMIT) {
-    throw new AppError(400, 'Selecione de 1 a 100 contatos para a campanha.');
+    throw new AppError(400, 'Selecione de 1 a 3.000 contatos para a campanha.');
   }
   const folders = await loadFolders(req.user.id);
   const contactByPhone = new Map();

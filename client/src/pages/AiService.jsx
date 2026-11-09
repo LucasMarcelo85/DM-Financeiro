@@ -21,6 +21,7 @@ const typedPhone = (value) => {
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
   return digits.length >= 12 && digits.length <= 15 ? digits : '';
 };
+const MAX_CAMPAIGN_CONTACTS = 3000;
 
 function AgentEditor({ initial, data, onClose, onSaved }) {
   const toast = useToast();
@@ -73,8 +74,8 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
   };
   const addPhones = (phones) => {
     const fresh = phones.filter((phone) => !selectedContacts.has(phone));
-    if (selectedContacts.size + fresh.length > 100) {
-      toast('Cada campanha pode ter até 100 contatos selecionados.', 'error');
+    if (selectedContacts.size + fresh.length > MAX_CAMPAIGN_CONTACTS) {
+      toast(`Cada agente de marketing pode ter até ${MAX_CAMPAIGN_CONTACTS.toLocaleString('pt-BR')} contatos selecionados.`, 'error');
       return;
     }
     setForm((current) => ({ ...current, contactIds: [...current.contactIds, ...fresh] }));
@@ -90,6 +91,14 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
       const phones = new Set(folder.contacts.map((contact) => contact.phone));
       setForm((current) => ({ ...current, contactIds: current.contactIds.filter((item) => !phones.has(item)) }));
     } else addPhones(folder.contacts.map((contact) => contact.phone));
+  };
+  const allFolderContacts = [...new Set(contactFolders.flatMap((item) => item.contacts.map((contact) => contact.phone)))];
+  const allContactsSelected = allFolderContacts.length > 0 && allFolderContacts.every((phone) => selectedContacts.has(phone));
+  const toggleAllContacts = () => {
+    if (allContactsSelected) {
+      const phones = new Set(allFolderContacts);
+      setForm((current) => ({ ...current, contactIds: current.contactIds.filter((phone) => !phones.has(phone)) }));
+    } else addPhones(allFolderContacts);
   };
   const addManual = () => {
     const phone = typedPhone(manualNumber);
@@ -176,7 +185,11 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
                 </select>
               </label>
               <fieldset className="ai-contact-select">
-                <legend>Contatos da campanha <small>({selectedContacts.size}/100 selecionados)</small></legend>
+                <legend>Contatos da campanha <small>({selectedContacts.size}/{MAX_CAMPAIGN_CONTACTS.toLocaleString('pt-BR')} selecionados)</small></legend>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={toggleAllContacts} disabled={!allFolderContacts.length}>
+                  {allContactsSelected ? 'Desmarcar todos os contatos' : 'Selecionar todos os contatos das pastas'}
+                </button>
+                {!allFolderContacts.length && <p className="muted small">Nenhum contato disponível. Na aba Contatos, crie uma pasta e importe os contatos antes de selecioná-los aqui.</p>}
                 <div className="ai-folder-picker">
                   <select className="input" value={folder?.id || ''} onChange={(event) => setFolderId(event.target.value)} aria-label="Pasta de contatos">
                     {contactFolders.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.contacts.length})</option>)}
@@ -187,7 +200,7 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
                   {folder?.contacts.map((contact) => (
                     <label className="ai-contact-option" key={contact.id}>
                       <input type="checkbox" checked={selectedContacts.has(contact.phone)} onChange={() => toggleContact(contact.phone)} />
-                      <span><strong>{contact.name}</strong><small>{formatStoredPhone(contact.phone)}</small></span>
+                      <span><strong>{contact.name}</strong><small>{formatStoredPhone(contact.phone)}</small>                      {contact.labels?.length > 0 && <span className="ai-contact-labels">{contact.labels.map((label) => <small key={label}>{label}</small>)}</span>}</span>
                     </label>
                   ))}
                   {!folder?.contacts.length && <p className="muted small">Esta pasta está vazia. Adicione números na aba Contatos ou digite um número abaixo.</p>}

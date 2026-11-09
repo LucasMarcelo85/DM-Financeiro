@@ -2167,6 +2167,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .noai-contact:hover { background: #f4f6f8; }
 .noai-contact input, .noai-consent input { margin-top: .2rem; }
 .noai-contact span { display: grid; min-width: 0; }
+.ai-contact-labels { display: flex !important; flex-wrap: wrap; gap: .25rem; margin-top: .15rem; }
+.ai-contact-labels small { width: fit-content; padding: .08rem .4rem; border-radius: 999px; background: #eef2f6; color: var(--ink-2); font-size: .68rem; }
 .noai-contact strong { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .noai-media-upload { display: grid; justify-items: start; gap: .45rem; }
 .noai-media-preview { display: grid; grid-template-columns: auto 1fr auto; align-items: center; gap: .55rem; width: 100%; padding: .5rem; border: 1px solid var(--line); border-radius: var(--r-sm); overflow-wrap: anywhere; }

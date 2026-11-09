@@ -25,13 +25,17 @@ export default function ContactsPanel({ folders, onChanged }) {
   const visibleFolders = useMemo(() => folders.filter((item) => !item.system || item.contacts.length > 0), [folders]);
   const folder = visibleFolders.find((item) => item.id === selectedId) || visibleFolders[0];
   const customFolders = useMemo(() => folders.filter((item) => !item.system), [folders]);
+  const systemContactsExist = folders.some((item) => item.system && item.contacts.length > 0);
+  const importOptions = useMemo(() => (systemContactsExist
+    ? [['cobrancas', 'Clientes de cobranças'], ...customFolders.map((item) => [String(item.folderId), item.name])]
+    : customFolders.map((item) => [String(item.folderId), item.name])), [customFolders, systemContactsExist]);
   const targets = customFolders.filter((item) => item.id !== folder?.id);
   useEffect(() => {
     if (folder && folder.id !== selectedId) setSelectedId(folder.id);
-    if (importDestinationId !== 'cobrancas' && !customFolders.some((item) => String(item.folderId) === importDestinationId)) {
-      setImportDestinationId('cobrancas');
+    if (!importOptions.some(([value]) => value === importDestinationId)) {
+      setImportDestinationId(importOptions[0]?.[0] || '');
     }
-  }, [customFolders, folder, importDestinationId, selectedId]);
+  }, [folder, importDestinationId, importOptions, selectedId]);
   const visible = useMemo(() => {
     const term = filter.trim().toLowerCase();
     if (!folder || !term) return folder?.contacts || [];
@@ -57,6 +61,15 @@ export default function ContactsPanel({ folders, onChanged }) {
       setNewFolder('');
       setSelectedId(`f${result.folder.id}`);
     }, 'Pasta criada.');
+  };
+  const createImportFolder = () => {
+    const name = window.prompt('Nome da pasta de contatos:');
+    if (!name?.trim()) return;
+    run(async () => {
+      const result = await api.post('/ai/folders', { name: name.trim() });
+      setSelectedId(`f${result.folder.id}`);
+      setImportDestinationId(String(result.folder.id));
+    }, 'Pasta criada. Agora você pode importar o CSV para ela.');
   };
   const renameFolder = () => {
     const name = window.prompt('Novo nome da pasta:', folder.name);
@@ -101,7 +114,13 @@ export default function ContactsPanel({ folders, onChanged }) {
             label: 'Importar para',
             value: importDestinationId,
             onChange: setImportDestinationId,
-            options: [['cobrancas', 'Clientes de cobranças'], ...customFolders.map((item) => [String(item.folderId), item.name])],
+            options: importOptions,
+            disabled: importOptions.length === 0,
+            emptyMessage: importOptions.length === 0
+              ? 'Você ainda não tem contatos em Pedidos ou Cobranças. Crie uma pasta nesta tela antes de importar o CSV.'
+              : '',
+            onCreateFolder: importOptions.length === 0 ? createImportFolder : null,
+            createFolderLabel: 'Criar pasta para importar',
           }}
           onImport={async (contacts) => {
             const result = importDestinationId === 'cobrancas'
@@ -114,10 +133,7 @@ export default function ContactsPanel({ folders, onChanged }) {
                 });
                 return {
                   created: result.added,
-                  errors: (result.invalid || []).map((phone) => ({
-                    row: Math.max(2, batch.findIndex((item) => item.phone === phone) + 2),
-                    message: `Telefone inválido: ${phone}`,
-                  })),
+                  errors: (result.invalid || []).map((phone) => ({ row: 2, message: `Telefone inválido: ${phone}` })),
                 };
               }, 500, 2 * 1024 * 1024);
             await onChanged();
