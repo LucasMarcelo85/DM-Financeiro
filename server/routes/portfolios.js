@@ -178,13 +178,20 @@ router.post('/ai-build', async (req, res) => {
   }
 
   const rawAttachments = body.attachments ?? [];
-  if (!Array.isArray(rawAttachments) || rawAttachments.length > 4) throw new AppError(400, 'Envie no máximo quatro imagens de referência.');
+  const referenceCount = Number(body.referenceCount);
+  if (!Number.isInteger(referenceCount) || referenceCount < 0 || referenceCount > 5) {
+    throw new AppError(400, 'Escolha até cinco arquivos de referência.');
+  }
+  if (!Array.isArray(rawAttachments) || rawAttachments.length > 15) throw new AppError(400, 'Envie no máximo cinco arquivos de referência. Vídeos podem gerar até três quadros cada.');
+  if (rawAttachments.length < referenceCount || rawAttachments.length > referenceCount * 3) {
+    throw new AppError(400, 'As imagens e quadros de vídeo não correspondem aos arquivos selecionados. Tente novamente.');
+  }
   let totalBytes = 0;
   const attachments = rawAttachments.map((item, index) => {
     const mime = String(item?.mime || '').toLowerCase();
     const base64 = String(item?.base64 || '');
     const name = String(item?.name || `referencia-${index + 1}`).slice(0, 100);
-    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime) || base64.length > 2_500_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
+    if (!['image/jpeg', 'image/png', 'image/webp', 'image/gif'].includes(mime) || base64.length > 1_400_000 || !/^[A-Za-z0-9+/]+={0,2}$/.test(base64)) {
       throw new AppError(400, `A imagem ${index + 1} é inválida ou muito grande.`);
     }
     const buffer = Buffer.from(base64, 'base64');
@@ -194,7 +201,7 @@ router.post('/ai-build', async (req, res) => {
     totalBytes += buffer.length;
     return { kind: 'image', mime, base64, name, size: buffer.length, dataUrl: `data:${mime};base64,${base64}` };
   });
-  if (totalBytes > 2_500_000) throw new AppError(400, 'As imagens juntas ultrapassam o limite de 2,5 MB.');
+  if (totalBytes > 6_000_000) throw new AppError(400, 'As imagens e quadros de vídeo juntos ultrapassam o limite de 6 MB. Remova alguns arquivos e tente novamente.');
 
   const plan = await generatePortfolioPlan({ provider, model, apiKey, request: { siteName, prompt }, pageCount, attachments });
   if (plan.pages.length !== pageCount) throw new AppError(502, 'A IA não criou a quantidade de páginas solicitada. Tente novamente.', 'AI_SITE_INVALID_RESPONSE');

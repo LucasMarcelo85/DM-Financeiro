@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { api, getActiveStore, isShopMode, shopSlug } from '../../api.js';
 import Icon from '../Icon.jsx';
 import Modal from '../Modal.jsx';
@@ -9,8 +9,9 @@ const PROVIDERS = {
   openai: { label: 'OpenAI', model: 'gpt-4o-mini' },
   claude: { label: 'Anthropic Claude', model: 'claude-3-5-haiku-latest' },
 };
-const MAX_FILES = 4;
+const MAX_FILES = 5;
 const MAX_FILE_BYTES = 30 * 1024 * 1024;
+const MAX_ATTACHMENT_BASE64 = 510_000;
 const credentialKey = (scope, provider) => `dm:portfolio-ai-key:v1:${encodeURIComponent(scope)}:${provider}`;
 function readCredential(key) {
   try { return { value: localStorage.getItem(key) || '', error: '' }; } catch {
@@ -34,14 +35,56 @@ function clearCredentials(scope) {
   return '';
 }
 const waitFor = (target, eventName) => new Promise((resolve, reject) => {
-  const timer = setTimeout(() => reject(new Error('Não foi possível ler a mídia enviada. Tente outro arquivo.')), 12000);
-  target.addEventListener(eventName, () => { clearTimeout(timer); resolve(); }, { once: true });
-  target.addEventListener('error', () => { clearTimeout(timer); reject(new Error('Não foi possível ler a mídia enviada. Tente outro arquivo.')); }, { once: true });
+  if ((eventName === 'loadedmetadata' && target.readyState >= 1) || (eventName === 'loadeddata' && target.readyState >= 2)) {
+    resolve();
+    return;
+  }
+  const cleanup = () => {
+    clearTimeout(timer);
+    target.removeEventListener(eventName, onReady);
+    target.removeEventListener('error', onError);
+  };
+  const onReady = () => { cleanup(); resolve(); };
+  const onError = () => { cleanup(); reject(new Error('Não foi possível ler a mídia enviada. Tente outro arquivo.')); };
+  const timer = setTimeout(() => { cleanup(); reject(new Error('Não foi possível ler a mídia enviada. Tente outro arquivo.')); }, 12000);
+  target.addEventListener(eventName, onReady);
+  target.addEventListener('error', onError);
 });
 
 function jpegAttachment(canvas, name) {
-  const dataUrl = canvas.toDataURL('image/jpeg', 0.82);
-  return { name, mime: 'image/jpeg', base64: dataUrl.split(',')[1] };
+  let source = canvas;
+  let quality = 0.82;
+  for (let attempt = 0; attempt < 10; attempt += 1) {
+    const dataUrl = source.toDataURL('image/jpeg', quality);
+    const base64 = dataUrl.split(',')[1];
+    if (base64.length <= MAX_ATTACHMENT_BASE64) return { name, mime: 'image/jpeg', base64 };
+    if (quality > 0.52) {
+      quality = Math.max(0.52, quality - 0.1);
+      continue;
+    }
+    const smaller = document.createElement('canvas');
+    smaller.width = Math.max(1, Math.round(source.width * 0.8));
+    smaller.height = Math.max(1, Math.round(source.height * 0.8));
+    const context = smaller.getContext('2d');
+    if (!context) break;
+    context.drawImage(source, 0, 0, smaller.width, smaller.height);
+    source = smaller;
+    quality = 0.72;
+  }
+  throw new Error(`Não foi possível reduzir "${name}" para enviar à IA. Escolha um arquivo menor.`);
+}
+
+function MediaPreview({ file }) {
+  const [url, setUrl] = useState('');
+  useEffect(() => {
+    const nextUrl = URL.createObjectURL(file);
+    setUrl(nextUrl);
+    return () => URL.revokeObjectURL(nextUrl);
+  }, [file]);
+  if (!url) return <span className="ai-site-file-placeholder" aria-hidden="true" />;
+  return file.type.startsWith('video/')
+    ? <video className="ai-site-file-thumb" src={url} muted playsInline preload="metadata" aria-label={`Prévia de ${file.name}`} />
+    : <img className="ai-site-file-thumb" src={url} alt={`Prévia de ${file.name}`} />;
 }
 
 async function imageAttachment(file) {
@@ -116,7 +159,9 @@ async function prepareAttachments(files) {
     if (file.type.startsWith('video/')) attachments.push(...await videoAttachments(file));
     else attachments.push(await imageAttachment(file));
   }
-  if (attachments.length > MAX_FILES) throw new Error('Use até quatro imagens ou quadros de vídeo no total.');
+  if (attachments.length > MAX_FILES * 3) throw new Error('Use até cinco arquivos de referência no total.');
+  const totalBytes = attachments.reduce((sum, attachment) => sum + Math.ceil(attachment.base64.length * 3 / 4), 0);
+  if (totalBytes > 6_000_000) throw new Error('As imagens e quadros de vídeo juntos ultrapassam o limite de 6 MB. Remova alguns arquivos e tente novamente.');
   return attachments;
 }
 
@@ -163,7 +208,7 @@ export default function AiPortfolioBuilder({ onClose, onCreated, availablePages 
   function chooseFiles(event) {
     const selected = [...(event.target.files || [])];
     event.target.value = '';
-    if (selected.length > MAX_FILES) { setError('Escolha até quatro arquivos.'); return; }
+    if (!selected.length) return;
     if (selected.some((file) => !file.type.startsWith('image/') && !file.type.startsWith('video/'))) {
       setError('Envie imagens ou vídeos. Outros formatos não são aceitos.');
       return;
@@ -172,12 +217,19 @@ export default function AiPortfolioBuilder({ onClose, onCreated, availablePages 
       setError('Cada arquivo deve ter no máximo 30 MB.');
       return;
     }
-    if (selected.filter((file) => file.type.startsWith('video/')).length > 1) {
-      setError('Envie no máximo um vídeo por geração.');
+    const keys = new Set(files.map((file) => `${file.name}:${file.size}:${file.lastModified}`));
+    const added = selected.filter((file) => {
+      const key = `${file.name}:${file.size}:${file.lastModified}`;
+      if (keys.has(key)) return false;
+      keys.add(key);
+      return true;
+    });
+    if (files.length + added.length > MAX_FILES) {
+      setError(`Você pode usar até ${MAX_FILES} imagens e/ou vídeos como referência.`);
       return;
     }
     setError('');
-    setFiles(selected);
+    setFiles((current) => [...current, ...added]);
   }
 
   async function generate(event) {
@@ -188,7 +240,7 @@ export default function AiPortfolioBuilder({ onClose, onCreated, availablePages 
       if (rememberKey) setStorageWarning(writeCredential(credentialKey(scope, provider), apiKey));
       const attachments = await prepareAttachments(files);
       const result = await api.post('/portfolios/ai-build', {
-        provider, model, apiKey, siteName: siteName.trim(), prompt: prompt.trim(), pageCount, attachments,
+        provider, model, apiKey, siteName: siteName.trim(), prompt: prompt.trim(), pageCount, referenceCount: files.length, attachments,
       });
       toast(`${result.portfolios.length} ${result.portfolios.length === 1 ? 'página criada' : 'páginas criadas'} com a IA.`);
       onCreated(result.portfolios);
@@ -225,21 +277,43 @@ export default function AiPortfolioBuilder({ onClose, onCreated, availablePages 
           <label className="field"><span>Nome do site</span>
             <input className="input" value={siteName} onChange={(event) => setSiteName(event.target.value)} maxLength={120} placeholder="Ex.: Studio Ana" />
           </label>
-          <label className="field"><span>Quantidade de páginas</span>
+          <label className="field"><span>Quantidade de páginas (até 5)</span>
             <select className="input" value={pageCount} onChange={(event) => setPageCount(Number(event.target.value))}>
               {Array.from({ length: Math.min(5, Math.max(1, availablePages)) }, (_, index) => index + 1)
                 .map((count) => <option key={count} value={count}>{count} {count === 1 ? 'página' : 'páginas'}</option>)}
             </select>
+            <small className="muted">Escolha quantas páginas a IA vai criar. O limite disponível no seu plano é respeitado.</small>
           </label>
           <label className="field ai-site-full"><span>Como você quer seu site?</span>
             <textarea className="input" value={prompt} onChange={(event) => setPrompt(event.target.value)} rows={6} minLength={20} maxLength={4000} required
               placeholder="Conte o que sua empresa faz, quem atende, quais serviços devem aparecer e o estilo desejado. Não inclua senhas ou informações privadas." />
           </label>
-          <label className="field ai-site-full"><span>Fotos ou vídeo de referência (opcional)</span>
-            <input className="input" type="file" accept="image/*,video/mp4,video/webm" multiple onChange={chooseFiles} />
-            <small className="muted">Fotos são redimensionadas; vídeos são analisados por até três quadros. O vídeo original não é publicado. Para exibi-lo no site, use um link público de YouTube ou Vimeo na descrição.</small>
-            {files.length > 0 && <small>{files.map((file) => file.name).join(', ')}</small>}
-          </label>
+          <div className="field ai-site-full">
+            <span>Imagens e vídeos de referência (opcional)</span>
+            <label className="ai-site-file-picker">
+              <Icon name="camera" size={18} />
+              <span>Adicionar arquivos</span>
+              <small>{files.length} de {MAX_FILES}</small>
+              <input type="file" accept="image/*,video/mp4,video/webm,video/quicktime" multiple onChange={chooseFiles} disabled={files.length >= MAX_FILES} />
+            </label>
+            <small className="muted">Adicione até cinco imagens e/ou vídeos, com até 30 MB cada. Vídeos são analisados por até três quadros; o arquivo original não é publicado. Para exibir um vídeo no site, use um link público do YouTube ou Vimeo na descrição.</small>
+            {files.length > 0 && (
+              <div className="ai-site-file-list" aria-label="Arquivos de referência selecionados">
+                {files.map((file, index) => (
+                  <div className="ai-site-file-card" key={`${file.name}:${file.size}:${file.lastModified}`}>
+                    <MediaPreview file={file} />
+                    <div className="ai-site-file-info">
+                      <strong title={file.name}>{file.name}</strong>
+                      <span>{file.type.startsWith('video/') ? 'Vídeo · quadros enviados como referência' : 'Imagem de referência'} · {(file.size / (1024 * 1024)).toLocaleString('pt-BR', { maximumFractionDigits: 1 })} MB</span>
+                    </div>
+                    <button className="icon-btn" type="button" aria-label={`Remover ${file.name}`} title="Remover arquivo" onClick={() => setFiles((current) => current.filter((_, i) => i !== index))} disabled={busy}>
+                      <Icon name="x" size={16} />
+                    </button>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
         </div>
         <div className="banner banner-amber">
           <div><strong>Geração protegida</strong><span>O construtor cria páginas com componentes visuais permitidos. Não executa código ou bibliotecas externas gerados por prompt; webhooks devem ser configurados na área de API.</span></div>
