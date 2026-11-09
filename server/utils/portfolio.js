@@ -416,7 +416,7 @@ function cleanElement(raw) {
           id: typeof s?.id === 'string' && /^[\w-]{1,40}$/.test(s.id) ? s.id : `m${i}`,
           label: line(s?.label, 40), link: cleanLink(s?.link),
         })).filter((s) => s.label),
-        variant: pick(raw.variant, ['auto', 'hamburger', 'bar'], 'auto'), title: line(raw.title, 40),
+        variant: pick(raw.variant, ['auto', 'hamburger', 'bar'], 'auto'), position: pick(raw.position, ['left', 'center', 'right'], 'right'), title: line(raw.title, 40),
         color: color(raw.color, '#14202e'), bg: color(raw.bg, '#ffffff'), radius: num(raw.radius, 0, 60, 12),
       });
       break;

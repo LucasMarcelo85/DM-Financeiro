@@ -70,7 +70,7 @@ const TYPE_DEFAULTS = {
   spacer: (th) => ({ fill: FILL0({ c1: th.primary }), full: true, opacity: 0, borderW: 0, borderColor: '#14202e', shadow: 'none' }),
   video: () => ({ url: '', radius: 12 }),
   carousel: () => ({ slides: [], autoplay: true, interval: 5, arrows: true, dots: true, fit: 'cover', radius: 12 }),
-  menu: (th) => ({ region: 'header', items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
+  menu: (th) => ({ region: 'header', items: [{ id: 'm1', label: 'Início', link: emptyLink() }, { id: 'm2', label: 'Contato', link: emptyLink() }], variant: 'auto', position: 'right', title: '', color: th.text, bg: '#ffffff', radius: 12 }),
   products: () => ({ ids: [], cols: { desktop: 4, tablet: 3, mobile: 2 }, whatsapp: '', buttonLabel: 'Pedir no WhatsApp', showPrice: true, cardStyle: 'soft' }),
   modal: () => ({
     trigger: 'Saiba mais', title: 'Mais informações',

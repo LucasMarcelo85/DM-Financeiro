@@ -151,8 +151,11 @@
 .pv-car-dots button { width: 10px; height: 10px; padding: 0; border: 0; border-radius: 50%; background: rgba(255, 255, 255, .55); cursor: pointer; }
 .pv-car-dots button.is-on { background: #fff; transform: scale(1.3); }
 .pv-menu { position: relative; width: 100%; height: 100%; color: var(--mc); font: 600 16px/1.2 system-ui, sans-serif; }
-.pv-menu.is-bar { display: flex; align-items: center; justify-content: flex-end; flex-wrap: wrap; gap: 4px 22px; background: var(--mbg); }
-.pv-menu.is-burger { display: flex; justify-content: flex-end; align-items: center; }
+.pv-menu.is-bar { display: flex; align-items: center; flex-wrap: wrap; gap: 4px 22px; background: var(--mbg); }
+.pv-menu.is-burger { display: flex; align-items: center; }
+.pv-menu.is-left { justify-content: flex-start; }
+.pv-menu.is-center { justify-content: center; }
+.pv-menu.is-right { justify-content: flex-end; }
 .pv-menu.is-bar a, .pv-menu.is-bar span, .pv-menu-panel a, .pv-menu-panel span { color: inherit; text-decoration: none; }
 .pv-menu-btn { display: inline-flex; align-items: center; gap: 10px; height: 100%; min-width: 52px; padding: 0 14px; border: 0; border-radius: var(--mr); background: var(--mbg); color: var(--mc); font: inherit; cursor: pointer; box-shadow: 0 2px 10px rgba(20, 32, 46, .15); }
 .pv-bars { display: grid; gap: 5px; width: 24px; }
@@ -160,7 +163,10 @@
 .pv-menu.is-open .pv-bars i:nth-child(1) { transform: translateY(8px) rotate(45deg); }
 .pv-menu.is-open .pv-bars i:nth-child(2) { opacity: 0; }
 .pv-menu.is-open .pv-bars i:nth-child(3) { transform: translateY(-8px) rotate(-45deg); }
-.pv-menu-panel { position: absolute; top: calc(100% + 8px); left: 0; min-width: 100%; display: grid; padding: 8px; border-radius: var(--mr); background: var(--mbg); box-shadow: 0 12px 30px rgba(20, 32, 46, .22); }
+.pv-menu-panel { position: absolute; top: calc(100% + 8px); min-width: 100%; display: grid; padding: 8px; border-radius: var(--mr); background: var(--mbg); box-shadow: 0 12px 30px rgba(20, 32, 46, .22); }
+.pv-menu.is-left .pv-menu-panel { left: 0; }
+.pv-menu.is-center .pv-menu-panel { left: 50%; transform: translateX(-50%); }
+.pv-menu.is-right .pv-menu-panel { right: 0; }
 .pv-menu-panel a, .pv-menu-panel span { padding: 12px 14px; border-radius: 8px; white-space: nowrap; }
 .pv-menu-panel a:hover { background: rgba(127, 127, 127, .14); }
 .pv-el:has(.pv-menu.is-open) { z-index: 9999 !important; }

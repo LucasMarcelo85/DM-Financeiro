@@ -230,6 +230,7 @@ function MenuView({ el, device, mode }) {
   const items = el.items || [];
   const burger = el.variant === 'hamburger' || (el.variant === 'auto' && device === 'mobile');
   const isHeader = el.region === 'header';
+  const position = ['left', 'center', 'right'].includes(el.position) ? el.position : 'right';
   const style = { '--mc': el.color, '--mbg': el.bg, '--mr': `${isHeader ? 0 : el.radius}px`, ...(isHeader ? { background: el.bg } : {}) };
   const link = (it) => {
     const href = mode === 'public' ? linkHref(it.link) : '';
@@ -237,9 +238,9 @@ function MenuView({ el, device, mode }) {
       ? <a key={it.id} href={href} target={href.startsWith('#') || href.startsWith('/') ? undefined : '_blank'} rel="noopener noreferrer" onClick={() => setOpen(false)}>{it.label}</a>
       : <span key={it.id}>{it.label}</span>;
   };
-  if (!burger) return <nav className="pv-menu is-bar" style={style} aria-label={el.title || 'Menu'}>{items.map(link)}</nav>;
+  if (!burger) return <nav className={`pv-menu is-bar is-${position}`} style={style} aria-label={el.title || 'Menu'}>{items.map(link)}</nav>;
   return (
-    <div className={`pv-menu is-burger${open ? ' is-open' : ''}`} style={style}>
+    <div className={`pv-menu is-burger is-${position}${open ? ' is-open' : ''}`} style={style}>
       <button type="button" className="pv-menu-btn" aria-expanded={open} aria-label="Abrir menu" onClick={() => setOpen((v) => !v)}>
         <span className="pv-bars" aria-hidden="true"><i /><i /><i /></span>
         {el.title && <b>{el.title}</b>}

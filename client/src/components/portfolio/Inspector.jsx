@@ -369,6 +369,7 @@ function MenuSection({ el, api }) {
       </Section>
       <Section title="Aparência">
         <Select label="Exibição" value={el.variant} onChange={f('variant')} options={[['auto', 'Automático (hambúrguer no celular)'], ['hamburger', 'Sempre botão hambúrguer'], ['bar', 'Sempre barra de links']]} />
+        <Seg label="Posição do menu" value={el.position || 'right'} options={[['left', 'Esquerda'], ['center', 'Centro'], ['right', 'Direita']]} onChange={f('position')} id="menu-position" />
         <TextField label="Texto ao lado do botão (opcional)" value={el.title} onChange={f('title')} maxLength={40} id="menu-title" />
         <ColorField label="Cor do texto e ícone" value={el.color} onChange={f('color')} id="menu-c" />
         <ColorField label="Cor de fundo" value={el.bg} onChange={f('bg')} id="menu-bg" />
