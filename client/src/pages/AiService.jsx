@@ -42,10 +42,11 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
   const setSchedule = (key, value) => setForm((current) => ({ ...current, schedule: { ...current.schedule, [key]: value } }));
   const toggleDay = (day) => setSchedule('days', form.schedule.days.includes(day) ? form.schedule.days.filter((item) => item !== day) : [...form.schedule.days, day]);
   const [saving, setSaving] = useState(false);
-  const [folderId, setFolderId] = useState(data.folders[0]?.id || '');
+  const contactFolders = data.folders.filter((item) => !item.system || item.contacts.length > 0);
+  const [folderId, setFolderId] = useState(contactFolders[0]?.id || '');
   const [manualNumber, setManualNumber] = useState('');
   const selectedContacts = useMemo(() => new Set(form.contactIds), [form.contactIds]);
-  const folder = data.folders.find((item) => item.id === folderId);
+  const folder = contactFolders.find((item) => item.id === folderId) || contactFolders[0];
   const namesByPhone = useMemo(() => {
     const map = new Map();
     for (const item of data.folders) for (const contact of item.contacts) if (!map.has(contact.phone)) map.set(contact.phone, contact.name);
@@ -177,8 +178,8 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
               <fieldset className="ai-contact-select">
                 <legend>Contatos da campanha <small>({selectedContacts.size}/100 selecionados)</small></legend>
                 <div className="ai-folder-picker">
-                  <select className="input" value={folderId} onChange={(event) => setFolderId(event.target.value)} aria-label="Pasta de contatos">
-                    {data.folders.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.contacts.length})</option>)}
+                  <select className="input" value={folder?.id || ''} onChange={(event) => setFolderId(event.target.value)} aria-label="Pasta de contatos">
+                    {contactFolders.map((item) => <option key={item.id} value={item.id}>{item.name} ({item.contacts.length})</option>)}
                   </select>
                   <button type="button" className="btn btn-ghost btn-sm" onClick={toggleFolder} disabled={!folder?.contacts.length}>{folderAllSelected ? 'Desmarcar a pasta' : 'Selecionar a pasta toda'}</button>
                 </div>

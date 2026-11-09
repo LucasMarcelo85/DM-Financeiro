@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react';
+import { useEffect, useMemo, useState } from 'react';
 import { api } from '../../api.js';
 import CsvTransfer from '../CsvTransfer.jsx';
 import Icon from '../Icon.jsx';
@@ -17,16 +17,24 @@ const CONTACT_COLUMNS = [
 export default function ContactsPanel({ folders, onChanged }) {
   const toast = useToast();
   const [selectedId, setSelectedId] = useState('pedidos');
+  const [importDestinationId, setImportDestinationId] = useState('cobrancas');
   const [newFolder, setNewFolder] = useState('');
   const [contact, setContact] = useState({ name: '', phone: '' });
   const [busy, setBusy] = useState(false);
   const [filter, setFilter] = useState('');
-  const folder = folders.find((item) => item.id === selectedId) || folders[0];
-  const customFolders = folders.filter((item) => !item.system);
-  const targets = customFolders.filter((item) => item.id !== folder.id);
+  const visibleFolders = useMemo(() => folders.filter((item) => !item.system || item.contacts.length > 0), [folders]);
+  const folder = visibleFolders.find((item) => item.id === selectedId) || visibleFolders[0];
+  const customFolders = useMemo(() => folders.filter((item) => !item.system), [folders]);
+  const targets = customFolders.filter((item) => item.id !== folder?.id);
+  useEffect(() => {
+    if (folder && folder.id !== selectedId) setSelectedId(folder.id);
+    if (importDestinationId !== 'cobrancas' && !customFolders.some((item) => String(item.folderId) === importDestinationId)) {
+      setImportDestinationId('cobrancas');
+    }
+  }, [customFolders, folder, importDestinationId, selectedId]);
   const visible = useMemo(() => {
     const term = filter.trim().toLowerCase();
-    if (!term) return folder.contacts;
+    if (!folder || !term) return folder?.contacts || [];
     const digits = term.replace(/\D/g, '');
     return folder.contacts.filter((item) => item.name.toLowerCase().includes(term) || (digits && item.phone.includes(digits)));
   }, [folder, filter]);
@@ -65,16 +73,13 @@ export default function ContactsPanel({ folders, onChanged }) {
       setContact({ name: '', phone: '' });
     }, 'Contato adicionado.');
   };
-  const copyTo = (item, targetId) => {
-    if (!targetId) return;
-    run(() => api.post(`/ai/folders/${targetId}/contacts`, { contacts: [{ name: item.name, phone: item.phone }] }), 'Contato adicionado à pasta.');
-  };
-  const moveTo = (item, targetId) => {
+  const transferTo = (item, target) => {
+    const [action, targetId] = target.split(':');
     if (!targetId) return;
     run(async () => {
       await api.post(`/ai/folders/${targetId}/contacts`, { contacts: [{ name: item.name, phone: item.phone }] });
-      await api.del(`/ai/folders/${folder.folderId}/contacts/${item.phone}`);
-    }, 'Contato movido.');
+      if (action === 'move') await api.del(`/ai/folders/${folder.folderId}/contacts/${item.phone}`);
+    }, action === 'move' ? 'Contato movido.' : 'Contato adicionado à pasta.');
   };
   const copyAll = (targetId) => {
     if (!targetId) return;
@@ -91,9 +96,30 @@ export default function ContactsPanel({ folders, onChanged }) {
           <p className="muted">Organize os números como pastas. “Pedidos” e “Cobranças” são automáticas; crie outras pastas e adicione números quando quiser.</p>
         </div>
         <CsvTransfer resource="contacts" title="clientes" filename="clientes.csv" exportUrl="/contacts/export" columns={CONTACT_COLUMNS}
-          description="Importa e exporta os clientes das cobranças (pasta “Contatos de cobranças”)."
+          description="Importa e exporta os clientes das cobranças. Ao importar para uma pasta personalizada, são salvos somente nome e telefone."
+          importDestination={{
+            label: 'Importar para',
+            value: importDestinationId,
+            onChange: setImportDestinationId,
+            options: [['cobrancas', 'Clientes de cobranças'], ...customFolders.map((item) => [String(item.folderId), item.name])],
+          }}
           onImport={async (contacts) => {
-            const result = await importCsvBatches(contacts, (batch) => api.post('/contacts/import', { contacts: batch }), 500, 2 * 1024 * 1024);
+            const result = importDestinationId === 'cobrancas'
+              ? await importCsvBatches(contacts, (batch) => api.post('/contacts/import', { contacts: batch }), 500, 2 * 1024 * 1024)
+              : await importCsvBatches(contacts, async (batch) => {
+                const target = customFolders.find((item) => String(item.folderId) === importDestinationId);
+                if (!target) throw new Error('A pasta de destino não existe mais. Atualize a página e tente novamente.');
+                const result = await api.post(`/ai/folders/${target.folderId}/contacts`, {
+                  contacts: batch.map(({ name, phone }) => ({ name, phone })),
+                });
+                return {
+                  created: result.added,
+                  errors: (result.invalid || []).map((phone) => ({
+                    row: Math.max(2, batch.findIndex((item) => item.phone === phone) + 2),
+                    message: `Telefone inválido: ${phone}`,
+                  })),
+                };
+              }, 500, 2 * 1024 * 1024);
             await onChanged();
             return result;
           }}
@@ -101,7 +127,7 @@ export default function ContactsPanel({ folders, onChanged }) {
       </header>
       <div className="ai-folders-layout">
         <aside className="ai-folder-list" aria-label="Pastas de contatos">
-          {folders.map((item) => (
+          {visibleFolders.map((item) => (
             <button type="button" key={item.id} className={item.id === folder.id ? 'is-selected' : ''} onClick={() => { setSelectedId(item.id); setFilter(''); }}>
               <Icon name={item.system ? 'users' : 'folder'} size={17} />
               <span>{item.name}</span><small>{item.contacts.length}</small>
@@ -112,7 +138,7 @@ export default function ContactsPanel({ folders, onChanged }) {
             <button className="btn btn-ghost btn-sm" disabled={busy || newFolder.trim().length < 2} aria-label="Criar pasta"><Icon name="plus" size={16} /></button>
           </form>
         </aside>
-        <div className="ai-folder-body">
+        {folder ? <div className="ai-folder-body">
           <div className="ai-folder-head">
             <h3>{folder.name} <small>({folder.contacts.length})</small></h3>
             <div className="btn-group">
@@ -142,9 +168,12 @@ export default function ContactsPanel({ folders, onChanged }) {
                 <span>{formatStoredPhone(item.phone)}</span>
                 <span className="ai-contact-actions">
                   {targets.length > 0 && (
-                    <select className="input ai-inline-select" value="" onChange={(event) => (folder.system ? copyTo(item, event.target.value) : moveTo(item, event.target.value))} disabled={busy} aria-label={folder.system ? 'Adicionar à pasta' : 'Mover para a pasta'}>
-                      <option value="">{folder.system ? 'Adicionar à pasta…' : 'Mover para…'}</option>
-                      {targets.map((target) => <option key={target.id} value={target.folderId}>{target.name}</option>)}
+                    <select className="input ai-inline-select" value="" onChange={(event) => transferTo(item, event.target.value)} disabled={busy} aria-label="Enviar contato para outra pasta">
+                      <option value="">Enviar para outra pasta…</option>
+                      {targets.flatMap((target) => [
+                        <option key={`copy-${target.id}`} value={`copy:${target.folderId}`}>Copiar para {target.name}</option>,
+                        ...(!folder.system ? [<option key={`move-${target.id}`} value={`move:${target.folderId}`}>Mover para {target.name}</option>] : []),
+                      ])}
                     </select>
                   )}
                   {!folder.system && <button type="button" className="icon-btn icon-btn-danger" onClick={() => removeContact(item)} disabled={busy} aria-label={`Remover ${item.name}`}><Icon name="trash" size={16} /></button>}
@@ -153,7 +182,7 @@ export default function ContactsPanel({ folders, onChanged }) {
             ))}
             {!visible.length && <p className="muted">{folder.system ? 'Nenhum contato com telefone nesta pasta ainda.' : 'Pasta vazia. Adicione números acima ou copie contatos das pastas de Pedidos e Cobranças.'}</p>}
           </div>
-        </div>
+        </div> : <p className="muted">Nenhuma pasta disponível. Crie uma pasta ou importe clientes para começar.</p>}
       </div>
     </section>
   );
