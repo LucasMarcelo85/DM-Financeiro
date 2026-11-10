@@ -78,16 +78,21 @@ export const setWorkspaceMode = (on) => { workspaceMode = Boolean(on); };
 async function request(method, url, body) {
   let res;
   const shop = isShopMode();
+  // No app da loja, rotas de dados do espaço de trabalho (clientes, cobranças, contratos...) SEMPRE vão para /shop-app/ws,
+  // mesmo que a tela ainda não tenha chamado setWorkspaceMode (corrida de carregamento). Antes, nesse caso a chamada ia para
+  // a rota do painel do dono (login por cookie) e, em aparelhos sem cookie válido, devolvia "Sua sessão expirou".
   const target = shop
-    ? (workspaceMode && WORKSPACE_ROUTES.test(url) ? `/shop-app/ws${url}` : SHOP_ROUTES.test(url) ? `/shop-app${url}` : url)
+    ? (WORKSPACE_ROUTES.test(url) && (workspaceMode || !SHOP_ROUTES.test(url)) ? `/shop-app/ws${url}` : SHOP_ROUTES.test(url) ? `/shop-app${url}` : url)
     : scoped(url);
+  const shopTarget = shop && target.startsWith('/shop-app');
   const auth = shop && getShopToken() ? { Authorization: `Bearer ${getShopToken()}`, 'X-Shop-Slug': shopSlug() } : {};
   try {
     res = await fetch(`/api${target}`, {
       method,
       headers: { ...(body !== undefined ? { 'Content-Type': 'application/json' } : {}), ...(pinToken ? { 'X-Pin-Token': pinToken } : {}), ...auth },
       body: body !== undefined ? JSON.stringify(body) : undefined,
-      credentials: 'same-origin',
+      // No app da loja o login é pelo token (Bearer): nunca envia o cookie do painel do dono, que pode estar velho/inválido neste aparelho.
+      credentials: shop ? 'omit' : 'same-origin',
     });
   } catch {
     throw new ApiError('Sem conexão com o servidor. Verifique sua internet e tente de novo.', 0);
@@ -99,7 +104,8 @@ async function request(method, url, body) {
     /* resposta sem corpo */
   }
   if (!res.ok) {
-    if (shop && res.status === 401 && getShopToken()) {
+    // Só derruba a sessão do app quando o 401 veio de uma rota do próprio app (/shop-app). Um 401 de outra rota não invalida o token.
+    if (shopTarget && res.status === 401 && getShopToken()) {
       setShopToken(null);
       window.dispatchEvent(new CustomEvent('dm:shop-logout', {
         detail: { message: data?.error || 'Sua sessão expirou. Entre novamente no aplicativo.' },
