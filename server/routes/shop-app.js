@@ -101,7 +101,11 @@ router.post('/login', async (req, res) => {
   const password = String(req.body?.password ?? '');
   const su = login ? await prisma.storeUser.findUnique({ where: { storeId_login: { storeId: store.id, login } } }) : null;
   const ok = await bcrypt.compare(password, su?.passwordHash || DUMMY_HASH);
-  if (!su || !ok || !su.active) throw new AppError(401, 'Usuário ou senha incorretos.', 'UNAUTHENTICATED');
+  if (!su || !ok || !su.active) {
+    const reason = !su ? 'acesso_inexistente' : !su.active ? 'acesso_desativado' : 'senha_incorreta';
+    console.warn('[shop-app] login recusado', { storeId: store.id, reason });
+    throw new AppError(401, 'Usuário ou senha incorretos.', 'UNAUTHENTICATED');
+  }
   const token = jwt.sign({ su: su.id, k: 'shop' }, config.jwtSecret, { expiresIn: `${TOKEN_DAYS}d` });
   res.json({ token, ...meDTO(su, store) });
 });

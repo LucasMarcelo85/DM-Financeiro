@@ -16,10 +16,15 @@ const positive = (v, fallback) => {
   return Number.isFinite(n) && n > 0 ? n : fallback;
 };
 
-let jwtSecret = (env.JWT_SECRET || '').trim();
-if (!jwtSecret || jwtSecret === 'troque-por-uma-frase-longa-e-aleatoria') {
+const configuredJwtSecret = (env.JWT_SECRET || '').trim();
+const missingJwtSecret = !configuredJwtSecret || configuredJwtSecret === 'troque-por-uma-frase-longa-e-aleatoria';
+if (missingJwtSecret && env.NODE_ENV === 'production') {
+  throw new Error('[config] JWT_SECRET é obrigatório em produção e precisa ser igual em todas as instâncias do servidor.');
+}
+let jwtSecret = configuredJwtSecret;
+if (missingJwtSecret) {
   jwtSecret = crypto.randomBytes(48).toString('hex');
-  console.warn('[config] JWT_SECRET não definido: usando uma chave temporária (os logins expiram a cada reinício).');
+  console.warn('[config] JWT_SECRET não definido: usando uma chave temporária apenas para desenvolvimento local.');
 }
 
 // Chave que protege (criptografa) os tokens da API oficial da Meta guardados no banco.
