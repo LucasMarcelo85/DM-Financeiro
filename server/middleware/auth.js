@@ -36,17 +36,21 @@ const ACTIVITY_EVERY_MS = 30_000;
 export const touchActivity = (userId, area) =>
   prisma.user.update({ where: { id: userId }, data: { lastActivityAt: new Date(), lastActivity: area } }).catch(() => {});
 
-export async function auth(req, _res, next) {
+export async function auth(req, res, next) {
   const token = req.cookies?.[COOKIE];
   if (!token) throw new AppError(401, 'Faça login para continuar.', 'UNAUTHENTICATED');
   let id;
   try {
     id = jwt.verify(token, config.jwtSecret).id;
   } catch {
+    clearSession(res); // cookie velho/inválido (ex.: JWT_SECRET mudou): remove para não ficar preso neste aparelho
     throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
   }
   const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
+  if (!user) {
+    clearSession(res);
+    throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
+  }
   req.user = user;
   // Só alterações contam como "mexeu em algo" (abrir telas e atualizações automáticas, não). No máximo 1 gravação a cada 30 s.
   if (WRITES.has(req.method) && (!user.lastActivityAt || Date.now() - user.lastActivityAt.getTime() > ACTIVITY_EVERY_MS)) {

@@ -1,97 +1,101 @@
-import jwt from 'jsonwebtoken';
-import { config } from '../config.js';
-import { prisma } from '../prisma.js';
-import { AppError } from '../utils/helpers.js';
-import { computeAccess } from '../services/access.js';
-import { isTabLocked } from '../utils/pin.js';
-import { limitsFor } from '../plans.js';
+import { createContext, useCallback, useContext, useEffect, useMemo, useState } from 'react';
+import { api, setPinToken } from './api.js';
+import { setTimezone } from './lib/format.js';
 
-export const COOKIE = 'dm_token';
-const WEEK = 7 * 24 * 60 * 60 * 1000;
+export const AuthContext = createContext(null);
+export const useAuth = () => useContext(AuthContext);
 
-export function setSession(res, userId) {
-  const token = jwt.sign({ id: userId }, config.jwtSecret, { expiresIn: '7d' });
-  res.cookie(COOKIE, token, {
-    httpOnly: true,
-    sameSite: 'lax',
-    secure: config.appUrl.startsWith('https://'),
-    maxAge: WEEK,
-    path: '/',
-  });
+export function AuthProvider({ children }) {
+  const [user, setUser] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [pinUntil, setPinUntilState] = useState(null); // até quando as abas com PIN ficam destravadas nesta tela (ms)
+  const setPinUntil = useCallback((until, token) => {
+    setPinUntilState(until || null);
+    setPinToken(until ? token : null);
+  }, []);
+
+  // Mantém o fuso do sistema disponível para formatar datas e horários.
+  useEffect(() => {
+    if (user?.timezone) setTimezone(user.timezone);
+  }, [user]);
+
+  const refresh = useCallback(async () => {
+    try {
+      const { user: u, pinUnlockedUntil } = await api.get('/auth/me');
+      setUser(u);
+      if (!pinUnlockedUntil) setPinUntil(null);
+      return u;
+    } catch {
+      setUser(null);
+      return null;
+    }
+  }, [setPinUntil]);
+
+  useEffect(() => {
+    refresh().finally(() => setLoading(false));
+  }, [refresh]);
+
+  // Quando a API avisa que o teste acabou, atualiza o usuário e o guard redireciona para o plano.
+  useEffect(() => {
+    window.addEventListener('dm:payment-required', refresh);
+    return () => window.removeEventListener('dm:payment-required', refresh);
+  }, [refresh]);
+
+  // Trava de novo quando o tempo do PIN acaba ou quando o servidor avisa que a aba pede o PIN.
+  useEffect(() => {
+    if (!pinUntil) return undefined;
+    const t = setTimeout(() => setPinUntil(null), Math.max(0, pinUntil - Date.now()));
+    return () => clearTimeout(t);
+  }, [pinUntil]);
+  useEffect(() => {
+    const lock = () => setPinUntil(null);
+    window.addEventListener('dm:pin-required', lock);
+    return () => window.removeEventListener('dm:pin-required', lock);
+  }, []);
+
+  const pinUnlocked = Boolean(pinUntil && pinUntil > Date.now());
+
+  const value = useMemo(
+    () => ({
+      user,
+      loading,
+      refresh,
+      setUser,
+      pinUnlocked,
+      pinUntil,
+      // Digita o PIN: se estiver certo, as abas protegidas abrem por alguns minutos.
+      unlockPin: async (pin) => {
+        const r = await api.post('/auth/pin/verify', { pin });
+        setPinUntil(r.pinUnlockedUntil, r.pinToken);
+      },
+      lockPin: async () => {
+        await api.post('/auth/pin/lock').catch(() => {});
+        setPinUntil(null);
+      },
+      // Aplica a resposta das telas de PIN/perfil (usuário atualizado e estado do desbloqueio).
+      applyPin: (r) => {
+        if (r.user) setUser(r.user);
+        if ('pinUnlockedUntil' in r) setPinUntil(r.pinUnlockedUntil, r.pinToken);
+      },
+      login: async (identifier, password) => {
+        const { user: u } = await api.post('/auth/login', { identifier, password });
+        setUser(u);
+        setPinUntil(null);
+        return u;
+      },
+      register: async (payload) => {
+        const { user: u } = await api.post('/auth/register', payload);
+        setUser(u);
+        return u;
+      },
+      logout: async () => {
+        await api.post('/auth/logout').catch(() => {});
+        setUser(null);
+        setPinUntil(null);
+      },
+    }),
+    [user, loading, refresh, pinUnlocked, pinUntil]
+  );
+
+  return <AuthContext.Provider value={value}>{children}</AuthContext.Provider>;
 }
-
-export const clearSession = (res) => {
-  res.clearCookie(COOKIE, { path: '/' });
-};
-
-// Em que parte do sistema o usuário mexeu (aparece para o administrador).
-const AREAS = {
-  '/api/contacts': 'Clientes', '/api/schedules': 'Cobranças e lembretes', '/api/messages': 'Mensagens', '/api/instances': 'WhatsApp',
-  '/api/contracts': 'Contratos', '/api/portfolios': 'Portfólio', '/api/audit': 'Auditoria', '/api/billing': 'Plano e pagamento', '/api/receipts': 'Faturamento', '/api/auth': 'Conta',
-};
-const WRITES = new Set(['POST', 'PUT', 'PATCH', 'DELETE']);
-const ACTIVITY_EVERY_MS = 30_000;
-
-// Marca "agora" como a última atividade do usuário (login, ou qualquer alteração que ele faça).
-export const touchActivity = (userId, area) =>
-  prisma.user.update({ where: { id: userId }, data: { lastActivityAt: new Date(), lastActivity: area } }).catch(() => {});
-
-export async function auth(req, res, next) {
-  const token = req.cookies?.[COOKIE];
-  if (!token) throw new AppError(401, 'Faça login para continuar.', 'UNAUTHENTICATED');
-  let id;
-  try {
-    id = jwt.verify(token, config.jwtSecret).id;
-  } catch {
-    clearSession(res); // cookie velho/inválido (ex.: JWT_SECRET mudou): remove para não ficar preso neste aparelho
-    throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
-  }
-  const user = await prisma.user.findUnique({ where: { id } });
-  if (!user) {
-    clearSession(res);
-    throw new AppError(401, 'Sua sessão expirou. Entre novamente.', 'UNAUTHENTICATED');
-  }
-  req.user = user;
-  // Só alterações contam como "mexeu em algo" (abrir telas e atualizações automáticas, não). No máximo 1 gravação a cada 30 s.
-  if (WRITES.has(req.method) && (!user.lastActivityAt || Date.now() - user.lastActivityAt.getTime() > ACTIVITY_EVERY_MS)) {
-    touchActivity(user.id, AREAS[req.baseUrl] || 'Sistema');
-  }
-  next();
-}
-
-export async function optionalAuth(req, _res, next) {
-  const token = req.cookies?.[COOKIE];
-  if (!token) {
-    next();
-    return;
-  }
-  let id;
-  try {
-    id = jwt.verify(token, config.jwtSecret).id;
-  } catch {
-    next();
-    return;
-  }
-  req.user = await prisma.user.findUnique({ where: { id } }) || null;
-  next();
-}
-
-export function requireAccess(req, _res, next) {
-  if (!computeAccess(req.user).hasAccess) {
-    throw new AppError(402, 'Seu teste grátis acabou. Faça o pagamento para continuar usando o sistema.', 'PAYMENT_REQUIRED');
-  }
-  next();
-}
-
-export function requireAdmin(req, _res, next) {
-  if (req.user.role !== 'admin') throw new AppError(403, 'Acesso restrito ao administrador.', 'FORBIDDEN');
-  next();
-}
-
-// Protege no servidor as APIs de uma aba: (1) a aba precisa estar liberada no plano do usuário (definido pelo administrador em Gerir planos);
-// (2) se o usuário travou a aba com PIN e ainda não digitou o código, responde 423 e a tela pede o PIN.
-export const pinGuard = (tab) => (req, _res, next) => {
-  if (!limitsFor(req.user).tabs.includes(tab)) throw new AppError(403, 'Esta área não está incluída no seu plano.', 'TAB_NOT_IN_PLAN');
-  if (isTabLocked(req, req.user, tab)) throw new AppError(423, 'Esta aba está protegida por código PIN. Digite o PIN para continuar.', 'PIN_REQUIRED');
-  next();
-};
