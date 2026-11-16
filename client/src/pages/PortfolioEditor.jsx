@@ -447,6 +447,7 @@ export default function PortfolioEditor() {
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
     addProductsIndividually,
+    openSiteSettings: () => setSiteSettingsOpen(true),
     act, toast, saveSlug, copyLink,
     error: (m) => toast(m, 'error'),
     imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
@@ -512,7 +513,9 @@ export default function PortfolioEditor() {
           <span className="ce-lbl">Fundo</span>
           <input type="color" value={doc.theme.bg} onChange={(e) => inspectorApi.patchTheme({ bg: e.target.value }, 'theme:bg')} aria-label="Cor de fundo do site" />
         </label>
-        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSiteSettingsOpen(true)}>Identidade e avisos</button>
+        <button type="button" className="btn btn-primary btn-sm" onClick={() => setSiteSettingsOpen(true)} title="Configurar nome, logo, avisos e aplicativo">
+          Logo, avisos e app
+        </button>
         <span className="pe-zoom" role="group" aria-label="Zoom">
           <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.max(0, zoomIdx - 1)])} disabled={zoomIdx === 0} title="Diminuir" aria-label="Diminuir zoom"><EIcon name="zoom-out" size={16} /></button>
           <button type="button" className="pe-zoom-val" onClick={() => setManualZoom(null)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>

@@ -66,6 +66,14 @@ export default function SiteSettingsModal({ branding = {}, onChange, onClose }) 
           </div>
         </section>
 
+        <section className="site-app-info">
+          <strong>Instalação do aplicativo</strong>
+          <p className="muted small">
+            O site publicado usa a logo acima no ícone e no manifest do app. Para instalar, abra o site no navegador e escolha
+            <strong> Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>. A opção depende do navegador e o site precisa estar publicado em HTTPS.
+          </p>
+        </section>
+
         <section className="site-notices">
           <div className="site-settings-heading">
             <div>

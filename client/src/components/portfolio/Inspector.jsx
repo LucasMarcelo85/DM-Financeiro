@@ -763,6 +763,10 @@ export function PageInspector({ doc, meta, api, categories, products = [] }) {
   return (
     <div className="ce-insp">
       <p className="muted small pe-insp-hint">Clique em um elemento para editar. Sem nada selecionado, você ajusta a página inteira.</p>
+      <Section title="Identidade, avisos e app">
+        <p className="muted small">Configure o nome e a logo da loja, os avisos do site e a identidade do aplicativo instalado.</p>
+        <button type="button" className="btn btn-primary btn-sm" onClick={api.openSiteSettings}>Abrir configurações do site</button>
+      </Section>
       <AddressSection meta={meta} onSaveSlug={api.saveSlug} onCopy={api.copyLink} />
       <Section title="Fundo e cores">
         <div className="pe-presets" role="group" aria-label="Combinações de cores">
