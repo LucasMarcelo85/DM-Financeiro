@@ -1,29 +1,21 @@
 import { useEffect, useState } from 'react';
 
-export default function PortfolioInstallPrompt({ enabled }) {
-  const [installEvent, setInstallEvent] = useState(null);
+export default function PortfolioInstallPrompt({ enabled, installEvent, onInstallEventConsumed }) {
   const [showInstructions, setShowInstructions] = useState(false);
   const [installed, setInstalled] = useState(false);
   const [message, setMessage] = useState('');
 
   useEffect(() => {
-    if (!enabled) return undefined;
-    const onBeforeInstall = (event) => {
-      event.preventDefault();
-      setInstallEvent(event);
-    };
     const onInstalled = () => {
       setInstalled(true);
-      setInstallEvent(null);
+      onInstallEventConsumed?.();
     };
     if (window.matchMedia?.('(display-mode: standalone)').matches) setInstalled(true);
-    window.addEventListener('beforeinstallprompt', onBeforeInstall);
     window.addEventListener('appinstalled', onInstalled);
     return () => {
-      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
       window.removeEventListener('appinstalled', onInstalled);
     };
-  }, [enabled]);
+  }, [onInstallEventConsumed]);
 
   async function install() {
     setMessage('');
@@ -34,10 +26,11 @@ export default function PortfolioInstallPrompt({ enabled }) {
     try {
       await installEvent.prompt();
       const choice = await installEvent.userChoice;
-      setInstallEvent(null);
+      onInstallEventConsumed?.();
       if (choice.outcome === 'accepted') setInstalled(true);
       else setMessage('A instalação não foi concluída.');
     } catch (error) {
+      onInstallEventConsumed?.();
       setMessage(error.message || 'Não foi possível iniciar a instalação neste navegador.');
     }
   }

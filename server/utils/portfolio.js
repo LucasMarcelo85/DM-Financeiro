@@ -512,6 +512,13 @@ function cleanDocV2(raw, kindHint) {
         }
         return src;
       })(),
+      logo192: (() => {
+        const src = image(branding.logo192);
+        if (src && !/^data:image\/(?:png|jpeg|webp);base64,/.test(src)) {
+          throw new AppError(400, 'O ícone de instalação precisa ser PNG, JPG ou WebP.');
+        }
+        return src;
+      })(),
       notices: (Array.isArray(branding.notices) ? branding.notices : []).slice(0, 10)
         .map((notice, index) => {
           const item = isObj(notice) ? notice : {};

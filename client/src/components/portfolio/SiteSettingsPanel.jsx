@@ -5,6 +5,30 @@ import { Check } from './Fields.jsx';
 
 const newNoticeId = () => `notice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
+async function squareLogos(file) {
+  const { src } = await fitImage(file, 512);
+  const image = new Image();
+  const loaded = new Promise((resolve, reject) => {
+    image.onload = resolve;
+    image.onerror = () => reject(new Error('Não foi possível preparar a logo para instalação.'));
+  });
+  image.src = src;
+  await loaded;
+  const square = (size) => {
+    const canvas = document.createElement('canvas');
+    canvas.width = size;
+    canvas.height = size;
+    const context = canvas.getContext('2d');
+    if (!context) throw new Error('Não foi possível preparar a logo para instalação.');
+    const scale = Math.min(size / image.naturalWidth, size / image.naturalHeight);
+    const width = image.naturalWidth * scale;
+    const height = image.naturalHeight * scale;
+    context.drawImage(image, (size - width) / 2, (size - height) / 2, width, height);
+    return canvas.toDataURL('image/png');
+  };
+  return { logo: square(512), logo192: square(192) };
+}
+
 export default function SiteSettingsPanel({ branding = {}, onChange }) {
   const toast = useToast();
   const fileRef = useRef(null);
@@ -28,8 +52,8 @@ export default function SiteSettingsPanel({ branding = {}, onChange }) {
     }
     setBusy(true);
     try {
-      const { src } = await fitImage(file, 512);
-      onChange({ ...branding, logo: src }, 'branding:logo');
+      const logos = await squareLogos(file);
+      onChange({ ...branding, ...logos }, 'branding:logo');
     } catch (error) {
       toast(error.message, 'error');
     } finally {
@@ -61,7 +85,7 @@ export default function SiteSettingsPanel({ branding = {}, onChange }) {
             <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={busy}>
               {busy ? 'Preparando...' : branding.logo ? 'Trocar logo' : 'Adicionar logo'}
             </button>
-            {branding.logo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...branding, logo: '' }, 'branding:logo')}>Remover</button>}
+            {branding.logo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...branding, logo: '', logo192: '' }, 'branding:logo')}>Remover</button>}
           </div>
         </section>
 

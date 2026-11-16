@@ -15,6 +15,22 @@ export default function PortfolioPublic({ fixedUser = '' }) {
   const { userSlug: routeUserSlug, pageSlug } = useParams();
   const userSlug = fixedUser || routeUserSlug;
   const [state, setState] = useState({ loading: true, page: null, owner: null, products: [], store: null });
+  const [installEvent, setInstallEvent] = useState(null);
+  const consumeInstallEvent = useCallback(() => setInstallEvent(null), []);
+
+  useEffect(() => {
+    const onBeforeInstall = (event) => {
+      event.preventDefault();
+      setInstallEvent(event);
+    };
+    const onInstalled = () => setInstallEvent(null);
+    window.addEventListener('beforeinstallprompt', onBeforeInstall);
+    window.addEventListener('appinstalled', onInstalled);
+    return () => {
+      window.removeEventListener('beforeinstallprompt', onBeforeInstall);
+      window.removeEventListener('appinstalled', onInstalled);
+    };
+  }, []);
 
   useEffect(() => {
     let alive = true;
@@ -46,6 +62,7 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     if (!page || !owner?.slug) return undefined;
     const query = new URLSearchParams({ u: owner.slug });
     if (!page.isMain) query.set('p', page.slug);
+    query.set('v', String(page.updatedAt || ''));
     const iconUrl = `/api/public/portfolio/icon?${query}`;
     const links = [
       ['icon', iconUrl],
@@ -82,10 +99,10 @@ export default function PortfolioPublic({ fixedUser = '' }) {
       </div>
     );
   }
-  return <ImageLightboxProvider key={page.id}><PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} credit={owner.credit} /></ImageLightboxProvider>;
+  return <ImageLightboxProvider key={page.id}><PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} credit={owner.credit} installEvent={installEvent} onInstallEventConsumed={consumeInstallEvent} /></ImageLightboxProvider>;
 }
 
-function PublicPage({ page, products, store, slug, credit }) {
+function PublicPage({ page, products, store, slug, credit, installEvent, onInstallEventConsumed }) {
   const { doc } = page;
   const legacyFrameRef = useRef(null);
   const lightbox = useImageLightbox();
@@ -138,7 +155,7 @@ function PublicPage({ page, products, store, slug, credit }) {
       <div className="pv-root gpe-published" style={style}>
         <PublicNotices notices={doc.branding?.notices} />
         <PortfolioPushPrompt slug={slug} page={page} />
-        <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} />
+        <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} />
         <iframe ref={legacyFrameRef} title={doc.title || page.name || 'Página do portfólio'} sandbox="allow-same-origin" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
         {credit !== false && <PageCredit theme={doc.theme} />}
       </div>
@@ -151,7 +168,7 @@ function PublicPage({ page, products, store, slug, credit }) {
       <ClipDefs />
       <PublicNotices notices={doc.branding?.notices} />
       <PortfolioPushPrompt slug={slug} page={page} />
-      <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} />
+      <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
           <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />

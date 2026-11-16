@@ -70,7 +70,8 @@ router.get('/portfolio/manifest', async (req, res) => {
     : `/${owner.portfolioSlug}/${page.isMain ? '' : page.slug}`;
   const scopePath = req.customDomain ? '/' : `/${owner.portfolioSlug}/`;
   const query = `u=${encodeURIComponent(owner.portfolioSlug)}${page.isMain ? '' : `&p=${encodeURIComponent(page.slug)}`}`;
-  const icon = `${origin}/api/public/portfolio/icon?${query}`;
+  const icon192 = `${origin}/api/public/portfolio/icon?${query}&size=192&v=${page.updatedAt.getTime()}`;
+  const icon512 = `${origin}/api/public/portfolio/icon?${query}&size=512&v=${page.updatedAt.getTime()}`;
   const iconMime = /^data:(image\/(?:png|jpeg|webp));base64,/.exec(page.data?.branding?.logo || '')?.[1] || 'image/svg+xml';
   res.set('Cache-Control', 'no-cache').type('application/manifest+json').json({
     name: owner.name || page.name,
@@ -80,7 +81,10 @@ router.get('/portfolio/manifest', async (req, res) => {
     display: 'standalone',
     background_color: page.data?.theme?.bg || '#ffffff',
     theme_color: page.data?.theme?.primary || '#f2a33a',
-    icons: [{ src: icon, sizes: 'any', type: iconMime, purpose: 'any' }],
+    icons: [
+      { src: icon192, sizes: '192x192', type: /^data:image\/(?:png|jpeg|webp);base64,/.test(page.data?.branding?.logo192 || '') ? 'image/png' : iconMime, purpose: 'any' },
+      { src: icon512, sizes: '512x512', type: iconMime, purpose: 'any maskable' },
+    ],
   });
 });
 
@@ -88,7 +92,10 @@ router.get('/portfolio/icon', async (req, res) => {
   const found = await findPublicPage(req.query.u, req.query.p);
   if (!found) throw new AppError(404, 'Página não encontrada.');
   const { owner, page } = found;
-  const logo = decodeImage(page.data?.branding?.logo || '');
+  const logoSource = req.query.size === '192'
+    ? page.data?.branding?.logo192 || page.data?.branding?.logo || ''
+    : page.data?.branding?.logo || '';
+  const logo = decodeImage(logoSource);
   res.set({ 'Cache-Control': 'no-cache', 'Cross-Origin-Resource-Policy': 'cross-origin' });
   if (logo) return res.type(logo.mime).send(logo.buffer);
   const color = /^#[0-9a-f]{6}$/i.test(page.data?.theme?.primary || '') ? page.data.theme.primary : '#f2a33a';
@@ -225,8 +232,8 @@ export async function portfolioShareMeta(req) {
     title: doc.branding?.siteName || doc.seo?.title || owner.siteName || page.name || owner.name,
     description: portfolioDescription(doc),
     image: portfolioCover(doc) ? `${origin}/api/public/portfolio/image?${q}` : '',
-    icon: `${origin}/api/public/portfolio/icon?${q}`,
-    manifest: `${origin}/api/public/portfolio/manifest?${q}`,
+    icon: `${origin}/api/public/portfolio/icon?${q}&v=${page.updatedAt.getTime()}`,
+    manifest: `${origin}/api/public/portfolio/manifest?${q}&v=${page.updatedAt.getTime()}`,
     url: `${origin}${req.path}`,
     siteName: owner.name,
     pixel: Boolean(doc.pixel && (doc.pixel.meta || doc.pixel.google || doc.pixel.tiktok)),

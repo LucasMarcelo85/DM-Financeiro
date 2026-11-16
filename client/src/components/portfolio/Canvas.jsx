@@ -216,7 +216,15 @@ function CarouselView({ el, mode }) {
           const href = mode === 'public' ? linkHref(s.link) : '';
           const img = <img src={s.src} alt={s.alt || ''} draggable="false" style={{ objectFit: el.fit }} />;
           const content = mode === 'public' && lightbox
-            ? <button type="button" className="pv-car-image-trigger" onClick={() => lightbox.openImage(s.src, s.alt || '', href)} aria-label={`Ampliar imagem ${s.alt || ''}`}>{img}</button>
+            ? <div role="button" tabIndex={0} className="pv-car-image-trigger"
+              onClick={() => lightbox.openImage(s.src, s.alt || '', href)}
+              onKeyDown={(event) => {
+                if (event.key === 'Enter' || event.key === ' ') {
+                  event.preventDefault();
+                  lightbox.openImage(s.src, s.alt || '', href);
+                }
+              }}
+              aria-label={`Ampliar imagem ${s.alt || ''}`}>{img}</div>
             : href ? <a href={href} target="_blank" rel="noopener noreferrer">{img}</a> : img;
           return <div className="pv-car-slide" key={s.id}>{content}</div>;
         })}

@@ -150,7 +150,7 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           {p.images.length > 0 && (
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
-                <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
+                <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => { setIdx(n); setImageOpen(true); }}>
                   <img src={i.url} alt="" /><span>{i.label}</span>
                 </button>
               ))}
