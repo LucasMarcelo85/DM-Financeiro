@@ -1242,6 +1242,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 @media (max-width: 719px) {
   .cat-modal { grid-template-rows: auto auto; border-radius: 14px; }
   .cat-modal-img { width: 100%; aspect-ratio: 16 / 9; max-height: min(34dvh, 15rem); }
+  .cat-var img { object-fit: contain; background: #eef2f6; }
   .cat-modal-body { gap: 0.7rem; }
   .pv-push-prompt, .pv-install-prompt { align-items: flex-start; flex-direction: column; }
   .pv-push-prompt small, .pv-install-prompt small { text-align: left; }

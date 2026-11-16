@@ -258,6 +258,7 @@
 .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: 0 0 42%; height: auto; min-height: var(--img-h, 180px); }
 .pv-card-img { flex: none; }
 @media (max-width: 600px) {
+  .pv-card-img img { object-fit: contain; }
   .pv-card.is-horizontal { flex-direction: column; }
   .pv-card.is-horizontal .pv-card-img,
   .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: none; aspect-ratio: 1 / 1; min-height: 0; height: auto; }
