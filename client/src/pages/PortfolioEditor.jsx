@@ -5,6 +5,7 @@ import { useToast } from '../components/Toast.jsx';
 import Modal from '../components/Modal.jsx';
 import EIcon from '../components/contract/EIcon.jsx';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars } from '../components/portfolio/Canvas.jsx';
+import ImageLightboxProvider from '../components/portfolio/ImageLightbox.jsx';
 import Stage from '../components/portfolio/Stage.jsx';
 import { ElementInspector, PageInspector } from '../components/portfolio/Inspector.jsx';
 import ImageEditor from '../components/portfolio/ImageEditor.jsx';
@@ -590,7 +591,9 @@ export default function PortfolioEditor() {
             {preview ? (
               <>
                 <ClipDefs />
-                <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} fixedContainer={fixedPreviewHost} />
+                <ImageLightboxProvider>
+                  <PortfolioCanvas doc={doc} device={device} scale={zoom} mode="public" animate products={products} replay={replay} fixedContainer={fixedPreviewHost} />
+                </ImageLightboxProvider>
               </>
             ) : (
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}

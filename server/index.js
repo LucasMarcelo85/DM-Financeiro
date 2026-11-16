@@ -146,6 +146,18 @@ const PORTFOLIO_CODE_FRAME = `<!doctype html>
         document.body.appendChild(node);
       }
     });
+    document.addEventListener('click', (event) => {
+      const image = event.target instanceof Element ? event.target.closest('img') : null;
+      if (!image || !image.currentSrc) return;
+      event.preventDefault();
+      event.stopPropagation();
+      window.parent.postMessage({
+        type: 'portfolio-image-open',
+        src: image.currentSrc,
+        alt: image.alt || '',
+        href: image.closest('a')?.href || '',
+      }, '*');
+    }, true);
   </script>
 </head>
 <body></body>

@@ -3,6 +3,7 @@ import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
 import { cleanCatalogConfig, defaultCatalogConfig } from '../utils/catalog.js';
+import { cleanPortfolioDoc } from '../utils/portfolio.js';
 import { config } from '../config.js';
 import { decrypt } from '../utils/secret.js';
 import { orderDTO, quoteShipping } from '../services/orders.js';
@@ -15,6 +16,7 @@ import { assertPin } from '../utils/pin.js';
 import { ensureDefaultStockFlow, resolveStockFlow } from '../services/inventory.js';
 import { workspaceEmailFor } from '../services/workspace.js';
 import { notifyAiPaymentConfirmed } from '../services/catalog-payments.js';
+import { notifyPortfolioNotice } from '../services/portfolio-push.js';
 
 // Catálogo digital do usuário: configuração de entregas/frete e a lista de pedidos.
 const router = Router();
@@ -103,6 +105,69 @@ async function loadSettings(userId, storeId = null) {
 }
 
 const tokenInfo = (token) => ({ hasSuperfreteToken: Boolean(config.geo.superfreteToken || token) });
+
+async function mainPortfolioForSettings(req) {
+  const storeId = await storeScope(req);
+  const portfolio = await prisma.portfolio.findFirst({
+    where: { userId: req.user.id, storeId, isMain: true },
+  });
+  if (!portfolio) throw new AppError(404, 'A página principal do site ainda não foi criada.');
+  return { portfolio, storeId };
+}
+
+router.get('/settings/branding', async (req, res) => {
+  const { portfolio } = await mainPortfolioForSettings(req);
+  res.json({ portfolio: { id: portfolio.id, data: portfolio.data } });
+});
+
+router.put('/settings/branding', async (req, res) => {
+  const { portfolio, storeId } = await mainPortfolioForSettings(req);
+  const rawBranding = req.body?.branding;
+  if (!rawBranding || typeof rawBranding !== 'object' || Array.isArray(rawBranding)) {
+    throw new AppError(400, 'Configurações de identidade visual inválidas.');
+  }
+  const cleanBranding = cleanPortfolioDoc({ v: 2, elements: [], branding: rawBranding }, 'site').branding;
+  const cleanedPage = cleanPortfolioDoc(portfolio.data, portfolio.kind);
+  const data = { ...cleanedPage, branding: cleanBranding };
+  const previousNotices = new Map((Array.isArray(portfolio.data?.branding?.notices) ? portfolio.data.branding.notices : [])
+    .map((notice) => [notice.id, `${notice.title}\n${notice.message}`]));
+  const noticesToSend = cleanBranding.notices.filter((notice) =>
+    previousNotices.get(notice.id) !== `${notice.title}\n${notice.message}`);
+  const saved = await prisma.portfolio.update({
+    where: { id: portfolio.id },
+    data: { data },
+    select: { id: true, data: true, published: true },
+  });
+
+  let pushNotifications;
+  if (saved.published && noticesToSend.length) {
+    const store = storeId ? await prisma.store.findUnique({ where: { id: storeId }, select: { slug: true } }) : null;
+    const userSlug = store?.slug || req.user.portfolioSlug;
+    const pageQuery = `u=${encodeURIComponent(userSlug)}`;
+    pushNotifications = { configured: true, subscribers: 0, sent: 0, failed: 0 };
+    for (const notice of noticesToSend) {
+      try {
+        const result = await notifyPortfolioNotice({
+          portfolioId: saved.id,
+          notice,
+          siteName: cleanBranding.siteName || portfolio.data?.branding?.siteName || req.user.name || portfolio.name,
+          iconUrl: `/api/public/portfolio/icon?${pageQuery}`,
+        });
+        pushNotifications.configured = pushNotifications.configured && result.configured;
+        pushNotifications.subscribers += result.subscribers;
+        pushNotifications.sent += result.sent;
+        pushNotifications.failed += result.failed;
+      } catch (error) {
+        pushNotifications.failed += 1;
+        console.error('[catalog] página salva, mas falhou ao enviar aviso push:', error.message);
+      }
+    }
+  }
+  res.json({
+    portfolio: { id: saved.id, data: saved.data },
+    ...(pushNotifications ? { pushNotifications } : {}),
+  });
+});
 
 router.get('/settings', async (req, res) => {
   const storeId = await storeScope(req);

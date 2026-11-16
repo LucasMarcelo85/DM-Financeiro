@@ -301,7 +301,7 @@ router.use('/products', shopAuth, needPerm('produtos', 'pdv', 'estoque'), (req, 
 // Pedidos, clientes e configurações do catálogo usam sempre o escopo forçado da loja.
 router.use('/catalog', shopAuth, needTab('pedidos'), (req, _res, next) => {
   if (req.path.startsWith('/payments')) return next();
-  if (/^\/settings(?:\/test-shipping)?$/.test(req.path)) {
+  if (/^\/settings(?:\/branding|\/test-shipping)?$/.test(req.path)) {
     const allowed = req.method === 'GET' || req.method === 'PUT' || (req.method === 'POST' && req.path.endsWith('/test-shipping'));
     if (!allowed) throw new AppError(403, 'A ação não está liberada para o aplicativo.', 'FORBIDDEN');
     return needPerm('entregas')(req, _res, next);

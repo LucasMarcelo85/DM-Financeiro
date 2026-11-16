@@ -1,10 +1,11 @@
-﻿import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import PortfolioPushPrompt from '../components/portfolio/PortfolioPushPrompt.jsx';
 import PortfolioInstallPrompt from '../components/portfolio/PortfolioInstallPrompt.jsx';
+import ImageLightboxProvider, { useImageLightbox } from '../components/portfolio/ImageLightbox.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 import { makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
@@ -81,11 +82,13 @@ export default function PortfolioPublic({ fixedUser = '' }) {
       </div>
     );
   }
-  return <PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} credit={owner.credit} />;
+  return <ImageLightboxProvider key={page.id}><PublicPage page={page} owner={owner} products={state.products} store={state.store} slug={owner.slug} credit={owner.credit} /></ImageLightboxProvider>;
 }
 
 function PublicPage({ page, products, store, slug, credit }) {
   const { doc } = page;
+  const legacyFrameRef = useRef(null);
+  const lightbox = useImageLightbox();
   const { device, scale } = usePageScale();
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
   const cart = useCart(slug);
@@ -96,6 +99,39 @@ function PublicPage({ page, products, store, slug, credit }) {
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
   const showCart = isCatalog && !directOrder && cartOpen;
+  const bindLegacyImageZoom = useCallback(() => {
+    const frameDocument = legacyFrameRef.current?.contentDocument;
+    if (!frameDocument || !lightbox) return undefined;
+    const onImageClick = (event) => {
+      const image = event.target?.closest?.('img');
+      if (!image?.currentSrc) return;
+      event.preventDefault();
+      event.stopPropagation();
+      const source = image.currentSrc;
+      if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) return;
+      const rawHref = image.closest('a')?.href || '';
+      const href = /^(?:https?:\/\/|mailto:|tel:|\/|#)/i.test(rawHref) ? rawHref : '';
+      lightbox.openImage(source, String(image.alt || '').slice(0, 500), href);
+    };
+    frameDocument.addEventListener('click', onImageClick, true);
+    return () => frameDocument.removeEventListener('click', onImageClick, true);
+  }, [lightbox]);
+  useEffect(() => {
+    if (doc.editor !== 'grapesjs') return undefined;
+    const frame = legacyFrameRef.current;
+    if (!frame) return undefined;
+    let cleanup = () => {};
+    const onLoad = () => {
+      cleanup();
+      cleanup = bindLegacyImageZoom() || (() => {});
+    };
+    frame.addEventListener('load', onLoad);
+    if (frame.contentDocument?.readyState === 'complete') onLoad();
+    return () => {
+      frame.removeEventListener('load', onLoad);
+      cleanup();
+    };
+  }, [bindLegacyImageZoom, doc.editor, page.id]);
 
   if (doc.editor === 'grapesjs') {
     return (
@@ -103,7 +139,7 @@ function PublicPage({ page, products, store, slug, credit }) {
         <PublicNotices notices={doc.branding?.notices} />
         <PortfolioPushPrompt slug={slug} page={page} />
         <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} />
-        <iframe title={doc.title || page.name || 'Página do portfólio'} sandbox="" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
+        <iframe ref={legacyFrameRef} title={doc.title || page.name || 'Página do portfólio'} sandbox="allow-same-origin" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
         {credit !== false && <PageCredit theme={doc.theme} />}
       </div>
     );

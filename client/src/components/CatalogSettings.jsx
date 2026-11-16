@@ -54,6 +54,7 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
   const [f, setF] = useState(null);
   const [portfolio, setPortfolio] = useState(() => portfolioId && portfolioData ? { id: Number(portfolioId), data: portfolioData } : null);
   const [portfolioStatus, setPortfolioStatus] = useState(() => portfolioId && portfolioData ? 'ready' : 'loading');
+  const [portfolioViaCatalogSettings, setPortfolioViaCatalogSettings] = useState(false);
   const [siteBranding, setSiteBranding] = useState(() => portfolioData?.branding || {});
   const [siteBrandingChanged, setSiteBrandingChanged] = useState(false);
   const [info, setInfo] = useState({ hasSuperfreteToken: false });
@@ -95,6 +96,23 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
           setSiteBranding(fullPage.data?.branding || {});
           setPortfolioStatus('ready');
         } catch (loadError) {
+          if (isShopMode() && loadError.status === 403) {
+            try {
+              const { portfolio: fullPage } = await api.get('/catalog/settings/branding');
+              if (!active) return;
+              setPortfolio(fullPage);
+              setSiteBranding(fullPage.data?.branding || {});
+              setPortfolioViaCatalogSettings(true);
+              setPortfolioStatus('ready');
+              return;
+            } catch (brandingError) {
+              if (active) {
+                setError(brandingError.message);
+                setPortfolioStatus(brandingError.status === 404 ? 'missing' : 'error');
+              }
+              return;
+            }
+          }
           if (active) {
             setError(loadError.message);
             setPortfolioStatus('error');
@@ -128,10 +146,14 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
       if (portfolio && siteBrandingChanged) {
         const nextData = { ...portfolio.data, branding: siteBranding };
         try {
-          const result = await api.patch(`/portfolios/${portfolio.id}`, { data: nextData });
-          setPortfolio({ ...portfolio, data: nextData });
+          const result = portfolioViaCatalogSettings
+            ? await api.put('/catalog/settings/branding', { branding: siteBranding })
+            : await api.patch(`/portfolios/${portfolio.id}`, { data: nextData });
+          const savedPortfolio = result.portfolio || { ...portfolio, data: nextData };
+          setPortfolio(savedPortfolio);
+          setSiteBranding(savedPortfolio.data?.branding || siteBranding);
           setSiteBrandingChanged(false);
-          onPortfolioSaved?.(nextData);
+          onPortfolioSaved?.(savedPortfolio.data || nextData);
           if (result.pushNotifications?.configured === false) {
             toast('Entrega/frete salvo, mas as notificações dos avisos não estão configuradas no servidor.', 'error');
           } else if (result.pushNotifications?.failed) {

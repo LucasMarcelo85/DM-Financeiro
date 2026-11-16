@@ -4,6 +4,7 @@ import { api } from '../../api.js';
 import InfinitePayMark from '../InfinitePayMark.jsx';
 import { ProductCard, minPrice } from './Canvas.jsx';
 import { IconSvg } from './Canvas.jsx';
+import { useImageLightbox } from './ImageLightbox.jsx';
 import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
@@ -266,9 +267,14 @@ export function CatGridView({ el, device, mode }) {
           {g.title && <h2 className="cg-title" style={{ height: m.titleH, lineHeight: `${m.titleH}px` }}>{g.title}</h2>}
           <div className="cg-grid" style={{ gridTemplateColumns: `repeat(${m.cols}, minmax(0, 1fr))`, gridAutoRows: m.cardH, gap: m.gap }}>
             {g.list.map((p) => (
-              <button key={p.id} type="button" className="cat-card" tabIndex={edit ? -1 : undefined} onClick={() => view(p)} aria-label={`Ver ${p.name}`}>
-                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} action={<span className="pv-card-btn">{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</span>} />
-              </button>
+              <div key={p.id} className="cat-card" onClick={(event) => {
+                if (!edit && !event.target.closest('button')) view(p);
+              }}>
+                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} zoomImage={!edit}
+                  action={edit
+                    ? <span className="pv-card-btn">{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</span>
+                    : <button type="button" className="pv-card-btn" onClick={() => view(p)}>{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</button>} />
+              </div>
             ))}
           </div>
         </div>
@@ -311,6 +317,7 @@ const loadCustomer = (slug) => {
 };
 
 export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) {
+  const imageLightbox = useImageLightbox();
   const cfg = doc.catalog;
   const { lines, subtotal } = priced(cart.items, products);
   const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : key === 'retirada' ? store.pickup : store[key])?.enabled);
@@ -535,7 +542,12 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           <ul className="cat-lines">
             {lines.map((l) => (
               <li key={l.id}>
-                <span className="cat-line-img">{(l.img || l.p.mainImage || l.p.images[0]) && <img src={(l.img || l.p.mainImage || l.p.images[0]).url} alt="" />}</span>
+                <span className="cat-line-img">{(l.img || l.p.mainImage || l.p.images[0]) && (() => {
+                  const image = l.img || l.p.mainImage || l.p.images[0];
+                  return imageLightbox
+                    ? <button type="button" className="cat-line-image-trigger" onClick={() => imageLightbox.openImage(image.url, l.p.name)} aria-label={`Ampliar imagem de ${l.p.name}`}><img src={image.url} alt="" /></button>
+                    : <img src={image.url} alt="" />;
+                })()}</span>
                 <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming && <small className="cat-tier-hint">{l.upcoming.scope === 'cart_value' ? `Carrinho a partir de ${brl(l.upcoming.minCartCents)}` : `Leve ${l.upcoming.minQuantity} ${l.upcoming.scope === 'cart_quantity' ? 'itens no carrinho' : 'deste produto'}`} para pagar {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} max={l.p.stockEnabled ? (l.img ? l.img.stockQuantity : l.p.stockQuantity) : 99} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>

@@ -9,6 +9,7 @@ import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/m
 import { preparePortfolioCode } from '../../lib/portfolio/portfolioCode.js';
 import { brl } from '../../lib/format.js';
 import { colorHexForName } from '../../lib/productColors.js';
+import { useImageLightbox } from './ImageLightbox.jsx';
 
 // Desenha a página do portfólio (formato v2). O mesmo código serve ao editor, à visualização e à página pública:
 //  mode 'edit'   → ferramentas de edição, links desligados, imagens vazias mostram um espaço reservado
@@ -105,6 +106,7 @@ function TextView({ el, box }) {
 }
 
 function ImageView({ el, mode }) {
+  const lightbox = useImageLightbox();
   if (!el.src) return mode === 'edit' ? <div className="pv-ph"><span>Clique duas vezes para escolher uma imagem</span></div> : null;
   const f = el.filters;
   const filter = [
@@ -124,7 +126,11 @@ function ImageView({ el, mode }) {
   return (
     <div className={masked && el.shadow !== 'none' ? `ds-${el.shadow}` : ''} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div className={`pv-img${!masked && el.shadow !== 'none' ? ` sh-${el.shadow}` : ''}`} style={wrapStyle}>
-        <img src={el.src} alt={el.alt || ''} draggable={false} decoding="async" loading={undefined} style={imgStyle} />
+        {mode === 'public' && lightbox
+          ? <button type="button" className="pv-image-trigger" onClick={() => lightbox.openImage(el.src, el.alt || '', linkHref(el.link))} aria-label={`Ampliar imagem${el.alt ? `: ${el.alt}` : ''}`}>
+            <img src={el.src} alt={el.alt || ''} draggable={false} decoding="async" loading={undefined} style={imgStyle} />
+          </button>
+          : <img src={el.src} alt={el.alt || ''} draggable={false} decoding="async" loading={undefined} style={imgStyle} />}
       </div>
       {masked && <Outline shape={el.mask} w={el.borderW} color={el.borderColor} />}
     </div>
@@ -191,6 +197,7 @@ function ButtonView({ el, box, mode, onCart, onLink, cartCount }) {
 }
 
 function CarouselView({ el, mode }) {
+  const lightbox = useImageLightbox();
   const slides = el.slides || [];
   const [i, setI] = useState(0);
   const n = slides.length;
@@ -208,7 +215,10 @@ function CarouselView({ el, mode }) {
         {slides.map((s) => {
           const href = mode === 'public' ? linkHref(s.link) : '';
           const img = <img src={s.src} alt={s.alt || ''} draggable="false" style={{ objectFit: el.fit }} />;
-          return <div className="pv-car-slide" key={s.id}>{href ? <a href={href} target="_blank" rel="noopener noreferrer">{img}</a> : img}</div>;
+          const content = mode === 'public' && lightbox
+            ? <button type="button" className="pv-car-image-trigger" onClick={() => lightbox.openImage(s.src, s.alt || '', href)} aria-label={`Ampliar imagem ${s.alt || ''}`}>{img}</button>
+            : href ? <a href={href} target="_blank" rel="noopener noreferrer">{img}</a> : img;
+          return <div className="pv-car-slide" key={s.id}>{content}</div>;
         })}
       </div>
       {el.arrows && n > 1 && (
@@ -252,6 +262,7 @@ function MenuView({ el, device, mode }) {
 }
 
 function ModalToolView({ el, mode, shop, onCart }) {
+  const lightbox = useImageLightbox();
   const [open, setOpen] = useState(false);
   const [stepIndex, setStepIndex] = useState(0);
   const [answers, setAnswers] = useState({});
@@ -334,7 +345,11 @@ function ModalToolView({ el, mode, shop, onCart }) {
             ) : <>
               <div className="pv-modal-progress" aria-label={`Etapa ${stepIndex + 1} de ${steps.length}`}>Etapa {stepIndex + 1} de {steps.length}</div>
               <h3>{step.title}</h3>
-              {step.image && <img className="pv-modal-image" src={step.image} alt="" />}
+              {step.image && (mode === 'public' && lightbox
+                ? <button type="button" className="pv-modal-image-trigger" onClick={() => lightbox.openImage(step.image, '')} aria-label="Ampliar imagem da etapa">
+                  <img className="pv-modal-image" src={step.image} alt="" />
+                </button>
+                : <img className="pv-modal-image" src={step.image} alt="" />)}
               {step.content && <p className="pv-modal-content">{step.content}</p>}
               <div className="pv-modal-questions">
                 {(step.questions || []).map((question) => {
@@ -391,7 +406,8 @@ function VideoView({ el, mode }) {
   );
 }
 
-export function ProductCard({ p, cardStyle = 'soft', price = true, action, card }) {
+export function ProductCard({ p, cardStyle = 'soft', price = true, action, card, zoomImage = false }) {
+  const lightbox = useImageLightbox();
   const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
   const img = p.mainImage || p.images[0];
   const colorSwatches = [...new Map((p.images || [])
@@ -434,7 +450,11 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
     <div className={`pv-card cs-${cardStyle} is-${k.layout} ratio-${k.ratio} fit-${k.fit} al-${k.align} ${mods}`} style={style}>
       {k.showImage && (
         <div className="pv-card-img" style={k.imgBg ? { background: k.imgBg } : undefined}>
-          {img && <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />}
+          {img && (lightbox && zoomImage
+            ? <button type="button" className="pv-card-image-trigger" onClick={(event) => { event.stopPropagation(); lightbox.openImage(img.url, p.name); }} aria-label={`Ampliar imagem de ${p.name}`}>
+              <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />
+            </button>
+            : <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />)}
           {iconAt('corner') && <span className="pv-card-corner">{iconNode}</span>}
           {k.showVariations && p.images.length > 0 && <span className="pv-dots" aria-hidden="true">{p.images.map((i) => <i key={i.id} />)}</span>}
         </div>
@@ -473,6 +493,7 @@ function ProductsView({ el, device, products, mode }) {
     <div className="pv-products" style={{ gridTemplateColumns: `repeat(${cols}, minmax(0, 1fr))` }}>
       {list.map((p) => (
         <ProductCard key={p.id} p={p} cardStyle={el.cardStyle} price={el.showPrice}
+          zoomImage={mode === 'public'}
           action={wa && (mode === 'edit'
             ? <span className="pv-card-btn">{el.buttonLabel}</span>
             : <a className="pv-card-btn" href={wa(p)} target="_blank" rel="noopener noreferrer">{el.buttonLabel}</a>)} />
@@ -485,6 +506,7 @@ function ProductsView({ el, device, products, mode }) {
 const FULL_BLEED = 3000; // elementos de largura total passam das bordas do desenho; a página corta o excesso
 function PortfolioCodeFrame({ code, mode, title }) {
   const frameRef = useRef(null);
+  const lightbox = useImageLightbox();
   const safeCode = useMemo(() => preparePortfolioCode(mode === 'edit' ? { ...code, script: '' } : code), [code, mode]);
   const latestCode = useRef(safeCode);
   latestCode.current = safeCode;
@@ -494,6 +516,20 @@ function PortfolioCodeFrame({ code, mode, title }) {
   }
 
   useEffect(() => { sendCode(); }, [safeCode]);
+
+  useEffect(() => {
+    if (mode !== 'public' || !lightbox) return undefined;
+    const onMessage = (event) => {
+      if (event.source !== frameRef.current?.contentWindow || event.data?.type !== 'portfolio-image-open') return;
+      const src = String(event.data.src || '');
+      if (!/^(?:https?:\/\/|data:image\/)/i.test(src)) return;
+      const rawHref = String(event.data.href || '');
+      const href = /^(?:https?:\/\/|mailto:|tel:|\/|#)/i.test(rawHref) ? rawHref : '';
+      lightbox.openImage(src, String(event.data.alt || '').slice(0, 500), href);
+    };
+    window.addEventListener('message', onMessage);
+    return () => window.removeEventListener('message', onMessage);
+  }, [lightbox, mode]);
 
   return (
     <iframe
@@ -528,7 +564,7 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
   let content;
   let linked = null;
   if (el.t === 'text') { content = <TextView el={el} box={box} />; linked = el.link; }
-  else if (el.t === 'image') { content = <ImageView el={el} mode={mode} />; linked = el.link; }
+  else if (el.t === 'image') { content = <ImageView el={el} mode={mode} />; }
   else if (el.t === 'icon') {
     content = <IconView el={el} box={box} cartCount={cartCount} />;
     if (mode === 'public' && onCart && el.scrollAction === 'none' && ['cart', 'bag'].includes(el.name)) {
@@ -561,7 +597,7 @@ function ElementViewBase({ el, device, mode, animate, products, shop, z, onLink,
   if (content == null) return null;
 
   const href = linked && mode === 'public' ? linkHref(linked) : '';
-  if (mode === 'public' && el.scrollAction && el.scrollAction !== 'none') {
+  if (mode === 'public' && el.scrollAction && el.scrollAction !== 'none' && el.t !== 'image') {
     const top = el.scrollAction === 'top';
     content = <button type="button" className="pv-scroll-action" aria-label={top ? 'Voltar ao topo' : 'Ir para o fim da página'} onClick={() => window.scrollTo({ top: top ? 0 : document.documentElement.scrollHeight, behavior: 'smooth' })}>{content}</button>;
   } else if (href) content = <a className="pv-link" href={href} target="_blank" rel="noopener noreferrer" onClick={() => onLink?.(el)}>{content}</a>;
