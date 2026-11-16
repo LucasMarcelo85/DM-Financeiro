@@ -8,7 +8,7 @@ import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars } from '.
 import Stage from '../components/portfolio/Stage.jsx';
 import { ElementInspector, PageInspector } from '../components/portfolio/Inspector.jsx';
 import ImageEditor from '../components/portfolio/ImageEditor.jsx';
-import SiteSettingsModal from '../components/portfolio/SiteSettingsModal.jsx';
+import SiteSettingsPanel from '../components/portfolio/SiteSettingsPanel.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
@@ -53,7 +53,7 @@ export default function PortfolioEditor() {
   const [leave, setLeave] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState('/portfolio');
   const [panelOpen, setPanelOpen] = useState(false);
-  const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers'
+  const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers' | 'site'
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
   const [pages, setPages] = useState([]);
@@ -62,7 +62,6 @@ export default function PortfolioEditor() {
   const [imageUrl, setImageUrl] = useState('');
   const [imageUrlBusy, setImageUrlBusy] = useState(false);
   const [catalogCfg, setCatalogCfg] = useState(false);
-  const [siteSettingsOpen, setSiteSettingsOpen] = useState(false);
   const [converted, setConverted] = useState(false);
   const [interacting, setInteracting] = useState(false);
   const [panelW, setPanelW] = useState(() => {
@@ -135,6 +134,13 @@ export default function PortfolioEditor() {
 
   const fitZoom = Math.min(1, Math.max(0.2, (avail - 40) / DESIGN_W[device]));
   const zoom = manualZoom ?? fitZoom;
+
+  function openSiteSettings() {
+    setPreview(false);
+    setSelectedId(null);
+    setLeftTab('site');
+    setPanelOpen(true);
+  }
 
   // ---------------------------------------------------------------- histórico
   const touch = useCallback(() => { version.current += 1; setSaveState('dirty'); }, []);
@@ -447,7 +453,7 @@ export default function PortfolioEditor() {
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
     addProductsIndividually,
-    openSiteSettings: () => setSiteSettingsOpen(true),
+    openSiteSettings,
     act, toast, saveSlug, copyLink,
     error: (m) => toast(m, 'error'),
     imageTool: (tool) => { if (selectedRef.current) setImageTool({ id: selectedRef.current, tool }); },
@@ -513,8 +519,8 @@ export default function PortfolioEditor() {
           <span className="ce-lbl">Fundo</span>
           <input type="color" value={doc.theme.bg} onChange={(e) => inspectorApi.patchTheme({ bg: e.target.value }, 'theme:bg')} aria-label="Cor de fundo do site" />
         </label>
-        <button type="button" className="btn btn-primary btn-sm" onClick={() => setSiteSettingsOpen(true)} title="Configurar nome, logo, avisos e aplicativo">
-          Logo, avisos e app
+        <button type="button" className="btn btn-primary btn-sm" onClick={openSiteSettings} title="Configurar nome, logo, avisos e aplicativo">
+          Configurar site
         </button>
         <span className="pe-zoom" role="group" aria-label="Zoom">
           <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.max(0, zoomIdx - 1)])} disabled={zoomIdx === 0} title="Diminuir" aria-label="Diminuir zoom"><EIcon name="zoom-out" size={16} /></button>
@@ -543,6 +549,7 @@ export default function PortfolioEditor() {
           <div className="pe-left-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
+            <button type="button" role="tab" aria-selected={leftTab === 'site'} className={leftTab === 'site' ? 'is-on' : ''} onClick={openSiteSettings}>Site</button>
           </div>
           {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
             <button key={`${p.t}-${p.codeType || p.label || ''}`} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t, p.codeType)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); if (p.codeType) e.dataTransfer.setData('text/pv-code-type', p.codeType); e.dataTransfer.effectAllowed = 'copy'; } }}
@@ -550,7 +557,7 @@ export default function PortfolioEditor() {
               <EIcon name={p.icon} size={20} />
               <span>{p.label || ELEMENT_LABELS[p.t]}</span>
             </button>
-          )) : (
+          )) : leftTab === 'layers' ? (
             <ul className="pe-layers">
               {[...doc.elements].reverse().map((el) => {
                 const b = el.box[device];
@@ -567,7 +574,7 @@ export default function PortfolioEditor() {
               })}
               {!doc.elements.length && <li className="muted small pe-layers-empty">Nenhum elemento ainda.</li>}
             </ul>
-          )}
+          ) : <p className="pe-site-tab-hint">Configurações do site abertas no painel à direita.</p>}
         </nav>
 
         <main className={`ce-stage pe-stage2${preview ? ' is-preview' : ''}`} ref={stageRef}>
@@ -581,7 +588,7 @@ export default function PortfolioEditor() {
               </>
             ) : (
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
-                onSelect={(sid) => { setSelectedId(sid); if (sid) setPanelOpen(true); }}
+                onSelect={(sid) => { setLeftTab('add'); setSelectedId(sid); if (sid) setPanelOpen(true); }}
                 onBox={setBox} onInteract={setInteracting}
                 onDropType={(t, x, y, codeType) => {
                   const added = addNew(t, t === 'custom' ? { name: 'JavaScript' } : undefined, { x: Math.round(x - 100), y: Math.round(y - 30) });
@@ -605,7 +612,12 @@ export default function PortfolioEditor() {
           <button type="button" className="ce-side-toggle" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}>
             {panelOpen ? 'Fechar propriedades' : selected ? `Propriedades: ${ELEMENT_LABELS[selected.t]}` : 'Propriedades da página'}
           </button>
-          {selected
+          {leftTab === 'site' && !selected
+            ? <SiteSettingsPanel
+                branding={doc.branding}
+                onChange={(branding, key) => commit({ ...docRef.current, branding }, key)}
+              />
+            : selected
             ? <ElementInspector el={selected} device={device} api={inspectorApi} products={products} layoutBox={layoutBoxes(doc, device, products, doc.catalog).get(selected.id)} />
             : <PageInspector doc={doc} device={device} meta={meta} api={inspectorApi} categories={categories} products={products} />}
         </aside>
@@ -629,11 +641,6 @@ export default function PortfolioEditor() {
           onApply={(src) => { commit(patchElement(docRef.current, toolEl.id, { src, zoom: 1, px: 50, py: 50 })); toast('Imagem atualizada.'); }} />
       )}
       {catalogCfg && <CatalogSettings onClose={() => setCatalogCfg(false)} />}
-      {siteSettingsOpen && <SiteSettingsModal
-        branding={doc.branding}
-        onChange={(branding, key) => commit({ ...docRef.current, branding }, key)}
-        onClose={() => setSiteSettingsOpen(false)}
-      />}
       {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
       {leave && (
         <Modal title="Alterações não salvas" onClose={() => setLeave(false)}

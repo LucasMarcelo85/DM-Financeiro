@@ -1,11 +1,10 @@
 import { useRef, useState } from 'react';
-import Modal from '../Modal.jsx';
 import { fitImage } from '../../lib/contract/image.js';
 import { useToast } from '../Toast.jsx';
 
 const newNoticeId = () => `notice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
-export default function SiteSettingsModal({ branding = {}, onChange, onClose }) {
+export default function SiteSettingsPanel({ branding = {}, onChange }) {
   const toast = useToast();
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
@@ -38,9 +37,8 @@ export default function SiteSettingsModal({ branding = {}, onChange, onClose }) 
   }
 
   return (
-    <Modal title="Identidade e avisos do site" onClose={onClose} wide
-      footer={<button type="button" className="btn btn-primary" onClick={onClose}>Concluir</button>}>
-      <div className="site-settings">
+    <div className="site-settings">
+      <p className="muted small">Edite nome, logo, avisos e identidade do app aqui mesmo no editor. Depois, clique em <strong>Salvar</strong> na barra superior.</p>
         <label className="field">
           <span>Nome exibido no site</span>
           <input className="input" value={branding.siteName || ''} maxLength={80}
@@ -105,7 +103,6 @@ export default function SiteSettingsModal({ branding = {}, onChange, onClose }) 
           ))}
           {!notices.length && <p className="muted small">Nenhum aviso cadastrado.</p>}
         </section>
-      </div>
-    </Modal>
+    </div>
   );
 }

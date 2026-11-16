@@ -24,6 +24,9 @@ export default function PortfolioPushPrompt({ slug, page }) {
         return;
       }
       try {
+        await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
+        const ready = await navigator.serviceWorker.ready;
+        registration.current = ready;
         const config = await api.get('/public/portfolio/push-config');
         if (!active) return;
         if (!config.publicKey) {
@@ -31,9 +34,6 @@ export default function PortfolioPushPrompt({ slug, page }) {
           return;
         }
         setPublicKey(config.publicKey);
-        await navigator.serviceWorker.register('/service-worker.js', { scope: '/' });
-        const ready = await navigator.serviceWorker.ready;
-        registration.current = ready;
         const subscription = await ready.pushManager.getSubscription();
         if (subscription) await api.post(subscriptionUrl, { subscription: subscription.toJSON() });
         if (active) setStatus(subscription ? 'subscribed' : Notification.permission === 'denied' ? 'denied' : 'ready');
