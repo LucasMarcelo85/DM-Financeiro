@@ -4,6 +4,7 @@ import Modal from './Modal.jsx';
 import InfinitePayMark from './InfinitePayMark.jsx';
 import infinitePayLogo from '../assets/infinitepay.png';
 import { Check, Seg, TextField } from './portfolio/Fields.jsx';
+import SiteSettingsPanel from './portfolio/SiteSettingsPanel.jsx';
 import { useToast } from './Toast.jsx';
 import { brl, centsToMasked, formatStoredPhone, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
 
@@ -48,9 +49,13 @@ const toConfig = (f) => ({
   },
 });
 
-export default function CatalogSettings({ onClose, onSaved, storeId: configuredStoreId }) {
+export default function CatalogSettings({ onClose, onSaved, storeId: configuredStoreId, portfolioId, portfolioData, onPortfolioSaved }) {
   const toast = useToast();
   const [f, setF] = useState(null);
+  const [portfolio, setPortfolio] = useState(() => portfolioId && portfolioData ? { id: Number(portfolioId), data: portfolioData } : null);
+  const [portfolioStatus, setPortfolioStatus] = useState(() => portfolioId && portfolioData ? 'ready' : 'loading');
+  const [siteBranding, setSiteBranding] = useState(() => portfolioData?.branding || {});
+  const [siteBrandingChanged, setSiteBrandingChanged] = useState(false);
   const [info, setInfo] = useState({ hasSuperfreteToken: false });
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
@@ -74,7 +79,32 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
     if (isShopMode()) instanceQuery.delete('includeOwner');
     if (activeStore) instanceQuery.set('store', activeStore);
     api.get(`/instances?${instanceQuery}`).then((r) => setInstances(r.instances || [])).catch((e) => setError(e.message));
-  }, [settingsUrl]);
+    if (!portfolioId || !portfolioData) {
+      let active = true;
+      (async () => {
+        try {
+          const { portfolios = [] } = await api.get('/portfolios');
+          const page = portfolios.find((item) => item.isMain) || portfolios[0];
+          if (!page) {
+            if (active) setPortfolioStatus('missing');
+            return;
+          }
+          const { portfolio: fullPage } = await api.get(`/portfolios/${page.id}`);
+          if (!active) return;
+          setPortfolio(fullPage);
+          setSiteBranding(fullPage.data?.branding || {});
+          setPortfolioStatus('ready');
+        } catch (loadError) {
+          if (active) {
+            setError(loadError.message);
+            setPortfolioStatus('error');
+          }
+        }
+      })();
+      return () => { active = false; };
+    }
+    return undefined;
+  }, [settingsUrl, portfolioId, portfolioData]);
 
   if (!f) return <Modal title="Entregas e frete" onClose={onClose}><p className="muted">{error || 'Carregando...'}</p></Modal>;
 
@@ -95,6 +125,23 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
     try {
       const r = await api.put(settingsUrl, { config: toConfig(f) });
       setInfo(r); setF(toForm(r.config));
+      if (portfolio && siteBrandingChanged) {
+        const nextData = { ...portfolio.data, branding: siteBranding };
+        try {
+          const result = await api.patch(`/portfolios/${portfolio.id}`, { data: nextData });
+          setPortfolio({ ...portfolio, data: nextData });
+          setSiteBrandingChanged(false);
+          onPortfolioSaved?.(nextData);
+          if (result.pushNotifications?.configured === false) {
+            toast('Entrega/frete salvo, mas as notificações dos avisos não estão configuradas no servidor.', 'error');
+          } else if (result.pushNotifications?.failed) {
+            toast(`Configurações salvas, mas falhou o envio de ${result.pushNotifications.failed} notificação(ões).`, 'error');
+          }
+        } catch (portfolioError) {
+          setError(`Entrega e frete foram salvos, mas logo/avisos não: ${portfolioError.message}`);
+          return;
+        }
+      }
       toast('Configurações do catálogo salvas.');
       onSaved?.(r);
       onClose();
@@ -223,6 +270,19 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
             <a href="https://infinitepay.onelink.me/IGWD/dmsolucoesdigitais" target="_blank" rel="noopener noreferrer">criar minha conta InfinitePay</a>
           </p>
           <p className="muted small">Use a InfiniteTag da sua própria loja. Não informe senha nem dados bancários. Os pagamentos são confirmados pela InfinitePay.</p>
+        </fieldset>
+        <fieldset className="cs-box cs-site-branding">
+          <legend>Banner de aviso, logo e app</legend>
+          {portfolioStatus === 'loading' && <p className="muted small">Carregando as configurações do site...</p>}
+          {portfolioStatus === 'error' && <p className="form-error" role="alert">Não foi possível carregar as configurações do site: {error}</p>}
+          {portfolioStatus === 'missing' && <p className="muted small">Crie primeiro a página do portfólio. Depois, volte aqui para configurar o banner, a logo e o app.</p>}
+          {portfolioStatus === 'ready' && <SiteSettingsPanel
+            branding={siteBranding}
+            onChange={(next) => {
+              setSiteBranding(next);
+              setSiteBrandingChanged(true);
+            }}
+          />}
         </fieldset>
         <fieldset className="cs-box">
           <strong>Regras mínimas para finalizar um pedido</strong>

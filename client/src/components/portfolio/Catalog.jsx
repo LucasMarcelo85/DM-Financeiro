@@ -95,6 +95,7 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder }) {
   const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
   const [qty, setQty] = useState(1);
+  const [imageOpen, setImageOpen] = useState(false);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
   const img = selectedVariation || p.mainImage || p.images[0] || null;
   const productQty = cartItems.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0) + qty;
@@ -120,17 +121,28 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
   ].filter(Boolean).join('\n');
   const directUrl = /^55\d{10,11}$/.test(whatsapp) ? `https://wa.me/${whatsapp}?text=${encodeURIComponent(directMessage)}` : '';
   useEffect(() => {
-    const onKey = (e) => e.key === 'Escape' && onClose();
+    const onKey = (e) => {
+      if (e.key !== 'Escape') return;
+      if (imageOpen) setImageOpen(false);
+      else onClose();
+    };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [onClose]);
+  }, [imageOpen, onClose]);
   return createPortal(
     <div className="cat-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="cat-modal" style={themeVars(theme)} role="dialog" aria-modal="true" aria-label={p.name}>
         <button type="button" className="cat-x" onClick={onClose} aria-label="Fechar">×</button>
-        <div className="cat-modal-img">{img && <img src={img.url} alt={p.name} />}</div>
+        <div className="cat-modal-img">
+          {img && (
+            <button type="button" className="cat-image-preview" onClick={() => setImageOpen(true)} aria-label="Visualizar imagem completa">
+              <img src={img.url} alt={p.name} />
+              <span>Ver imagem completa</span>
+            </button>
+          )}
+        </div>
         <div className="cat-modal-body">
           <span className="pv-card-cat">{p.category}</span>
           <h2>{p.name}</h2>
@@ -170,6 +182,13 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           )}
         </div>
       </div>
+      {imageOpen && img && (
+        <div className="cat-image-viewer" role="dialog" aria-modal="true" aria-label={`Imagem completa de ${p.name}`}
+          onMouseDown={(event) => { if (event.target === event.currentTarget) setImageOpen(false); }}>
+          <button type="button" className="cat-image-viewer-close" onClick={() => setImageOpen(false)} aria-label="Fechar imagem">×</button>
+          <img src={img.url} alt={p.name} />
+        </div>
+      )}
     </div>,
     document.body,
   );

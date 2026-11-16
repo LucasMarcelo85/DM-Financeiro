@@ -640,7 +640,18 @@ export default function PortfolioEditor() {
         <ImageEditor src={toolEl.src} initial={imageTool.tool} onClose={() => setImageTool(null)}
           onApply={(src) => { commit(patchElement(docRef.current, toolEl.id, { src, zoom: 1, px: 50, py: 50 })); toast('Imagem atualizada.'); }} />
       )}
-      {catalogCfg && <CatalogSettings onClose={() => setCatalogCfg(false)} />}
+      {catalogCfg && <CatalogSettings
+        onClose={() => setCatalogCfg(false)}
+        portfolioId={id}
+        portfolioData={docRef.current}
+        onPortfolioSaved={(data) => {
+          const nextDoc = normalizeDoc(data, docRef.current?.kind);
+          docRef.current = nextDoc;
+          setDocState(nextDoc);
+          savedVersion.current = version.current;
+          setSaveState('saved');
+        }}
+      />}
       {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
       {leave && (
         <Modal title="Alterações não salvas" onClose={() => setLeave(false)}
