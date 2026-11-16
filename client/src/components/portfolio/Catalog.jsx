@@ -139,7 +139,12 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           {img && (
             <button type="button" className="cat-image-preview" onClick={() => setImageOpen(true)} aria-label="Visualizar imagem completa">
               <img src={img.url} alt={p.name} />
-              <span>Ver imagem completa</span>
+              <span className="cat-image-preview-action" aria-hidden="true">
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
+                </svg>
+                <span>Ampliar</span>
+              </span>
             </button>
           )}
         </div>
