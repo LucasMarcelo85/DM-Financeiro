@@ -182,6 +182,19 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
       <div className="form cs-form">
         <TextField label="Nome da loja" value={f.storeName} onChange={setTop('storeName')} maxLength={80} id="cs-store" />
         <TextField label="WhatsApp da loja" value={f.whatsapp} onChange={(v) => setTop('whatsapp')(maskPhone(v))} placeholder="(85) 99999-9999" id="cs-wa" hint="Após finalizar o pedido, o cliente poderá enviar o resumo para este número. Inclua o DDD." />
+        <fieldset className="cs-box cs-site-branding">
+          <legend>Logo, banners de aviso e instalação do app</legend>
+          {portfolioStatus === 'loading' && <p className="muted small">Carregando as configurações do site...</p>}
+          {portfolioStatus === 'error' && <p className="form-error" role="alert">Não foi possível carregar as configurações do site: {error}</p>}
+          {portfolioStatus === 'missing' && <p className="muted small">Crie primeiro a página do portfólio. Depois, volte aqui para configurar o banner, a logo e a instalação do app.</p>}
+          {portfolioStatus === 'ready' && <SiteSettingsPanel
+            branding={siteBranding}
+            onChange={(next) => {
+              setSiteBranding(next);
+              setSiteBrandingChanged(true);
+            }}
+          />}
+        </fieldset>
         <fieldset className="cs-box">
           <Check
             label="Notificar pedidos feitos pelo catálogo"
@@ -270,19 +283,6 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
             <a href="https://infinitepay.onelink.me/IGWD/dmsolucoesdigitais" target="_blank" rel="noopener noreferrer">criar minha conta InfinitePay</a>
           </p>
           <p className="muted small">Use a InfiniteTag da sua própria loja. Não informe senha nem dados bancários. Os pagamentos são confirmados pela InfinitePay.</p>
-        </fieldset>
-        <fieldset className="cs-box cs-site-branding">
-          <legend>Banner de aviso, logo e app</legend>
-          {portfolioStatus === 'loading' && <p className="muted small">Carregando as configurações do site...</p>}
-          {portfolioStatus === 'error' && <p className="form-error" role="alert">Não foi possível carregar as configurações do site: {error}</p>}
-          {portfolioStatus === 'missing' && <p className="muted small">Crie primeiro a página do portfólio. Depois, volte aqui para configurar o banner, a logo e o app.</p>}
-          {portfolioStatus === 'ready' && <SiteSettingsPanel
-            branding={siteBranding}
-            onChange={(next) => {
-              setSiteBranding(next);
-              setSiteBrandingChanged(true);
-            }}
-          />}
         </fieldset>
         <fieldset className="cs-box">
           <strong>Regras mínimas para finalizar um pedido</strong>

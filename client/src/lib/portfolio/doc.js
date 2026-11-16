@@ -123,7 +123,7 @@ function fullWidthBoxes(el, boxOver) {
 }
 
 export const blankDoc = (kind = 'site') => ({
-  v: 2, kind, theme: { ...THEME_DEFAULTS }, seo: { title: '', description: '' }, branding: { siteName: '', logo: '', notices: [] }, pixel: { meta: '', google: '', tiktok: '' },
+  v: 2, kind, theme: { ...THEME_DEFAULTS }, seo: { title: '', description: '' }, branding: { siteName: '', logo: '', notices: [], installEnabled: true }, pixel: { meta: '', google: '', tiktok: '' },
   heights: { desktop: 700, tablet: 700, mobile: 700 }, manual: { tablet: false, mobile: false }, elements: [], ...(kind === 'catalog' ? { catalog: CATALOG_DEFAULTS() } : {}),
 });
 
@@ -209,6 +209,7 @@ function normalizeBase(raw, kindHint = 'site') {
       siteName: typeof src.branding?.siteName === 'string' ? src.branding.siteName : '',
       logo: typeof src.branding?.logo === 'string' ? src.branding.logo : '',
       notices: (Array.isArray(src.branding?.notices) ? src.branding.notices : []).slice(0, 10),
+      installEnabled: typeof src.branding?.installEnabled === 'boolean' ? src.branding.installEnabled : true,
     },
     pixel: { meta: '', google: '', tiktok: '', ...(isObj(src.pixel) ? src.pixel : {}) },
     heights: { desktop: 700, tablet: 700, mobile: 700, ...(isObj(src.heights) ? src.heights : {}) },

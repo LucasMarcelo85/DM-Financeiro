@@ -183,11 +183,14 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
         </div>
       </div>
       {imageOpen && img && (
-        <div className="cat-image-viewer" role="dialog" aria-modal="true" aria-label={`Imagem completa de ${p.name}`}
-          onMouseDown={(event) => { if (event.target === event.currentTarget) setImageOpen(false); }}>
-          <button type="button" className="cat-image-viewer-close" onClick={() => setImageOpen(false)} aria-label="Fechar imagem">×</button>
-          <img src={img.url} alt={p.name} />
-        </div>
+        createPortal(
+          <div className="cat-image-viewer" role="dialog" aria-modal="true" aria-label={`Imagem completa de ${p.name}`}
+            onMouseDown={(event) => { if (event.target === event.currentTarget) setImageOpen(false); }}>
+            <button type="button" className="cat-image-viewer-close" onClick={() => setImageOpen(false)} aria-label="Fechar imagem">×</button>
+            <img src={img.url} alt={p.name} />
+          </div>,
+          document.body,
+        )
       )}
     </div>,
     document.body,

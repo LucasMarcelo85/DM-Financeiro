@@ -549,15 +549,21 @@ export default function PortfolioEditor() {
           <div className="pe-left-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
-            <button type="button" role="tab" aria-selected={leftTab === 'site'} className={leftTab === 'site' ? 'is-on' : ''} onClick={openSiteSettings}>Site</button>
+            <button type="button" role="tab" aria-selected={leftTab === 'site'} className={leftTab === 'site' ? 'is-on' : ''} onClick={openSiteSettings}>Logo e avisos</button>
           </div>
-          {leftTab === 'add' ? PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
-            <button key={`${p.t}-${p.codeType || p.label || ''}`} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t, p.codeType)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); if (p.codeType) e.dataTransfer.setData('text/pv-code-type', p.codeType); e.dataTransfer.effectAllowed = 'copy'; } }}
-              title={p.t === 'image-url' ? 'Adicionar imagem ou GIF a partir de uma URL' : p.t === 'image' ? 'Selecionar uma imagem ou vídeo para converter em GIF' : p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
-              <EIcon name={p.icon} size={20} />
-              <span>{p.label || ELEMENT_LABELS[p.t]}</span>
+          {leftTab === 'add' ? <>
+            <button type="button" className="ce-tool" onClick={openSiteSettings} title="Configurar a logo, os banners de aviso e a instalação do aplicativo">
+              <EIcon name="image" size={20} />
+              <span>Logo e avisos</span>
             </button>
-          )) : leftTab === 'layers' ? (
+            {PALETTE.filter((p) => !p.catalog || meta.kind === 'catalog').map((p) => (
+              <button key={`${p.t}-${p.codeType || p.label || ''}`} type="button" className="ce-tool" draggable={!p.quick} onClick={() => addFromPalette(p.t, p.codeType)} onDragStart={(e) => { if (!p.quick) { e.dataTransfer.setData('text/pv-type', p.t); if (p.codeType) e.dataTransfer.setData('text/pv-code-type', p.codeType); e.dataTransfer.effectAllowed = 'copy'; } }}
+                title={p.t === 'image-url' ? 'Adicionar imagem ou GIF a partir de uma URL' : p.t === 'image' ? 'Selecionar uma imagem ou vídeo para converter em GIF' : p.quick ? 'Adicionar uma seção de rodapé pronta' : `Adicionar ${ELEMENT_LABELS[p.t].toLowerCase()} (clique ou arraste para a página)`}>
+                <EIcon name={p.icon} size={20} />
+                <span>{p.label || ELEMENT_LABELS[p.t]}</span>
+              </button>
+            ))}
+          </> : leftTab === 'layers' ? (
             <ul className="pe-layers">
               {[...doc.elements].reverse().map((el) => {
                 const b = el.box[device];
@@ -574,7 +580,7 @@ export default function PortfolioEditor() {
               })}
               {!doc.elements.length && <li className="muted small pe-layers-empty">Nenhum elemento ainda.</li>}
             </ul>
-          ) : <p className="pe-site-tab-hint">Configurações do site abertas no painel à direita.</p>}
+          ) : <p className="pe-site-tab-hint">Configure logo, banners de aviso e instalação do aplicativo no painel à direita.</p>}
         </nav>
 
         <main className={`ce-stage pe-stage2${preview ? ' is-preview' : ''}`} ref={stageRef}>

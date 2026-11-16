@@ -1203,8 +1203,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pv-announcement { padding: 0.85rem 1rem; border: 1px solid color-mix(in srgb, var(--p) 35%, transparent); border-radius: 0.75rem; background: color-mix(in srgb, var(--p) 10%, #fff); color: var(--tx); }
 .pv-announcement strong { display: block; margin-bottom: 0.15rem; }
 .pv-announcement p { white-space: pre-wrap; overflow-wrap: anywhere; }
-.pv-push-prompt { display: flex; width: min(72rem, calc(100% - 2rem)); flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.75rem; margin: 0 auto 1rem; color: var(--tx); font-size: 0.85rem; }
-.pv-push-prompt small { flex-basis: 100%; text-align: right; }
+.pv-push-prompt, .pv-install-prompt { display: flex; width: min(72rem, calc(100% - 2rem)); flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 0.75rem; margin: 0 auto 1rem; color: var(--tx); font-size: 0.85rem; }
+.pv-push-prompt small, .pv-install-prompt small { flex-basis: 100%; text-align: right; }
 .pv-push-button { min-height: 2.25rem; padding: 0.4rem 0.8rem; border: 1px solid color-mix(in srgb, var(--p) 50%, transparent); border-radius: 999px; background: color-mix(in srgb, var(--p) 10%, #fff); color: var(--tx); font: inherit; font-weight: 700; cursor: pointer; white-space: nowrap; }
 .pv-push-button:disabled { opacity: 0.55; cursor: wait; }
 .site-logo { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 0.75rem 1rem; padding: 1rem; border: 1px solid var(--line); border-radius: var(--r-md); }
@@ -1243,8 +1243,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .cat-modal { grid-template-rows: auto auto; border-radius: 14px; }
   .cat-modal-img { width: 100%; aspect-ratio: 16 / 9; max-height: min(34dvh, 15rem); }
   .cat-modal-body { gap: 0.7rem; }
-  .pv-push-prompt { align-items: flex-start; flex-direction: column; }
-  .pv-push-prompt small { text-align: left; }
+  .pv-push-prompt, .pv-install-prompt { align-items: flex-start; flex-direction: column; }
+  .pv-push-prompt small, .pv-install-prompt small { text-align: left; }
 }
 @media (max-width: 360px) {
   .cat-overlay { padding-inline: 8px; }

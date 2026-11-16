@@ -63,6 +63,7 @@ router.get('/portfolio/manifest', async (req, res) => {
   const found = await findPublicPage(req.query.u, req.query.p);
   if (!found) throw new AppError(404, 'Página não encontrada.');
   const { owner, page } = found;
+  if (page.data?.branding?.installEnabled === false) throw new AppError(404, 'A instalação deste site está desativada.');
   const origin = `${req.protocol}://${req.get('host')}`;
   const pagePath = req.customDomain
     ? (page.isMain ? '/' : `/${page.slug}`)

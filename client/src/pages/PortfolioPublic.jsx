@@ -4,6 +4,7 @@ import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import PortfolioPushPrompt from '../components/portfolio/PortfolioPushPrompt.jsx';
+import PortfolioInstallPrompt from '../components/portfolio/PortfolioInstallPrompt.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 import { makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
@@ -48,7 +49,7 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     const links = [
       ['icon', iconUrl],
       ['apple-touch-icon', iconUrl],
-      ['manifest', `/api/public/portfolio/manifest?${query}`],
+      ...(page.doc.branding?.installEnabled !== false ? [['manifest', `/api/public/portfolio/manifest?${query}`]] : []),
     ].map(([rel, href]) => {
       const link = document.createElement('link');
       link.rel = rel;
@@ -101,6 +102,7 @@ function PublicPage({ page, products, store, slug, credit }) {
       <div className="pv-root gpe-published" style={style}>
         <PublicNotices notices={doc.branding?.notices} />
         <PortfolioPushPrompt slug={slug} page={page} />
+        <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} />
         <iframe title={doc.title || page.name || 'Página do portfólio'} sandbox="" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
         {credit !== false && <PageCredit theme={doc.theme} />}
       </div>
@@ -113,6 +115,7 @@ function PublicPage({ page, products, store, slug, credit }) {
       <ClipDefs />
       <PublicNotices notices={doc.branding?.notices} />
       <PortfolioPushPrompt slug={slug} page={page} />
+      <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
           <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />

@@ -524,6 +524,7 @@ function cleanDocV2(raw, kindHint) {
           };
         })
         .filter((notice) => notice.title || notice.message),
+      installEnabled: bool(branding.installEnabled, true),
     },
     // Pixel de acompanhamento para tráfego pago (só os identificadores; os scripts oficiais são carregados na página pública).
     pixel: {

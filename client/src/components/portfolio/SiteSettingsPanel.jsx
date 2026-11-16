@@ -1,6 +1,7 @@
 import { useRef, useState } from 'react';
 import { fitImage } from '../../lib/contract/image.js';
 import { useToast } from '../Toast.jsx';
+import { Check } from './Fields.jsx';
 
 const newNoticeId = () => `notice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
@@ -67,9 +68,13 @@ export default function SiteSettingsPanel({ branding = {}, onChange }) {
         <section className="site-app-info">
           <strong>Instalação do aplicativo</strong>
           <p className="muted small">
-            O site publicado usa a logo acima no ícone e no manifest do app. Para instalar, abra o site no navegador e escolha
-            <strong> Instalar app</strong> ou <strong>Adicionar à tela inicial</strong>. A opção depende do navegador e o site precisa estar publicado em HTTPS.
+            Quando permitido, o visitante pode instalar o site como aplicativo pelo navegador. A página precisa estar publicada em HTTPS.
           </p>
+          <Check
+            label="Permitir que visitantes instalem este site como aplicativo"
+            checked={branding.installEnabled !== false}
+            onChange={(installEnabled) => onChange({ ...branding, installEnabled }, 'branding:install')}
+          />
         </section>
 
         <section className="site-notices">
