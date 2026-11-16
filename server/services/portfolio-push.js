@@ -1,10 +1,10 @@
-import webpush from 'web-push';
+import { sendNotification, setVapidDetails } from 'web-push';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 
 const ready = Boolean(config.webPush.publicKey && config.webPush.privateKey && config.webPush.subject);
 if (ready) {
-  webpush.setVapidDetails(config.webPush.subject, config.webPush.publicKey, config.webPush.privateKey);
+  setVapidDetails(config.webPush.subject, config.webPush.publicKey, config.webPush.privateKey);
 } else {
   console.warn('[push] notificações do portfólio desativadas: configure VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY e VAPID_SUBJECT.');
 }
@@ -27,7 +27,7 @@ export async function notifyPortfolioNotice({ portfolioId, notice, siteName, ico
     const batch = subscriptions.slice(offset, offset + 25);
     await Promise.all(batch.map(async (subscription) => {
       try {
-        await webpush.sendNotification(subscription.subscription, JSON.stringify({
+        await sendNotification(subscription.subscription, JSON.stringify({
           title,
           body,
           url: subscription.url,
