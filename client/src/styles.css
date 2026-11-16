@@ -1430,6 +1430,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-variation-list { display: grid; gap: .55rem; }
 .pr-variation-row { display: grid; grid-template-columns: 5rem minmax(0, 1fr); align-items: end; gap: .65rem; min-width: 0; padding: .65rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #fbfcfe; }
 .pr-variation-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
+.pr-variation-color { display: flex; align-items: center; gap: .5rem; }
+.pr-variation-color input[type='color'] { width: 2.5rem; height: 2.5rem; flex: none; padding: .15rem; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
+.pr-variation-color .input { min-width: 0; }
 .pr-variation-thumb { display: grid; grid-row: span 2; gap: .25rem; min-width: 0; }
 .pr-variation-thumb > img { width: 100%; height: 5.25rem; object-fit: cover; border: 1px solid var(--line); border-radius: 9px; background: #eef2f6; }
 .pr-variation-thumb > span { overflow: hidden; color: var(--muted); font-size: .72rem; text-overflow: ellipsis; white-space: nowrap; }

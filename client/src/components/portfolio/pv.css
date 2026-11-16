@@ -205,6 +205,8 @@
 .pv-card-cat { font-size: .72rem; font-weight: 700; letter-spacing: .04em; text-transform: uppercase; opacity: .6; }
 .pv-card-name { font-weight: 700; font-size: .98rem; line-height: 1.25; overflow-wrap: anywhere; }
 .pv-card-price { font-weight: 800; color: var(--p, #137a52); }
+.pv-card-colors { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.pv-card-colors i { width: .9rem; height: .9rem; border: 1px solid rgba(0, 0, 0, .24); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35); }
 .pv-card { border-radius: var(--card-r, 14px); }
 .pv-card.al-center { text-align: center; } .pv-card.al-center .pv-card-body { justify-items: center; }
 .pv-card.ratio-portrait .pv-card-img { aspect-ratio: 3 / 4; } .pv-card.ratio-landscape .pv-card-img { aspect-ratio: 4 / 3; }

@@ -679,6 +679,7 @@ function CardDesigner({ doc, api }) {
       <Check label="Preço" checked={k.showPrice} onChange={set('showPrice')} />
       <Check label="Preços por quantidade" checked={k.showTiers} onChange={set('showTiers')} />
       <Check label="Variações" checked={k.showVariations} onChange={set('showVariations')} />
+      <Check label="Bolinhas das cores" checked={k.showColorSwatches} onChange={set('showColorSwatches')} />
       <Check label="Botão" checked={k.showButton} onChange={set('showButton')} />
       <Check label="Usar cores próprias no cartão" checked={custom} onChange={(on) => api.patchCatalog({ card: { ...k, bg: on ? '#ffffff' : '', text: on ? '#14202e' : '', accent: on ? doc.theme.primary : '' } }, 'cat:card:colors')} />
       {custom && <>

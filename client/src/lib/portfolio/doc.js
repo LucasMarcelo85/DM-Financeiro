@@ -46,7 +46,7 @@ export const THEME_DEFAULTS = { ...DEFAULT_THEME, bgType: 'solid', bgColor2: '#e
 export const CARD_DEFAULTS = () => ({
   layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, bg: '', text: '', accent: '',
   imgHeight: 180, imgX: 50, imgY: 50, imgPad: 0, imgBg: '', font: '', nameLines: 2, gap: 14, icon: '', iconPos: 'button', iconColor: '',
-  showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true,
+  showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showColorSwatches: false, showButton: true,
   shadow: 'soft', border: false, padding: 'normal', textSize: 'md', priceSize: 'md', buttonStyle: 'solid', buttonFull: true, priceFrom: true,
 });
 export const CATALOG_DEFAULTS = () => ({
@@ -243,10 +243,11 @@ export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.ca
   const w = el.box[device].w;
   const cardW = (w - gap * (cols - 1)) / cols;
   const hasVars = products.some((p) => (p.images || []).length > 1);
+  const hasColors = products.some((p) => (p.images || []).some((image) => image.color || image.colorHex));
   const tierLines = clamp(Math.max(0, ...products.map((p) => (p.priceOptions || []).filter((o) => o.priceCents !== null).length)), 1, 4);
   const parts = [
     k.showCategory && 16, k.showName && Math.ceil(CARD_TEXT[k.textSize] * 1.25 * (k.nameLines || 2)), k.showDescription && 42,
-    k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), k.showTiers && tierLines * 15, k.showVariations && hasVars && 22, k.showButton && 44,
+    k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), k.showTiers && tierLines * 15, k.showVariations && hasVars && 22, k.showColorSwatches && hasColors && 22, k.showButton && 44,
   ].filter(Boolean);
   const body = (CARD_PAD[k.padding] || 22) + parts.reduce((s, n) => s + n, 0) + Math.max(0, parts.length - 1) * 4;
   const ratio = CARD_RATIO[k.ratio] || 1;

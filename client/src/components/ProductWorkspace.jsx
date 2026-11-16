@@ -6,6 +6,7 @@ import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
 import { generateEan13 } from '../lib/barcode.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
+import { colorHexForName } from '../lib/productColors.js';
 
 const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
@@ -81,10 +82,10 @@ function ProductImageUrl({ onAdd, disabled = false, label = 'Imagem principal po
 }
 
 function variationFields(image) {
-  const parsed = Object.entries((image.label || '').split(' · ').map((part) => {
+  const parsed = (image.label || '').split(' · ').map((part) => {
     const separator = part.indexOf(':');
     return separator > 0 ? [part.slice(0, separator).trim(), part.slice(separator + 1).trim()] : ['', ''];
-  }).filter(([type]) => type));
+  }).filter(([type]) => type);
   const extra = parsed.find(([type]) => !['cor', 'tamanho'].includes(type.toLocaleLowerCase('pt-BR')));
   const plainLabel = !image.color && !image.size && image.label && !image.label.includes(':');
   return {
@@ -93,6 +94,10 @@ function variationFields(image) {
     customVariationType: extra ? '' : (plainLabel ? 'Variação' : ''),
     customVariationValue: '',
   };
+}
+
+function colorNeedsSample(image) {
+  return Boolean(image.color?.trim() && !image.colorHex && !colorHexForName(image.color));
 }
 
 function draftFromProduct(product, stockFlows) {
@@ -157,6 +162,7 @@ function productBody(draft) {
   })) {
     throw new Error('Informe pelo menos uma característica para cada foto de variação.');
   }
+  if (draft.variations.some(colorNeedsSample)) throw new Error('Escolha uma amostra visual para cada cor informada.');
   if (!/^\d+$/.test(draft.stockQuantity) || Number(draft.stockQuantity) > 1_000_000) throw new Error('Informe um estoque válido entre 0 e 1.000.000.');
   if ([draft.mainImage, ...draft.variations].filter(Boolean).some((image) => !/^\d+$/.test(image.stockQuantity || '0') || Number(image.stockQuantity || 0) > 1_000_000)) throw new Error('Informe uma quantidade válida no estoque de cada imagem.');
 
@@ -443,7 +449,7 @@ export default function ProductWorkspace({ product, categories, preferences, sto
 }
 
 function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onRemove, onRemoveVariation, onPatchVariation }) {
-  const steps = ['Informações', 'Fotos', 'Preço', 'Estoque', 'Revisar'];
+  const steps = ['Fotos', 'Informações', 'Preço', 'Estoque', 'Revisar'];
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
@@ -451,12 +457,13 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
     key: newKey(), label: '', scope: 'same_product', minQuantity: String(draft.priceOptions.length ? Number(draft.priceOptions[draft.priceOptions.length - 1].minQuantity || 1) + 1 : 1), minCartValue: '', price: '', onRequest: false,
   }] });
   const continueStep = () => {
-    if (step === 0 && draft.name.trim().length < 2) return onStepChange(step, 'Informe o nome do produto ou serviço.');
-    if (step === 0 && !draft.category.trim()) return onStepChange(step, 'Informe uma categoria para organizar este item.');
-    if (step === 1 && draft.variations.some((image) => {
+    if (step === 0 && draft.variations.some((image) => {
       const type = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
       return !image.color?.trim() && !image.size?.trim() && !(type?.trim() && image.variationValue?.trim()) && !(image.customVariationType?.trim() && image.customVariationValue?.trim());
     })) return onStepChange(step, 'Complete a característica de cada foto de variação ou remova a foto.');
+    if (step === 0 && draft.variations.some(colorNeedsSample)) return onStepChange(step, 'Escolha uma amostra visual para cada cor informada.');
+    if (step === 1 && draft.name.trim().length < 2) return onStepChange(step, 'Informe o nome do produto ou serviço.');
+    if (step === 1 && !draft.category.trim()) return onStepChange(step, 'Informe uma categoria para organizar este item.');
     if (step === 2 && !draft.onRequest && !draft.price) return onStepChange(step, 'Informe um preço ou marque “Preço sob consulta”.');
     if (step === 2 && draft.priceOptions.some((option) => !option.label.trim())) return onStepChange(step, 'Dê um nome para cada preço especial ou remova a faixa vazia.');
     if (step === 2 && draft.priceOptions.some((option) => !option.onRequest && !option.price)) return onStepChange(step, 'Informe o preço de cada faixa especial ou marque “Sob consulta”.');
@@ -480,15 +487,15 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
         </span>)}
       </nav>
       <p className="pr-product-step-hint">Etapa {step + 1} de {steps.length}: {[
-        'Conte o básico sobre o item.',
         'Adicione uma foto se quiser; variações também são opcionais.',
+        'Conte o básico sobre o item.',
         'Defina o preço ou deixe para consultar com o cliente.',
         'Estoque e disponibilidade são opcionais.',
         'Confira os dados antes de salvar.',
       ][step]}</p>
 
-      <div className={`pr-product-editor-layout ${step === 1 || step === 4 ? '' : 'is-single'}`}>
-        {(step === 1 || step === 4) && <aside className="pr-product-preview">
+      <div className={`pr-product-editor-layout ${step === 0 || step === 4 ? '' : 'is-single'}`}>
+        {(step === 0 || step === 4) && <aside className="pr-product-preview">
           <label className="pr-main-photo" htmlFor={mainPhotoPickerId} aria-label={draft.mainImage ? 'Trocar foto principal' : 'Adicionar foto principal'}>
             <input id={mainPhotoPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
               const file = event.currentTarget.files?.[0];
@@ -506,8 +513,8 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
         }
 
         <div className="pr-product-editor-content">
-          {step === 0 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>1</span><div><h3>O que você está cadastrando?</h3><p>Preencha o nome e a categoria para encontrar este item mais facilmente.</p></div></div>
+          {step === 1 && <section className="pr-editor-section">
+            <div className="pr-section-title"><span>2</span><div><h3>O que você está cadastrando?</h3><p>Preencha o nome e a categoria para encontrar este item mais facilmente.</p></div></div>
             <div className="seg" role="radiogroup" aria-label="Tipo do item" style={{ '--n': 2 }}>
               <button type="button" role="radio" aria-checked={draft.kind === 'produto'} className={draft.kind === 'produto' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'produto' })}>Produto</button>
               <button type="button" role="radio" aria-checked={draft.kind === 'servico'} className={draft.kind === 'servico' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'servico' })}>Serviço</button>
@@ -520,13 +527,16 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
             </div>
           </section>}
 
-          {step === 1 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>2</span><div><h3>Fotos e variações</h3><p>A foto principal apresenta o item. Se houver opções como cores ou tamanhos, adicione uma foto para cada uma. Se não houver, pode seguir sem preencher nada.</p></div></div>
+          {step === 0 && <section className="pr-editor-section">
+            <div className="pr-section-title"><span>1</span><div><h3>Fotos e variações</h3><p>A foto principal apresenta o item. Se houver opções como cores ou tamanhos, adicione uma foto para cada uma. Se não houver, pode seguir sem preencher nada.</p></div></div>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => <div className="pr-variation-row" key={image.key}>
                 <div className="pr-variation-thumb"><img src={image.url} alt={`Variação ${variationIndex + 1} de ${draft.name || `produto ${index + 1}`}`} /><span>Variação {variationIndex + 1}</span></div>
                 <div className="pr-variation-fields">
-                  <label className="field"><span>Cor <small>(opcional)</small></span><input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" /></label>
+                  <label className="field"><span>Cor <small>(opcional)</small></span><span className="pr-variation-color">
+                    <input type="color" value={image.colorHex || colorHexForName(image.color) || '#cccccc'} onChange={(event) => onPatchVariation(image.key, { colorHex: event.target.value })} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
+                    <input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" />
+                  </span><small>Escolha a amostra visual e informe o nome da cor.</small></label>
                   <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
                   <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
                     <option value="">Não se aplica</option>

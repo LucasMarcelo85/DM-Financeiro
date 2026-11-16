@@ -8,6 +8,7 @@ import { CLIP_IDS, SHAPE_PATHS, clipId } from '../../lib/portfolio/shapes.js';
 import { fontCss, linkHref, parseVideo, readableOn } from '../../lib/portfolio/model.js';
 import { preparePortfolioCode } from '../../lib/portfolio/portfolioCode.js';
 import { brl } from '../../lib/format.js';
+import { colorHexForName } from '../../lib/productColors.js';
 
 // Desenha a página do portfólio (formato v2). O mesmo código serve ao editor, à visualização e à página pública:
 //  mode 'edit'   → ferramentas de edição, links desligados, imagens vazias mostram um espaço reservado
@@ -393,6 +394,13 @@ function VideoView({ el, mode }) {
 export function ProductCard({ p, cardStyle = 'soft', price = true, action, card }) {
   const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
   const img = p.mainImage || p.images[0];
+  const colorSwatches = [...new Map((p.images || [])
+    .filter((image) => image.color || image.colorHex)
+    .map((image) => {
+      const hex = image.colorHex || colorHexForName(image.color) || '#cccccc';
+      const key = image.colorHex || colorHexForName(image.color) || image.color.trim().toLocaleLowerCase('pt-BR');
+      return [key, { hex, label: image.color || 'Cor da variação' }];
+    })).values()];
   const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null);
   const tierThreshold = (option) => option.scope === 'cart_value'
     ? `a partir de ${brl(option.minCartCents || 0)} no carrinho`
@@ -434,6 +442,9 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card 
       <div className="pv-card-body">
         {k.showCategory && <span className="pv-card-cat">{p.category}</span>}
         {k.showName && <span className="pv-card-name">{iconAt('name')}{p.name}</span>}
+        {k.showColorSwatches && colorSwatches.length > 0 && <span className="pv-card-colors" aria-label="Cores disponíveis">
+          {colorSwatches.map((color) => <i key={color.hex + color.label} title={color.label} aria-label={color.label} style={{ backgroundColor: color.hex }} />)}
+        </span>}
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
         {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} {tierThreshold(t)}</small>)}</span>}
