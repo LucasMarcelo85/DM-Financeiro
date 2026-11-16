@@ -8,6 +8,7 @@ import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars } from '.
 import Stage from '../components/portfolio/Stage.jsx';
 import { ElementInspector, PageInspector } from '../components/portfolio/Inspector.jsx';
 import ImageEditor from '../components/portfolio/ImageEditor.jsx';
+import SiteSettingsModal from '../components/portfolio/SiteSettingsModal.jsx';
 import ShareModal from '../components/portfolio/ShareModal.jsx';
 import CatalogSettings from '../components/CatalogSettings.jsx';
 import {
@@ -61,6 +62,7 @@ export default function PortfolioEditor() {
   const [imageUrl, setImageUrl] = useState('');
   const [imageUrlBusy, setImageUrlBusy] = useState(false);
   const [catalogCfg, setCatalogCfg] = useState(false);
+  const [siteSettingsOpen, setSiteSettingsOpen] = useState(false);
   const [converted, setConverted] = useState(false);
   const [interacting, setInteracting] = useState(false);
   const [panelW, setPanelW] = useState(() => {
@@ -176,7 +178,12 @@ export default function PortfolioEditor() {
     saving.current = true;
     setSaveState('saving');
     try {
-      await api.patch(`/portfolios/${id}`, { name: nameRef.current, data: docRef.current });
+      const result = await api.patch(`/portfolios/${id}`, { name: nameRef.current, data: docRef.current });
+      if (result.pushNotifications?.configured === false) {
+        toast('Página salva, mas o envio de notificações não está configurado no servidor.', 'error');
+      } else if (result.pushNotifications?.failed) {
+        toast(`Página salva, mas falhou o envio de ${result.pushNotifications.failed} notificação(ões).`, 'error');
+      }
       savedVersion.current = v;
       saving.current = false;
       setSaveState(version.current === v ? 'saved' : 'dirty');
@@ -225,8 +232,13 @@ export default function PortfolioEditor() {
     setBusy('publish');
     try {
       if (!(await save())) return;
-      const { portfolio } = await api.patch(`/portfolios/${id}`, { published: value });
+      const { portfolio, pushNotifications } = await api.patch(`/portfolios/${id}`, { published: value });
       setMeta((m) => ({ ...m, published: portfolio.published }));
+      if (pushNotifications?.configured === false) {
+        toast('Página publicada, mas o envio de notificações não está configurado no servidor.', 'error');
+      } else if (pushNotifications?.failed) {
+        toast(`Página publicada, mas falhou o envio de ${pushNotifications.failed} notificação(ões).`, 'error');
+      }
       toast(value ? 'Página publicada. O link já funciona.' : 'Página despublicada: agora só você vê.');
       if (value) setShare(true);
     } catch (e) { toast(e.message, 'error'); } finally { setBusy(''); }
@@ -500,6 +512,7 @@ export default function PortfolioEditor() {
           <span className="ce-lbl">Fundo</span>
           <input type="color" value={doc.theme.bg} onChange={(e) => inspectorApi.patchTheme({ bg: e.target.value }, 'theme:bg')} aria-label="Cor de fundo do site" />
         </label>
+        <button type="button" className="btn btn-ghost btn-sm" onClick={() => setSiteSettingsOpen(true)}>Identidade e avisos</button>
         <span className="pe-zoom" role="group" aria-label="Zoom">
           <button type="button" className="ce-mini" onClick={() => setManualZoom(ZOOMS[Math.max(0, zoomIdx - 1)])} disabled={zoomIdx === 0} title="Diminuir" aria-label="Diminuir zoom"><EIcon name="zoom-out" size={16} /></button>
           <button type="button" className="pe-zoom-val" onClick={() => setManualZoom(null)} title="Ajustar à tela">{Math.round(zoom * 100)}%</button>
@@ -613,6 +626,11 @@ export default function PortfolioEditor() {
           onApply={(src) => { commit(patchElement(docRef.current, toolEl.id, { src, zoom: 1, px: 50, py: 50 })); toast('Imagem atualizada.'); }} />
       )}
       {catalogCfg && <CatalogSettings onClose={() => setCatalogCfg(false)} />}
+      {siteSettingsOpen && <SiteSettingsModal
+        branding={doc.branding}
+        onChange={(branding, key) => commit({ ...docRef.current, branding }, key)}
+        onClose={() => setSiteSettingsOpen(false)}
+      />}
       {share && <ShareModal name={name} path={meta.path} published={meta.published} busy={busy === 'publish'} onPublish={() => setPublished(true)} onClose={() => setShare(false)} />}
       {leave && (
         <Modal title="Alterações não salvas" onClose={() => setLeave(false)}

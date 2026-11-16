@@ -25,6 +25,7 @@ import storeRoutes from './stores.js';
 import aiRoutes from './ai.js';
 import { publicUser } from '../services/access.js';
 import { workspaceFor, workspaceUser } from '../services/workspace.js';
+import { decodeImage } from '../utils/portfolio.js';
 
 // Aplicativo do lojista: permissões e dados ficam restritos à loja/site associado ao acesso.
 const router = Router();
@@ -33,6 +34,13 @@ const DUMMY_HASH = bcrypt.hashSync('dm-shop-app', 10);
 
 const appName = (store) => store.appName || store.name;
 const appColor = (store) => store.appColor || '#F2A33A';
+async function appBranding(store) {
+  const page = await prisma.portfolio.findFirst({
+    where: { userId: store.userId, storeId: store.id, isMain: true },
+    select: { data: true },
+  });
+  return page?.data?.branding || {};
+}
 const appForeground = (store) => {
   const hex = /^#([0-9a-f]{6})$/i.exec(appColor(store))?.[1] || 'F2A33A';
   const channel = (offset) => {
@@ -74,22 +82,38 @@ async function storeFor(req) {
 
 router.get('/info', async (req, res) => {
   const store = await storeFor(req);
-  res.json({ name: appName(store), color: appColor(store), slug: store.slug });
+  const branding = await appBranding(store);
+  res.json({ name: store.appName || branding.siteName || store.config?.storeName || store.name, color: appColor(store), slug: store.slug });
 });
 
 router.get('/manifest', async (req, res) => {
   const store = await storeFor(req);
+  const branding = await appBranding(store);
+  const name = store.appName || branding.siteName || store.config?.storeName || store.name;
   const start = req.customDomain ? '/app' : `/app/${store.slug}`;
+  const icon = `/api/shop-app/icon?u=${encodeURIComponent(store.slug)}`;
+  const mime = /^data:(image\/(?:png|jpeg|webp));base64,/.exec(branding.logo || '')?.[1] || 'image/svg+xml';
   res.type('application/manifest+json').json({
-    name: appName(store), short_name: appName(store).slice(0, 12), start_url: start, scope: start,
+    name, short_name: name.slice(0, 12), start_url: start, scope: start,
     display: 'standalone', background_color: '#ffffff', theme_color: appColor(store),
-    icons: [{ src: `/api/shop-app/icon?u=${store.slug}`, sizes: 'any', type: 'image/svg+xml', purpose: 'any' }],
+    icons: [{ src: icon, sizes: 'any', type: mime, purpose: 'any' }],
   });
 });
 
 router.get('/icon', async (req, res) => {
   const store = await storeFor(req);
-  const letter = appName(store).trim().charAt(0).toUpperCase().replace(/[<>&"']/g, '') || 'L';
+  const branding = await appBranding(store);
+  const logo = decodeImage(branding.logo || '');
+  if (logo) {
+    return res.set({
+      'Content-Type': logo.mime,
+      'Cache-Control': 'no-cache',
+      'Cross-Origin-Resource-Policy': 'cross-origin',
+      'X-Content-Type-Options': 'nosniff',
+    }).send(logo.buffer);
+  }
+  const name = store.appName || branding.siteName || store.config?.storeName || store.name;
+  const letter = name.trim().charAt(0).toUpperCase().replace(/[<>&"']/g, '') || 'L';
   res.type('image/svg+xml').set('Cache-Control', 'public, max-age=3600').send(
     `<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${appColor(store)}"/><text x="256" y="350" font-size="280" font-weight="700" text-anchor="middle" fill="${appForeground(store)}" font-family="sans-serif">${letter}</text></svg>`,
   );

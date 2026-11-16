@@ -489,6 +489,7 @@ function cleanDocV2(raw, kindHint) {
   if (raw.elements.length > MAX_ELEMENTS) throw new AppError(400, `A página pode ter no máximo ${MAX_ELEMENTS} elementos.`);
   const t = isObj(raw.theme) ? raw.theme : {};
   const seo = isObj(raw.seo) ? raw.seo : {};
+  const branding = isObj(raw.branding) ? raw.branding : {};
   const px = isObj(raw.pixel) ? raw.pixel : {};
   const h = isObj(raw.heights) ? raw.heights : {};
   const kind = KINDS.has(kindHint) ? kindHint : KINDS.has(raw.kind) ? raw.kind : 'site';
@@ -502,6 +503,28 @@ function cleanDocV2(raw, kindHint) {
       bgType: pick(t.bgType, FILL_TYPE, 'solid'), bgColor2: color(t.bgColor2, '#e9eef5'), bgAngle: num(t.bgAngle, 0, 360, 135), bgAnimate: pick(t.bgAnimate, FILL_ANIM, 'none'),
     },
     seo: { title: line(seo.title, 120), description: str(seo.description, 300).replace(/[\r\n]+/g, ' ') },
+    branding: {
+      siteName: line(branding.siteName, 80),
+      logo: (() => {
+        const src = image(branding.logo);
+        if (src && !/^data:image\/(?:png|jpeg|webp);base64,/.test(src)) {
+          throw new AppError(400, 'A logo precisa ser PNG, JPG ou WebP enviado do seu dispositivo.');
+        }
+        return src;
+      })(),
+      notices: (Array.isArray(branding.notices) ? branding.notices : []).slice(0, 10)
+        .map((notice, index) => {
+          const item = isObj(notice) ? notice : {};
+          const title = line(item.title, 80);
+          const message = str(item.message, 500);
+          return {
+            id: typeof item.id === 'string' && ID.test(item.id) ? item.id : `notice-${index + 1}`,
+            title,
+            message,
+          };
+        })
+        .filter((notice) => notice.title || notice.message),
+    },
     // Pixel de acompanhamento para tráfego pago (só os identificadores; os scripts oficiais são carregados na página pública).
     pixel: {
       meta: typeof px.meta === 'string' && META_ID.test(px.meta.trim()) ? px.meta.trim() : '',

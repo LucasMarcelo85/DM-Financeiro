@@ -179,6 +179,7 @@ app.use('/api/webhooks/orders', limiter(60, 15 * 60 * 1000));
 app.use('/api/webhooks/orders', rateLimit({ windowMs: 15 * 60 * 1000, limit: 12, skipFailedRequests: true, standardHeaders: true, legacyHeaders: false, message: { error: 'Muitos pedidos em pouco tempo. Aguarde um pouco e tente de novo.' } }));
 app.use('/api/public/catalog/shipping', limiter(40, 10 * 60 * 1000)); // simulação de frete (chama serviços externos)
 app.use('/api/public/catalog/payment-status', limiter(60, 10 * 60 * 1000)); // confirmações consultam APIs dos provedores
+app.use('/api/public/portfolio/push-subscription', limiter(20, 10 * 60 * 1000));
 app.use('/api/public/cep', limiter(60, 10 * 60 * 1000));
 
 app.get('/api/health', async (_req, res) => {

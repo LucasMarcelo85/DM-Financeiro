@@ -10,6 +10,7 @@ import { KINDS, cleanPortfolioDoc, cleanPortfolioName, emptyPortfolioDoc } from 
 import { isValidSlug, pickSlug, slugify } from '../utils/slug.js';
 import { storeScope } from '../utils/store.js';
 import { generatePortfolioPlan, buildPortfolioDocuments } from '../services/ai-portfolio.js';
+import { notifyPortfolioNotice } from '../services/portfolio-push.js';
 
 // Portfólio do usuário logado: páginas públicas personalizáveis.
 // Endereço: dominio/<portfolioSlug do usuário> = página principal; dominio/<portfolioSlug>/<slug da página> = as demais.
@@ -342,14 +343,23 @@ router.post('/', async (req, res) => {
 });
 
 router.patch('/:id', async (req, res) => {
-  const current = await owned(req);
   const body = req.body || {};
+  const current = await owned(req, body.data !== undefined || body.published === true);
   const patch = {};
   if (body.name !== undefined) patch.name = cleanPortfolioName(body.name);
-  if (body.data !== undefined) patch.data = cleanPortfolioDoc(body.data, current.kind); // o tipo da página não muda depois de criada
+  let noticesToSend = [];
+  if (body.data !== undefined) {
+    patch.data = cleanPortfolioDoc(body.data, current.kind); // o tipo da página não muda depois de criada
+    const previousNotices = new Map((current.data?.branding?.notices || []).map((notice) => [notice.id, `${notice.title}\n${notice.message}`]));
+    noticesToSend = (patch.data.branding?.notices || []).filter((notice) =>
+      previousNotices.get(notice.id) !== `${notice.title}\n${notice.message}`);
+  }
   if (body.published !== undefined) {
     if (typeof body.published !== 'boolean') throw new AppError(400, 'Valor inválido para publicar.');
     patch.published = body.published;
+  }
+  if (!current.published && body.published === true) {
+    noticesToSend = patch.data?.branding?.notices || current.data?.branding?.notices || [];
   }
   if (body.slug !== undefined) {
     const slug = slugify(String(body.slug));
@@ -360,7 +370,33 @@ router.patch('/:id', async (req, res) => {
   try {
     const p = await prisma.portfolio.update({ where: { id: current.id }, data: patch, select: summarySelect });
     const { userSlug, owner } = await addressFor(req.user, p.storeId);
-    res.json({ portfolio: summaryDTO(p, userSlug, owner) });
+    let pushNotifications;
+    if (p.published && noticesToSend.length) {
+      const pageQuery = `u=${encodeURIComponent(userSlug)}${p.isMain ? '' : `&p=${encodeURIComponent(p.slug)}`}`;
+      const iconUrl = `/api/public/portfolio/icon?${pageQuery}`;
+      pushNotifications = { configured: true, subscribers: 0, sent: 0, failed: 0 };
+      for (const notice of noticesToSend) {
+        try {
+          const result = await notifyPortfolioNotice({
+            portfolioId: p.id,
+            notice,
+            siteName: patch.data?.branding?.siteName || current.data?.branding?.siteName || owner.name || p.name,
+            iconUrl,
+          });
+          pushNotifications.configured = pushNotifications.configured && result.configured;
+          pushNotifications.subscribers += result.subscribers;
+          pushNotifications.sent += result.sent;
+          pushNotifications.failed += result.failed;
+        } catch (error) {
+          pushNotifications.failed += 1;
+          console.error('[portfolio] página salva, mas falhou ao enviar aviso push:', error.message);
+        }
+      }
+    }
+    res.json({
+      portfolio: summaryDTO(p, userSlug, owner),
+      ...(pushNotifications ? { pushNotifications } : {}),
+    });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Você já tem outra página com esse endereço. Escolha outro.');
     throw e;

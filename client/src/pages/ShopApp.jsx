@@ -124,7 +124,15 @@ export default function ShopApp() {
     link.rel = 'manifest';
     link.href = `/api/shop-app/manifest${q}`;
     document.head.appendChild(link);
-    return () => link.remove();
+    const icon = document.createElement('link');
+    icon.rel = 'icon';
+    icon.href = `/api/shop-app/icon${q}`;
+    document.head.appendChild(icon);
+    const appleIcon = document.createElement('link');
+    appleIcon.rel = 'apple-touch-icon';
+    appleIcon.href = `/api/shop-app/icon${q}`;
+    document.head.appendChild(appleIcon);
+    return () => { link.remove(); icon.remove(); appleIcon.remove(); };
   }, [info, q]);
 
   async function login(e) {

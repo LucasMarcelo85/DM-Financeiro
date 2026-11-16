@@ -15,6 +15,8 @@ npm run dev              # API em :3001 e front em http://localhost:5173
 
 Produção sem Docker: `npm run build`, `npm run db:deploy` e `npm start`.
 
+Para notificações push dos avisos do portfólio, gere as chaves VAPID com `npx web-push generate-vapid-keys` e configure `VAPID_PUBLIC_KEY`, `VAPID_PRIVATE_KEY` e `VAPID_SUBJECT` no ambiente do servidor. Use HTTPS e mantenha o mesmo par de chaves após o deploy; a chave privada nunca deve ser publicada. Os visitantes também precisam ativar as notificações no próprio navegador/aplicativo.
+
 Comandos do banco: `npm run db:deploy` (aplica as migrações), `npm run db:migrate` (cria uma nova migração depois de editar `prisma/schema.prisma`, só em desenvolvimento), `npm run db:studio` (visualizar os dados).
 
 Teste automático do backend (cria um banco temporário, usa Evolution, Meta e InfinitePay simuladas):

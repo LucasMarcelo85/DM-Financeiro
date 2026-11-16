@@ -64,6 +64,11 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
+  webPush: {
+    publicKey: (env.VAPID_PUBLIC_KEY || '').trim(),
+    privateKey: (env.VAPID_PRIVATE_KEY || '').trim(),
+    subject: (env.VAPID_SUBJECT || '').trim(),
+  },
   easypanel: {
     url: trimSlash(env.EASYPANEL_API_URL),
     apiKey: (env.EASYPANEL_API_KEY || '').trim(),

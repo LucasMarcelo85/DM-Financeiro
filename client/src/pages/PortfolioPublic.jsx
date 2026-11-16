@@ -3,6 +3,7 @@ import { Link, useParams } from 'react-router-dom';
 import { api } from '../api.js';
 import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageScale } from '../components/portfolio/Canvas.jsx';
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
+import PortfolioPushPrompt from '../components/portfolio/PortfolioPushPrompt.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 import { makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
@@ -35,8 +36,33 @@ export default function PortfolioPublic({ fixedUser = '' }) {
   useEffect(() => {
     if (!page) return undefined;
     const before = document.title;
-    document.title = page.doc.seo.title || page.name || owner?.name || before;
+    document.title = page.doc.branding?.siteName || page.doc.seo.title || owner?.siteName || page.name || owner?.name || before;
     return () => { document.title = before; };
+  }, [page, owner]);
+
+  useEffect(() => {
+    if (!page || !owner?.slug) return undefined;
+    const query = new URLSearchParams({ u: owner.slug });
+    if (!page.isMain) query.set('p', page.slug);
+    const iconUrl = `/api/public/portfolio/icon?${query}`;
+    const links = [
+      ['icon', iconUrl],
+      ['apple-touch-icon', iconUrl],
+      ['manifest', `/api/public/portfolio/manifest?${query}`],
+    ].map(([rel, href]) => {
+      const link = document.createElement('link');
+      link.rel = rel;
+      link.href = href;
+      document.head.appendChild(link);
+      return link;
+    });
+    const themeColor = document.querySelector('meta[name="theme-color"]');
+    const previousColor = themeColor?.content;
+    if (themeColor) themeColor.content = page.doc.theme.primary;
+    return () => {
+      links.forEach((link) => link.remove());
+      if (themeColor && previousColor) themeColor.content = previousColor;
+    };
   }, [page, owner]);
 
   // Pixels de rastreamento (Meta, Google, TikTok): só carregam quando o dono informou os códigos.
@@ -73,6 +99,8 @@ function PublicPage({ page, products, store, slug, credit }) {
   if (doc.editor === 'grapesjs') {
     return (
       <div className="pv-root gpe-published" style={style}>
+        <PublicNotices notices={doc.branding?.notices} />
+        <PortfolioPushPrompt slug={slug} page={page} />
         <iframe title={doc.title || page.name || 'Página do portfólio'} sandbox="" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
         {credit !== false && <PageCredit theme={doc.theme} />}
       </div>
@@ -83,6 +111,8 @@ function PublicPage({ page, products, store, slug, credit }) {
     <div className="pv-root" style={style}>
       <PageBackground theme={doc.theme} />
       <ClipDefs />
+      <PublicNotices notices={doc.branding?.notices} />
+      <PortfolioPushPrompt slug={slug} page={page} />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
           <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />
@@ -92,5 +122,20 @@ function PublicPage({ page, products, store, slug, credit }) {
       {showCart && <CartPage doc={doc} products={products} store={store} slug={slug} cart={cart} onBack={() => goCart(false)} pixelOn={pixelOn} />}
       {credit !== false && <PageCredit theme={doc.theme} />}
     </div>
+  );
+}
+
+function PublicNotices({ notices = [] }) {
+  const active = notices.filter((notice) => notice.title || notice.message);
+  if (!active.length) return null;
+  return (
+    <aside className="pv-announcements" aria-label="Avisos da loja">
+      {active.map((notice) => (
+        <section className="pv-announcement" key={notice.id}>
+          {notice.title && <strong>{notice.title}</strong>}
+          {notice.message && <p>{notice.message}</p>}
+        </section>
+      ))}
+    </aside>
   );
 }

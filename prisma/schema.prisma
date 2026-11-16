@@ -355,10 +355,27 @@ model Portfolio {
   updatedAt DateTime @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+  pushSubscriptions PortfolioPushSubscription[]
 
   @@unique([userId, slug])
   @@index([userId, updatedAt])
   @@map("portfolios")
+}
+
+model PortfolioPushSubscription {
+  id           Int      @id @default(autoincrement())
+  portfolioId  Int      @map("portfolio_id")
+  endpoint     String
+  subscription Json
+  url          String   @default("/")
+  createdAt    DateTime @default(now()) @map("created_at")
+  updatedAt    DateTime @updatedAt @map("updated_at")
+
+  portfolio Portfolio @relation(fields: [portfolioId], references: [id], onDelete: Cascade)
+
+  @@unique([portfolioId, endpoint])
+  @@index([portfolioId])
+  @@map("portfolio_push_subscriptions")
 }
 
 // ---------- Auditoria de conversas ----------
