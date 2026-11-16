@@ -11,10 +11,6 @@ import { brl } from '../../lib/format.js';
 import { colorHexForName } from '../../lib/productColors.js';
 import { useImageLightbox } from './ImageLightbox.jsx';
 
-// Desenha a página do portfólio (formato v2). O mesmo código serve ao editor, à visualização e à página pública:
-//  mode 'edit'   → ferramentas de edição, links desligados, imagens vazias mostram um espaço reservado
-//  mode 'public' → links funcionam, o que está vazio não aparece
-// `animate`: liga as animações de entrada e as contínuas (na página pública sempre; no editor só ao clicar em "Testar animações").
 
 // ---------------------------------------------------------------- escala por tamanho de tela
 export function usePageScale() {

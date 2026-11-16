@@ -10,7 +10,6 @@ import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
 
-// Catálogo digital (duas páginas): início com os produtos e carrinho com a finalização do pedido.
 
 // ---------------------------------------------------------------- carrinho (guardado no aparelho do cliente)
 export function useCart(slug) {
