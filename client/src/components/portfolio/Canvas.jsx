@@ -123,7 +123,7 @@ function ImageView({ el, mode }) {
     <div className={masked && el.shadow !== 'none' ? `ds-${el.shadow}` : ''} style={{ width: '100%', height: '100%', position: 'relative' }}>
       <div className={`pv-img${!masked && el.shadow !== 'none' ? ` sh-${el.shadow}` : ''}`} style={wrapStyle}>
         {mode === 'public' && lightbox
-          ? <button type="button" className="pv-image-trigger" onClick={() => lightbox.openImage(el.src, el.alt || '', linkHref(el.link))} aria-label={`Ampliar imagem${el.alt ? `: ${el.alt}` : ''}`}>
+          ? <button type="button" className="pv-image-trigger" onClick={(event) => { event.preventDefault(); event.stopPropagation(); lightbox.openImage(el.src, el.alt || '', linkHref(el.link)); }} aria-label={`Ampliar imagem${el.alt ? `: ${el.alt}` : ''}`}>
             <img src={el.src} alt={el.alt || ''} draggable={false} decoding="async" loading={undefined} style={imgStyle} />
           </button>
           : <img src={el.src} alt={el.alt || ''} draggable={false} decoding="async" loading={undefined} style={imgStyle} />}
@@ -213,10 +213,11 @@ function CarouselView({ el, mode }) {
           const img = <img src={s.src} alt={s.alt || ''} draggable="false" style={{ objectFit: el.fit }} />;
           const content = mode === 'public' && lightbox
             ? <div role="button" tabIndex={0} className="pv-car-image-trigger"
-              onClick={() => lightbox.openImage(s.src, s.alt || '', href)}
+              onClick={(event) => { event.preventDefault(); event.stopPropagation(); lightbox.openImage(s.src, s.alt || '', href); }}
               onKeyDown={(event) => {
                 if (event.key === 'Enter' || event.key === ' ') {
                   event.preventDefault();
+                  event.stopPropagation();
                   lightbox.openImage(s.src, s.alt || '', href);
                 }
               }}
@@ -455,7 +456,7 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card,
       {k.showImage && (
         <div className="pv-card-img" style={k.imgBg ? { background: k.imgBg } : undefined}>
           {img && (lightbox && zoomImage
-            ? <button type="button" className="pv-card-image-trigger" onClick={(event) => { event.stopPropagation(); lightbox.openImage(img.url, p.name); }} aria-label={`Ampliar imagem de ${p.name}`}>
+            ? <button type="button" className="pv-card-image-trigger" onClick={(event) => { event.preventDefault(); event.stopPropagation(); lightbox.openImage(img.url, p.name); }} aria-label={`Ampliar imagem de ${p.name}`}>
               <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />
             </button>
             : <img src={img.url} alt={p.name} loading="lazy" decoding="async" style={imgStyle} />)}
