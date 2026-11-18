@@ -155,12 +155,15 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
 }
 
 function PublicNotices({ notices = [] }) {
-  const active = notices.filter((notice) => notice.title || notice.message);
+  const [dismissed, setDismissed] = useState(() => new Set());
+  const active = notices.filter((notice) => (notice.title || notice.message) && !dismissed.has(notice.id));
   if (!active.length) return null;
   return (
     <aside className="pv-announcements" aria-label="Avisos da loja">
       {active.map((notice) => (
         <section className="pv-announcement" key={notice.id}>
+          <button type="button" className="pv-announcement-close" onClick={() => setDismissed((current) => new Set(current).add(notice.id))}
+            aria-label={`Fechar aviso${notice.title ? `: ${notice.title}` : ''}`}>×</button>
           {notice.title && <strong>{notice.title}</strong>}
           {notice.message && <p>{notice.message}</p>}
         </section>
