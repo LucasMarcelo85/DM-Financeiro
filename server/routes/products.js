@@ -96,7 +96,9 @@ async function setActiveStockFlows(tx, req, productId, storeId, requestedFlowIds
 function createData(data, userId, storeId) {
   const { images, priceOptions, ...product } = data;
   if (priceOptions.some((option) => option.id !== undefined)) throw new AppError(400, 'Não envie formas de preço existentes ao cadastrar um item.');
-  if (images.some((image) => !image.upload && !image.externalUrl)) throw new AppError(400, 'Envie novamente as imagens do produto.');
+  if (images.some((image) => image.id !== undefined || (image.isPrimary && !image.upload && !image.externalUrl))) {
+    throw new AppError(400, 'Envie novamente as imagens do produto.');
+  }
   return {
     ...product,
     userId,

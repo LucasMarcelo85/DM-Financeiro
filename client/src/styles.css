@@ -1032,6 +1032,10 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .admin-addon-fields > .field { margin: 0; }
 .check-line { display: flex; align-items: center; gap: 0.55rem; font-weight: 600; font-size: 0.925rem; cursor: pointer; }
 .check-line input { accent-color: var(--ink); width: 1.1rem; height: 1.1rem; }
+.pr-until-paid { align-items: flex-start; margin-top: .9rem; }
+.pr-until-paid > input { margin-top: .15rem; flex: none; }
+.pr-until-paid > span { display: grid; gap: .2rem; }
+.pr-until-paid small { color: var(--muted); font-weight: 400; line-height: 1.45; }
 .sapp-steps { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .55rem; }
 .sapp-step { display: flex; align-items: center; gap: .55rem; min-width: 0; padding: .65rem; text-align: left; border: 1px solid var(--line); border-radius: var(--r-sm); background: var(--card); color: var(--text); cursor: pointer; }
 .sapp-step.is-active { border-color: var(--amber); background: var(--amber-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 18%, transparent); }

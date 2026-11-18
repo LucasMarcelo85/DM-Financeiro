@@ -50,6 +50,7 @@ export const scheduleDTO = (s) => ({
   id: s.id,
   kind: s.kind,
   recurrence: s.recurrence,
+  untilPaid: Boolean(s.untilPaid),
   status: s.status,
   amountCents: s.amountCents,
   text: s.text,

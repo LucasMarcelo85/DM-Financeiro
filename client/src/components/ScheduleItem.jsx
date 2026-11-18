@@ -13,6 +13,7 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
   const lastPaid = isBill ? s.payments?.[0] : null; // pagamento do vencimento mais recente
   const overdue = overdueDues(s);
   const overdueTotal = overdue.length * (s.amountCents || 0);
+  const recurrenceLabel = s.recurrence === 'mensal' ? 'Mensal' : s.recurrence === 'semanal' ? 'Até pagar' : 'Avulsa';
 
   return (
     <li className={`sched kind-${s.kind} ${s.status === 'pausada' ? 'is-paused' : ''}`}>
@@ -23,10 +24,12 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
           {s.amountCents != null && <span className="sched-amount">{brl(s.amountCents)}</span>}
         </div>
         <div className="sched-meta">
-          <span className={`tag ${s.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{s.recurrence === 'mensal' ? 'Mensal' : s.recurrence === 'semanal' ? 'Até pagar' : 'Avulsa'}</span>
+          <span className={`tag ${s.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{s.untilPaid && s.recurrence !== 'semanal' ? `${recurrenceLabel} · até pagar` : recurrenceLabel}</span>
           <span className={`pill ${st.cls}`}>{st.label}</span>
           {overdue.length > 0 && <span className="pill pill-failed">Em atraso</span>}
-          <span>{s.recurrence === 'semanal' ? `Cobrar ${weekDaysLabel(s.weekDays)} até pagar, ${s.sendTime}` : `${dueText(s)} · avisa ${beforeText(s.daysBefore)}, ${s.sendTime}`}</span>
+          <span>{s.recurrence === 'semanal'
+            ? `Cobrar ${weekDaysLabel(s.weekDays)} até pagar, ${s.sendTime}`
+            : `${dueText(s)} · avisa ${beforeText(s.daysBefore)}${s.untilPaid ? ' e diariamente após vencer até marcar como paga' : ''}, ${s.sendTime}`}</span>
         </div>
         {overdue.length > 0 && (
           <div className="sched-overdue">

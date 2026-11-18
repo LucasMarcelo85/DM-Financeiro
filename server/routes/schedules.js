@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
-import { TIME_RE, defaultPayableDue, firstOccurrence, localToday, parseISODate, payableDues, toISODate } from '../utils/schedule.js';
+import { TIME_RE, defaultPayableDue, firstOccurrence, localToday, occurrenceAfter, occurrenceAfterPaid, parseISODate, payableDues, toISODate } from '../utils/schedule.js';
 import { billingPaymentDTO, scheduleDTO } from '../utils/serialize.js';
 import { deliver, instanceCandidates, loadMedia, logMessage, pickOpenInstance, renderFor } from '../services/dispatcher.js';
 
@@ -22,6 +22,7 @@ async function getOwned(req) {
 function parseFields(body, kind) {
   const recurrence = body.recurrence === 'mensal' ? 'mensal' : body.recurrence === 'semanal' && kind === 'cobranca' ? 'semanal' : body.recurrence === 'avulsa' ? 'avulsa' : null;
   if (!recurrence) throw new AppError(400, 'Escolha se é avulso, mensal ou cobrança até pagar.');
+  const untilPaid = kind === 'cobranca' && body.untilPaid === true;
 
   if (recurrence === 'semanal' && !Array.isArray(body.weekDays)) throw new AppError(400, 'Selecione pelo menos um dia da semana para cobrar.');
   const weekDays = recurrence === 'semanal' ? [...new Set(body.weekDays)].sort((a, b) => a - b) : [];
@@ -52,9 +53,9 @@ function parseFields(body, kind) {
   }
 
   const sendNow = body.sendMode === 'agora';
-  if (sendNow && recurrence !== 'avulsa') throw new AppError(400, 'Enviar agora só vale para envio avulso.');
+  if (sendNow && (recurrence !== 'avulsa' || untilPaid)) throw new AppError(400, 'Enviar agora só vale para cobrança avulsa sem repetição até o pagamento.');
 
-  return { recurrence, weekDays, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow, mediaId: body.mediaId === '' || body.mediaId == null ? null : Number(body.mediaId) };
+  return { recurrence, untilPaid, weekDays, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow, mediaId: body.mediaId === '' || body.mediaId == null ? null : Number(body.mediaId) };
 }
 
 // O arquivo precisa ser do usuário. Cobrança aceita só documento; lembrete aceita foto, vídeo ou documento.
@@ -125,7 +126,7 @@ router.post('/', async (req, res) => {
   const mediaId = await resolveMediaId(req.user.id, kind, f.mediaId);
 
   const base = {
-    userId: req.user.id, contactId: contact.id, instanceId, mediaId, kind, recurrence: f.recurrence, weekDays: f.weekDays, amountCents: f.amountCents,
+    userId: req.user.id, contactId: contact.id, instanceId, mediaId, kind, recurrence: f.recurrence, untilPaid: f.untilPaid, weekDays: f.weekDays, amountCents: f.amountCents,
     text: f.text, extra: f.extra, dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
   };
 
@@ -174,7 +175,7 @@ router.patch('/:id', async (req, res) => {
     where: { id: current.id },
     data: {
       ...(contact ? { contactId: contact.id } : {}),
-      instanceId, mediaId, recurrence: f.recurrence, weekDays: f.weekDays, amountCents: f.amountCents, text: f.text, extra: f.extra,
+      instanceId, mediaId, recurrence: f.recurrence, untilPaid: f.untilPaid, weekDays: f.weekDays, amountCents: f.amountCents, text: f.text, extra: f.extra,
       dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
       nextDueDate: occ?.nextDueDate ?? null, nextRunAt: occ?.nextRunAt ?? null,
       status: paused ? 'pausada' : 'ativa', attempts: 0, lastError: null,
@@ -238,8 +239,18 @@ router.post('/:id/paid', async (req, res) => {
       const created = await tx.billingPayment.create({
         data: { userId: req.user.id, scheduleId: s.id, contactId: s.contactId, contactName: s.contact.name, amountCents: s.amountCents, dueDate, paidAt },
       });
-      if (s.recurrence === 'semanal' && toISODate(dueDate) === toISODate(s.dueDate) && s.status === 'ativa') {
+      const currentDue = s.nextDueDate ?? s.dueDate;
+      const markedCurrentDue = toISODate(dueDate) === toISODate(currentDue);
+      if (s.status === 'ativa' && markedCurrentDue && (s.recurrence === 'semanal' || (s.untilPaid && s.recurrence === 'avulsa'))) {
         await tx.schedule.update({ where: { id: s.id }, data: { status: 'concluida', nextRunAt: null, attempts: 0 } });
+      } else if (s.status === 'ativa' && markedCurrentDue && s.untilPaid && s.recurrence === 'mensal') {
+        const next = occurrenceAfterPaid(s, new Date());
+        await tx.schedule.update({
+          where: { id: s.id },
+          data: next
+            ? { nextDueDate: next.nextDueDate, nextRunAt: next.nextRunAt, attempts: 0, lastError: null }
+            : { status: 'concluida', nextRunAt: null, attempts: 0 },
+        });
       }
       return created;
     });
@@ -267,10 +278,15 @@ router.post('/:id/send-now', async (req, res) => {
   await logMessage({ schedule: s, contact: s.contact, instanceName: instance.name, status: result.status, error: result.error, automatic: false });
 
   // Envio avulso enviado agora não deve ser enviado de novo no horário agendado.
-  const closes = s.recurrence === 'avulsa' && s.status === 'ativa';
+  const closes = s.recurrence === 'avulsa' && !s.untilPaid && s.status === 'ativa';
+  const nextAfterImmediate = s.untilPaid && s.status === 'ativa' ? occurrenceAfter(s, new Date()) : null;
   const updated = await prisma.schedule.update({
     where: { id: s.id },
-    data: { lastRunAt: new Date(), lastStatus: result.status, lastError: result.error, sentCount: { increment: 1 }, ...(closes ? { status: 'concluida', nextRunAt: null } : {}) },
+    data: {
+      lastRunAt: new Date(), lastStatus: result.status, lastError: result.error, sentCount: { increment: 1 },
+      ...(closes ? { status: 'concluida', nextRunAt: null } : {}),
+      ...(nextAfterImmediate ? { nextDueDate: nextAfterImmediate.nextDueDate, nextRunAt: nextAfterImmediate.nextRunAt } : {}),
+    },
     include,
   });
   res.json({ schedule: scheduleDTO(updated), partial: result.status === 'partial', warning: result.error });

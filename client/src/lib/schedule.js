@@ -38,7 +38,7 @@ export function dueDatesInMonthISO(s, y, m0) {
 export function dueInMonthISO(s, y, m0) { return dueDatesInMonthISO(s, y, m0)[0] || null; }
 
 // Primeira data de envio, no relógio do navegador (apenas para mostrar o resumo no formulário).
-export function previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, weekDays = [] }, now = new Date()) {
+export function previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, weekDays = [], untilPaid = false }, now = new Date()) {
   const [ay, am, ad] = dueDate.split('-').map(Number);
   const [hh, mm] = sendTime.split(':').map(Number);
   if (recurrence === 'semanal') {
@@ -60,13 +60,35 @@ export function previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, wee
     const [ry, rm, rd] = runDay.split('-').map(Number);
     return { due, runDay, time: sendTime, run: new Date(ry, rm - 1, rd, hh, mm), k };
   };
+  const atDate = (date, k) => {
+    const [y, m, d] = date.split('-').map(Number);
+    return { due: date, runDay: date, time: sendTime, run: new Date(y, m - 1, d, hh, mm), k };
+  };
+  const nextDaily = (due, k) => {
+    let runDay = todayISO();
+    let [y, m, d] = runDay.split('-').map(Number);
+    let run = new Date(y, m - 1, d, hh, mm);
+    if (run <= now) {
+      runDay = addDaysISO(runDay, 1);
+      [y, m, d] = runDay.split('-').map(Number);
+      run = new Date(y, m - 1, d, hh, mm);
+    }
+    return { due, runDay, time: sendTime, run, k };
+  };
   if (recurrence === 'avulsa') {
     const r = at(0);
-    return r.run > now ? r : null;
+    if (r.run > now) return r;
+    if (!untilPaid) return null;
+    const dueRun = atDate(dueDate, 0);
+    return dueRun.run > now ? dueRun : nextDaily(dueDate, 0);
   }
   for (let k = 0; k < 600; k++) {
     const r = at(k);
     if (r.run > now) return r;
+    if (untilPaid) {
+      const dueRun = atDate(r.due, k);
+      return dueRun.run > now ? dueRun : nextDaily(r.due, k);
+    }
   }
   return null;
 }

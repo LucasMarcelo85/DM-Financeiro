@@ -235,6 +235,7 @@ model Schedule {
   nextDueDate DateTime?      @map("next_due_date") @db.Date
   daysBefore  Int            @default(0) @map("days_before")
   weekDays    Int[]          @default([]) @map("week_days")
+  untilPaid   Boolean        @default(false) @map("until_paid")
   sendTime    String         @map("send_time")
   nextRunAt   DateTime?      @map("next_run_at")
   attempts    Int            @default(0)

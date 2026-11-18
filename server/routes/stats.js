@@ -47,7 +47,7 @@ router.get('/', async (req, res) => {
     sentThisMonth,
     upcoming: upcoming.map((s) => ({
       id: s.id, kind: s.kind, recurrence: s.recurrence, contactName: s.contact.name,
-      amountCents: s.amountCents, nextRunAt: s.nextRunAt.getTime(),
+      amountCents: s.amountCents, untilPaid: s.untilPaid, nextRunAt: s.nextRunAt.getTime(),
     })),
   });
 });

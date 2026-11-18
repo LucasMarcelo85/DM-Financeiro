@@ -110,7 +110,7 @@ export function cleanProduct(b = {}) {
       if (!externalUrl) throw new AppError(400, 'Informe uma URL HTTPS válida para a imagem do produto.');
       out.externalUrl = externalUrl;
     }
-    else if (im.id === undefined) throw new AppError(400, 'Imagem inválida.');
+    else if (im.id === undefined && (isPrimary || !label)) throw new AppError(400, 'Imagem inválida.');
     return out;
   };
   if (rawMainImage) images.push(cleanImage(rawMainImage, 0, true));

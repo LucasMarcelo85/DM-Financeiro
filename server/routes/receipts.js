@@ -103,12 +103,24 @@ router.delete('/:id', async (req, res) => {
     await tx.billingPayment.delete({ where: { id: payment.id } });
     if (!payment.scheduleId) return;
     const schedule = await tx.schedule.findFirst({ where: { id: payment.scheduleId, userId: req.user.id } });
-    if (schedule?.recurrence !== 'semanal' || schedule.status !== 'concluida' || toISODate(payment.dueDate) !== toISODate(schedule.dueDate)) return;
-    const occurrence = firstOccurrence(schedule);
-    if (occurrence) {
+    if (!schedule) return;
+    const resumesUntilPaid = schedule.untilPaid && ['avulsa', 'mensal'].includes(schedule.recurrence);
+    const reopensLegacyWeekly = schedule.recurrence === 'semanal' && schedule.status === 'concluida'
+      && toISODate(payment.dueDate) === toISODate(schedule.dueDate);
+    if (!resumesUntilPaid && !reopensLegacyWeekly) return;
+    const occurrence = firstOccurrence({
+      ...schedule,
+      nextDueDate: payment.dueDate,
+    });
+    if (occurrence && schedule.status !== 'pausada') {
       await tx.schedule.update({
         where: { id: schedule.id },
         data: { status: 'ativa', nextDueDate: occurrence.nextDueDate, nextRunAt: occurrence.nextRunAt, attempts: 0, lastError: null },
+      });
+    } else if (occurrence && schedule.status === 'pausada') {
+      await tx.schedule.update({
+        where: { id: schedule.id },
+        data: { nextDueDate: occurrence.nextDueDate, nextRunAt: occurrence.nextRunAt, attempts: 0, lastError: null },
       });
     }
   });

@@ -11,7 +11,6 @@ import { addDaysISO, centsToMasked, isoDay, isoToBR, maskMoney, moneyToCents, to
 import { KIND, beforeText, previewFirstRun, renderPreview } from '../lib/schedule.js';
 
 const DAY_CHIPS = [0, 1, 2, 3, 5, 7];
-const WEEK_DAYS = ['Dom', 'Seg', 'Ter', 'Qua', 'Qui', 'Sex', 'Sáb'];
 
 function Preview({ text, extra, name, amountCents, dueISO }) {
   const ctx = { name, amountCents, dueISO };
@@ -41,7 +40,7 @@ export default function ScheduleForm({ kind }) {
   const [client, setClient] = useState(null);
   const [amount, setAmount] = useState('');
   const [recurrence, setRecurrence] = useState('avulsa');
-  const [weekDays, setWeekDays] = useState([1, 3, 5]);
+  const [untilPaid, setUntilPaid] = useState(false);
   const [dueDate, setDueDate] = useState(() => addDaysISO(todayISO(), 7));
   const [sendMode, setSendMode] = useState('agendar');
   const [daysBefore, setDaysBefore] = useState(2);
@@ -59,7 +58,9 @@ export default function ScheduleForm({ kind }) {
         if (s.kind !== kind) return navigate(`${KIND[s.kind].route}/${s.id}`, { replace: true });
         setClient({ id: s.contact.id, name: s.contact.name, phone: s.contact.phone });
         setAmount(s.amountCents != null ? centsToMasked(s.amountCents) : '');
-        setRecurrence(s.recurrence); setWeekDays(s.weekDays || [1, 3, 5]); setDueDate(s.dueDate); setDaysBefore(s.daysBefore); setSendTime(s.sendTime);
+        setRecurrence(s.recurrence === 'mensal' ? 'mensal' : 'avulsa');
+        setUntilPaid(Boolean(s.untilPaid) || s.recurrence === 'semanal');
+        setDueDate(s.dueDate); setDaysBefore(s.daysBefore); setSendTime(s.sendTime);
         setText(s.text); setExtra(s.extra || ''); setMediaId(s.mediaId ?? null); setInstanceId(s.instanceId ? String(s.instanceId) : ''); setStatus(s.status);
         setLoading(false);
       }).catch((e) => { toast(e.message, 'error'); navigate(cfg.route, { replace: true }); });
@@ -69,19 +70,15 @@ export default function ScheduleForm({ kind }) {
   }, [id]); // eslint-disable-line react-hooks/exhaustive-deps
 
   const money = moneyToCents(amount);
-  const run = useMemo(() => previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, weekDays }), [recurrence, dueDate, daysBefore, sendTime, weekDays]);
+  const run = useMemo(() => previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, untilPaid }), [recurrence, dueDate, daysBefore, sendTime, untilPaid]);
   const instances = inst?.instances || [];
   const connected = instances.filter((i) => i.connected);
   const now = sendMode === 'agora';
 
   const ready = clientReady(client) && text.trim().length > 0 && Boolean(dueDate) && (kind === 'lembrete' || money > 0)
-    && (now ? connected.length > 0 : Boolean(run) || status === 'pausada')
-    && (recurrence !== 'semanal' || weekDays.length > 0);
+    && (now ? connected.length > 0 : Boolean(run) || status === 'pausada');
 
-  function pickRecurrence(r) { setRecurrence(r); if (r !== 'avulsa') setSendMode('agendar'); }
-  function toggleWeekDay(day) {
-    setWeekDays((current) => current.includes(day) ? current.filter((value) => value !== day) : [...current, day].sort((a, b) => a - b));
-  }
+  function pickRecurrence(r) { setRecurrence(r); if (r !== 'avulsa' || untilPaid) setSendMode('agendar'); }
 
   function insertVar(tag) {
     const el = taRef.current;
@@ -96,7 +93,7 @@ export default function ScheduleForm({ kind }) {
     if (!ready || busy) return;
     setBusy(true);
     const payload = {
-      kind, recurrence, weekDays: recurrence === 'semanal' ? weekDays : [], sendMode, dueDate, daysBefore, sendTime, text, extra, mediaId,
+      kind, recurrence, untilPaid, weekDays: [], sendMode, dueDate, daysBefore, sendTime, text, extra, mediaId,
       instanceId: instanceId || null, amountCents: kind === 'cobranca' ? money : undefined, ...clientPayload(client),
     };
     try {
@@ -119,10 +116,10 @@ export default function ScheduleForm({ kind }) {
     <>A mensagem sai assim que você clicar em <strong>Enviar agora</strong>.</>
   ) : !run ? (
     <span className="warn">Esse dia e horário já passaram. Escolha uma data futura{recurrence === 'avulsa' ? ' ou use "Enviar agora"' : ''}.</span>
+  ) : untilPaid ? (
+    <>Envia {daysBefore > 0 ? `${beforeText(daysBefore)} e ` : ''}no vencimento{recurrence === 'mensal' ? ` (todo dia ${isoDay(dueDate)})` : ''} e, se não for marcada como paga, diariamente após o vencimento. Primeiro envio: <strong>{isoToBR(run.runDay)} às {sendTime}</strong>.</>
   ) : recurrence === 'avulsa' ? (
     <>Será enviada em <strong>{isoToBR(run.runDay)} às {sendTime}</strong> ({beforeText(daysBefore)}).</>
-  ) : recurrence === 'semanal' ? (
-    <>Será enviada {weekDays.length ? `às ${weekDays.map((day) => WEEK_DAYS[day].toLowerCase()).join(', ')}` : 'nos dias selecionados'} às <strong>{sendTime}</strong>, até registrar o pagamento. Primeiro envio: <strong>{isoToBR(run.runDay)} às {sendTime}</strong>.</>
   ) : (
     <>Todo mês, {beforeText(daysBefore)} (vencimento dia {isoDay(dueDate)}), às {sendTime}. Primeiro envio: <strong>{isoToBR(run.runDay)} às {sendTime}</strong>.{run.k > 0 && ' O deste mês já passou do horário.'}</>
   );
@@ -155,10 +152,9 @@ export default function ScheduleForm({ kind }) {
 
           <section className="card step">
             <h2><span className="step-n">2</span> {kind === 'cobranca' ? 'Valor e vencimento' : 'Vencimento'}</h2>
-            <div className="seg" role="radiogroup" aria-label="Frequência" style={{ '--n': kind === 'cobranca' ? 3 : 2 }}>
+            <div className="seg" role="radiogroup" aria-label="Frequência" style={{ '--n': 2 }}>
               <button type="button" role="radio" aria-checked={recurrence === 'avulsa'} className={recurrence === 'avulsa' ? 'is-on' : ''} onClick={() => pickRecurrence('avulsa')}>Avulsa<small>uma vez só</small></button>
               <button type="button" role="radio" aria-checked={recurrence === 'mensal'} className={recurrence === 'mensal' ? 'is-on' : ''} onClick={() => pickRecurrence('mensal')}>Mensal<small>todo mês</small></button>
-              {kind === 'cobranca' && <button type="button" role="radio" aria-checked={recurrence === 'semanal'} className={recurrence === 'semanal' ? 'is-on' : ''} onClick={() => pickRecurrence('semanal')}>Até pagar<small>cobrança semanal</small></button>}
             </div>
             <div className="form-row">
               {kind === 'cobranca' && (
@@ -171,11 +167,20 @@ export default function ScheduleForm({ kind }) {
                 {recurrence === 'mensal' && dueDate && <small>Vence todo dia {isoDay(dueDate)}.</small>}
               </label>
             </div>
+            {kind === 'cobranca' && <label className="check-line pr-until-paid">
+              <input type="checkbox" checked={untilPaid} onChange={(e) => {
+                setUntilPaid(e.target.checked);
+                if (e.target.checked) setSendMode('agendar');
+              }} />
+              <span>Continuar cobrando até marcar como paga
+                <small>Envia antes e no vencimento; se continuar em aberto, envia diariamente após vencer.</small>
+              </span>
+            </label>}
           </section>
 
           <section className="card step">
             <h2><span className="step-n">3</span> Quando enviar</h2>
-            {!editing && recurrence === 'avulsa' && (
+            {!editing && recurrence === 'avulsa' && !untilPaid && (
               <div className="seg" role="radiogroup" aria-label="Momento do envio">
                 <button type="button" role="radio" aria-checked={!now} className={!now ? 'is-on' : ''} onClick={() => setSendMode('agendar')}>Agendar</button>
                 <button type="button" role="radio" aria-checked={now} className={now ? 'is-on' : ''} onClick={() => setSendMode('agora')}>Enviar agora</button>
@@ -183,7 +188,7 @@ export default function ScheduleForm({ kind }) {
             )}
             {!now && (
               <>
-                {recurrence !== 'semanal' && <div className="field">
+                <div className="field">
                   <span>Enviar</span>
                   <div className="chips" role="group" aria-label="Dias antes do vencimento">
                     {DAY_CHIPS.map((n) => (
@@ -191,14 +196,7 @@ export default function ScheduleForm({ kind }) {
                     ))}
                     <label className="chip-input">outro: <input type="number" min={0} max={30} value={daysBefore} onChange={(e) => setDaysBefore(Math.min(30, Math.max(0, Math.floor(Number(e.target.value) || 0))))} aria-label="Dias antes do vencimento" /> dias</label>
                   </div>
-                </div>}
-                {recurrence === 'semanal' && <div className="field">
-                    <span>Cobrar nos dias selecionados até registrar o pagamento</span>
-                    <div className="chips pr-weekday-picker" role="group" aria-label="Dias da semana para cobrança">
-                      {WEEK_DAYS.map((day, index) => <button key={day} type="button" className={`chip ${weekDays.includes(index) ? 'is-on' : ''}`} aria-pressed={weekDays.includes(index)} onClick={() => toggleWeekDay(index)}>{day}</button>)}
-                    </div>
-                    {!weekDays.length && <small className="form-error">Selecione pelo menos um dia da semana.</small>}
-                </div>}
+                </div>
                 <label className="field time-field"><span>Horário</span><input className="input" type="time" value={sendTime} onChange={(e) => setSendTime(e.target.value || '09:00')} /></label>
               </>
             )}

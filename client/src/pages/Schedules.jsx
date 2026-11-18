@@ -276,7 +276,7 @@ export default function Schedules({ kind }) {
       {confirmSend && (
         <Modal title={`Enviar ${cfg.singular} agora?`} onClose={() => setConfirmSend(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmSend(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => sendNow(confirmSend)}>Enviar agora</button></>}>
-          <p>A mensagem vai para <strong>{confirmSend.contact.name}</strong> agora.{confirmSend.recurrence === 'avulsa' && confirmSend.status === 'ativa' ? ' Como é avulsa, o envio agendado será cancelado para não duplicar.' : confirmSend.recurrence === 'semanal' ? ' As cobranças nos dias selecionados continuam até o pagamento ser registrado.' : ' Os próximos envios mensais continuam como estão.'}</p>
+          <p>A mensagem vai para <strong>{confirmSend.contact.name}</strong> agora.{confirmSend.untilPaid ? ' A cobrança continua agendada e os próximos lembretes seguem até o pagamento ser registrado.' : confirmSend.recurrence === 'avulsa' && confirmSend.status === 'ativa' ? ' Como é avulsa, o envio agendado será cancelado para não duplicar.' : confirmSend.recurrence === 'semanal' ? ' As cobranças nos dias selecionados continuam até o pagamento ser registrado.' : ' Os próximos envios mensais continuam como estão.'}</p>
         </Modal>
       )}
       {confirmDel && (

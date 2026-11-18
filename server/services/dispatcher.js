@@ -1,7 +1,7 @@
 import { prisma } from '../prisma.js';
 import { config } from '../config.js';
 import { sleep } from '../utils/helpers.js';
-import { occurrenceAfter } from '../utils/schedule.js';
+import { occurrenceAfter, occurrenceAfterPaid } from '../utils/schedule.js';
 import { renderTemplate } from '../utils/template.js';
 import { accessibleUserFilter } from './access.js';
 import { isTrialUser } from '../plans.js';
@@ -118,7 +118,7 @@ async function finalize(schedule, status, error, now) {
     attempts: 0,
     sentCount: schedule.sentCount + (status === 'failed' ? 0 : 1),
   };
-  if (schedule.recurrence === 'mensal' || schedule.recurrence === 'semanal') {
+  if (schedule.recurrence === 'mensal' || schedule.recurrence === 'semanal' || schedule.untilPaid) {
     const next = occurrenceAfter(schedule, now);
     Object.assign(data, next ? { nextDueDate: next.nextDueDate, nextRunAt: next.nextRunAt } : { nextRunAt: null, status: 'concluida' });
   } else {
@@ -131,7 +131,7 @@ async function finalize(schedule, status, error, now) {
 async function skipPaid(schedule, now) {
   const data = { attempts: 0 };
   if (schedule.recurrence === 'mensal') {
-    const next = occurrenceAfter(schedule, now);
+    const next = schedule.untilPaid ? occurrenceAfterPaid(schedule, now) : occurrenceAfter(schedule, now);
     Object.assign(data, next ? { nextDueDate: next.nextDueDate, nextRunAt: next.nextRunAt } : { nextRunAt: null, status: 'concluida' });
   } else {
     Object.assign(data, { status: 'concluida', nextRunAt: null });
