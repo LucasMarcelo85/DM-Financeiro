@@ -95,7 +95,7 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
   const [idx, setIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
-  const img = selectedVariation || p.mainImage || p.images.find((image) => image.url) || null;
+  const img = selectedVariation?.url ? selectedVariation : p.mainImage || p.images.find((image) => image.url) || selectedVariation || null;
   const productQty = cartItems.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0) + qty;
   const cartQty = cartItems.reduce((sum, item) => sum + item.qty, 0) + qty;
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -142,7 +142,7 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
                 <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
-                  {i.url ? <img src={i.url} alt="" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
+                  {i.url || p.mainImage?.url ? <img src={i.url || p.mainImage.url} alt="" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
                 </button>
               ))}
             </div>
