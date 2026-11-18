@@ -132,8 +132,9 @@
 .pv-image-trigger, .pv-car-image-trigger, .pv-modal-image-trigger { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
 .pv-modal-image-trigger { height: auto; margin: 16px 0; }
 .pv-modal-image-trigger .pv-modal-image { margin: 0 auto; }
-.pv-image-lightbox { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; box-sizing: border-box; padding: 56px 20px; background: rgb(0 0 0 / 92%); }
-.pv-image-lightbox > img { display: block; max-width: 100%; max-height: 100%; object-fit: contain; }
+.pv-image-lightbox { position: fixed; inset: 0; z-index: 2147483647; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; box-sizing: border-box; padding: 56px 20px; background: rgb(0 0 0 / 92%); touch-action: pinch-zoom; }
+/* A linha do grid é limitada (minmax(0, 1fr)) e a altura também é calculada pela tela: assim a foto inteira cabe, mesmo vertical, sem ser cortada no celular. */
+.pv-image-lightbox > img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; max-height: calc(100dvh - 112px); object-fit: contain; }
 .pv-image-lightbox-close { position: absolute; top: 12px; right: 16px; width: 44px; height: 44px; border: 0; border-radius: 50%; background: rgb(255 255 255 / 16%); color: #fff; font: 32px/1 system-ui, sans-serif; cursor: pointer; }
 .pv-image-lightbox-actions { position: absolute; bottom: 16px; left: 50%; transform: translateX(-50%); display: flex; flex-wrap: wrap; justify-content: center; gap: 8px; max-width: calc(100% - 32px); }
 .pv-image-lightbox-link, .pv-image-lightbox-download { display: inline-flex; align-items: center; justify-content: center; padding: 10px 15px; border-radius: 999px; background: #fff; color: #14202e; font: 600 14px/1.2 system-ui, sans-serif; text-decoration: none; white-space: nowrap; }

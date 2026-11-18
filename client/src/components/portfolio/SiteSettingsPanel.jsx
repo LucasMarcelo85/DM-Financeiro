@@ -29,18 +29,11 @@ async function squareLogos(file) {
   return { logo: square(512), logo192: square(192) };
 }
 
-export default function SiteSettingsPanel({ branding = {}, onChange }) {
+// Nome, logo (ícone da aba e do aplicativo) e liberação da instalação. Usado no canvas, na aba "Logo e avisos" e no modal de entrega e frete.
+export function SiteIdentityFields({ branding = {}, onChange }) {
   const toast = useToast();
   const fileRef = useRef(null);
   const [busy, setBusy] = useState(false);
-  const notices = Array.isArray(branding.notices) ? branding.notices : [];
-
-  function updateNotice(id, patch) {
-    onChange({
-      ...branding,
-      notices: notices.map((notice) => (notice.id === id ? { ...notice, ...patch } : notice)),
-    }, `notice:${id}`);
-  }
 
   async function pickLogo(event) {
     const file = event.target.files?.[0];
@@ -62,44 +55,61 @@ export default function SiteSettingsPanel({ branding = {}, onChange }) {
   }
 
   return (
+    <>
+      <label className="field">
+        <span>Nome exibido no site</span>
+        <input className="input" value={branding.siteName || ''} maxLength={80}
+          onChange={(event) => onChange({ ...branding, siteName: event.target.value }, 'branding:name')}
+          placeholder="Nome da sua loja ou negócio" />
+        <small>Este nome aparece no título da aba e no lugar do nome do administrador.</small>
+      </label>
+
+      <section className="site-logo">
+        <div>
+          <strong>Logo do site e do aplicativo</strong>
+          <p className="muted small">A imagem será usada como ícone da aba, na instalação do app e no arquivo manifest.</p>
+        </div>
+        {branding.logo
+          ? <img src={branding.logo} alt="Prévia da logo" />
+          : <span className="site-logo-empty">Sem logo</span>}
+        <div className="btn-group">
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={pickLogo} />
+          <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={busy}>
+            {busy ? 'Preparando...' : branding.logo ? 'Trocar logo' : 'Adicionar logo'}
+          </button>
+          {branding.logo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...branding, logo: '', logo192: '' }, 'branding:logo')}>Remover</button>}
+        </div>
+      </section>
+
+      <section className="site-app-info">
+        <strong>Instalação do aplicativo</strong>
+        <p className="muted small">
+          Quando permitido, aparece no site um botão para o cliente instalar o site como aplicativo. A página precisa estar publicada em HTTPS.
+        </p>
+        <Check
+          label="Mostrar aos clientes o botão para instalar o site como aplicativo"
+          checked={branding.installEnabled !== false}
+          onChange={(installEnabled) => onChange({ ...branding, installEnabled }, 'branding:install')}
+        />
+      </section>
+    </>
+  );
+}
+
+export default function SiteSettingsPanel({ branding = {}, onChange }) {
+  const notices = Array.isArray(branding.notices) ? branding.notices : [];
+
+  function updateNotice(id, patch) {
+    onChange({
+      ...branding,
+      notices: notices.map((notice) => (notice.id === id ? { ...notice, ...patch } : notice)),
+    }, `notice:${id}`);
+  }
+
+  return (
     <div className="site-settings">
       <p className="muted small">Edite nome, logo, avisos e identidade do app aqui mesmo no editor. Depois, clique em <strong>Salvar</strong> na barra superior.</p>
-        <label className="field">
-          <span>Nome exibido no site</span>
-          <input className="input" value={branding.siteName || ''} maxLength={80}
-            onChange={(event) => onChange({ ...branding, siteName: event.target.value }, 'branding:name')}
-            placeholder="Nome da sua loja ou negócio" />
-          <small>Este nome aparece no título da aba e no lugar do nome do administrador.</small>
-        </label>
-
-        <section className="site-logo">
-          <div>
-            <strong>Logo do site e do aplicativo</strong>
-            <p className="muted small">A imagem será usada como ícone da aba, na instalação do app e no arquivo manifest.</p>
-          </div>
-          {branding.logo
-            ? <img src={branding.logo} alt="Prévia da logo" />
-            : <span className="site-logo-empty">Sem logo</span>}
-          <div className="btn-group">
-            <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={pickLogo} />
-            <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={busy}>
-              {busy ? 'Preparando...' : branding.logo ? 'Trocar logo' : 'Adicionar logo'}
-            </button>
-            {branding.logo && <button type="button" className="btn btn-ghost btn-sm" onClick={() => onChange({ ...branding, logo: '', logo192: '' }, 'branding:logo')}>Remover</button>}
-          </div>
-        </section>
-
-        <section className="site-app-info">
-          <strong>Instalação do aplicativo</strong>
-          <p className="muted small">
-            Quando permitido, o visitante pode instalar o site como aplicativo pelo navegador. A página precisa estar publicada em HTTPS.
-          </p>
-          <Check
-            label="Permitir que visitantes instalem este site como aplicativo"
-            checked={branding.installEnabled !== false}
-            onChange={(installEnabled) => onChange({ ...branding, installEnabled }, 'branding:install')}
-          />
-        </section>
+      <SiteIdentityFields branding={branding} onChange={onChange} />
 
         <section className="site-notices">
           <div className="site-settings-heading">

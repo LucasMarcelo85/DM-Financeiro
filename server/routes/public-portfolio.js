@@ -255,8 +255,12 @@ export function injectMeta(html, meta, pfUser = '') {
     `<link rel="manifest" href="${esc(meta.manifest)}" />`,
   ].filter(Boolean) : [];
   if (pfUser) tags.push(`<meta name="pf-user" content="${esc(pfUser)}" />`);
+  // Quando a página tem logo própria, tira os ícones/manifest padrão do shell (o "DM"): com dois ícones o navegador pode escolher o errado.
+  const shell = meta
+    ? html.replace(/<link\b[^>]*\brel=["'](?:shortcut icon|icon|apple-touch-icon|manifest)["'][^>]*>\s*/gi, '')
+    : html;
   // Funções no replace: o título pode ter "$&" ou "$1" e não pode ser interpretado como padrão.
-  return html
+  return shell
     .replace(/<title>[^<]*<\/title>/, () => meta ? `<title>${esc(meta.title)}</title>` : '<title>Portfólio</title>')
     .replace('</head>', () => `    ${tags.join('\n    ')}\n  </head>`);
 }

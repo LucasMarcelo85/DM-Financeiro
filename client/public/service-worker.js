@@ -1,3 +1,8 @@
+// Necessário para o navegador oferecer "Instalar aplicativo". Não guarda nada em cache: a rede continua sendo usada normalmente.
+self.addEventListener('install', () => self.skipWaiting());
+self.addEventListener('activate', (event) => event.waitUntil(self.clients.claim()));
+self.addEventListener('fetch', () => {});
+
 self.addEventListener('push', (event) => {
   let payload = {};
   const raw = event.data ? event.data.text() : '';

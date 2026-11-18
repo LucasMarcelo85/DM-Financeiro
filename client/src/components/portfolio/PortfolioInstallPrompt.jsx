@@ -17,6 +17,11 @@ export default function PortfolioInstallPrompt({ enabled, installEvent, onInstal
     };
   }, [onInstallEventConsumed]);
 
+  useEffect(() => {
+    if (!enabled || !window.isSecureContext || !('serviceWorker' in navigator)) return;
+    navigator.serviceWorker.register('/service-worker.js', { scope: '/' }).catch(() => {});
+  }, [enabled]);
+
   async function install() {
     setMessage('');
     if (!installEvent) {

@@ -64,6 +64,9 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     if (!page.isMain) query.set('p', page.slug);
     query.set('v', String(page.updatedAt || ''));
     const iconUrl = `/api/public/portfolio/icon?${query}`;
+    // Tira o ícone/manifest que já estavam na página (o "DM" padrão ou os que o servidor entregou) para a logo da loja valer sozinha.
+    const previous = [...document.head.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], link[rel="manifest"]')];
+    previous.forEach((link) => link.remove());
     const links = [
       ['icon', iconUrl],
       ['apple-touch-icon', iconUrl],
@@ -80,6 +83,7 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     if (themeColor) themeColor.content = page.doc.theme.primary;
     return () => {
       links.forEach((link) => link.remove());
+      previous.forEach((link) => document.head.appendChild(link));
       if (themeColor && previousColor) themeColor.content = previousColor;
     };
   }, [page, owner]);

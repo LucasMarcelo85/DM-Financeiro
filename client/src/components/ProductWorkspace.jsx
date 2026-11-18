@@ -13,6 +13,52 @@ const MAX_BATCH = 30;
 const DEFAULT_VARIATION_TYPES = ['Cor', 'Tamanho', 'Litros', 'Unidade'];
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
 
+function explainProductError(message) {
+  const value = String(message || '');
+  if (/nome de cada faixa|nome de cada forma/i.test(value)) return { message: 'Dê um nome para identificar cada faixa especial.', field: 'price-option-name', step: 2 };
+  if (/pre[cç]o de cada faixa|valor por unidade/i.test(value)) return { message: 'Informe o preço por unidade da faixa especial ou marque “Sob consulta”.', field: 'price-option-price', step: 2 };
+  if (/valor m[ií]nimo|quantidade m[ií]nima/i.test(value)) return { message: 'Informe o valor mínimo necessário para aplicar esta faixa especial.', field: 'price-option-min', step: 2 };
+  const rules = [
+    [/categor/i, { message: 'Informe uma categoria para organizar este produto.', field: 'category', step: 1 }],
+    [/c[oó]digo de barras|barcode/i, { message: 'O código de barras está inválido ou já está sendo usado. Confira este campo.', field: 'barcode', step: 1 }],
+    [/pre[cç]o base|pre[cç]o por unidade/i, { message: 'Informe o preço do produto ou marque “Preço sob consulta”.', field: 'price', step: 2 }],
+    [/faixa|forma de pre[cç]o|carrinho/i, { message: 'Confira o nome, o valor mínimo e o preço da faixa especial.', field: 'price-option', step: 2 }],
+    [/nome/i, { message: 'O nome do produto precisa ter pelo menos 2 caracteres. Confira o campo Nome.', field: 'name', step: 1 }],
+    [/caracter[ií]stica|varia[cç][aã]o|cor informada/i, { message: 'Complete as características da foto de variação ou remova essa foto.', field: 'variation', step: 0 }],
+    [/estoque|quantidade v[aá]lida/i, { message: 'Informe uma quantidade de estoque entre 0 e 1.000.000.', field: 'stock', step: 3 }],
+    [/imagem|foto|url https/i, { message: 'A imagem não pôde ser salva. Confira o arquivo ou a URL e tente novamente.', field: 'main-image', step: 0 }],
+    [/fluxo/i, { message: 'A disponibilidade nos fluxos mudou. Confira os fluxos selecionados na etapa Estoque.', field: 'stock-flow', step: 3 }],
+  ];
+  return rules.find(([pattern]) => pattern.test(value))?.[1]
+    || { message: /internal server error|prisma|constraint|payload too large/i.test(value)
+      ? 'Não foi possível salvar o produto. Confira os dados e as imagens; se o erro continuar, tente novamente mais tarde.'
+      : value || 'Não foi possível salvar o produto. Confira os campos e tente novamente.' };
+}
+
+function focusProductField(field) {
+  if (!field) return;
+  requestAnimationFrame(() => {
+    const selectors = {
+      name: '.pr-details-fields label:nth-child(1) input',
+      category: '.pr-details-fields label:nth-child(2) input',
+      barcode: '.pr-details-fields label:nth-child(3) input',
+      price: '.pr-base-price input.input',
+      'price-option': '.pr-price-rule-fields label:nth-child(1) input',
+      'price-option-name': '.pr-price-rule-fields label:nth-child(1) input',
+      'price-option-min': '.pr-price-rule-fields label:nth-child(3) input',
+      'price-option-price': '.pr-price-rule-fields label:nth-child(4) input',
+      variation: '.pr-variation-fields input, .pr-variation-fields select',
+      stock: '.pr-stock-list input',
+      'main-image': '.pr-main-photo',
+      'stock-flow': '.pr-stock-flow-options input',
+    };
+    const target = document.querySelector(`.pr-product-editor-card ${selectors[field] || ''}`);
+    if (field === 'main-image') target?.setAttribute('tabindex', '-1');
+    target?.scrollIntoView({ block: 'center', behavior: 'smooth' });
+    target?.focus();
+  });
+}
+
 async function imageFromFile(file) {
   const { src } = await prepareProductImage(file);
   return { key: newKey(), data: src, url: src, label: '', stockQuantity: '0' };
@@ -320,13 +366,25 @@ export default function ProductWorkspace({ product, categories, preferences, sto
 
   async function save() {
     setError('');
-    let payload;
+    const payload = [];
+    for (let index = 0; index < drafts.length; index += 1) {
+      try {
+        payload.push(productBody(drafts[index]));
+      } catch (e) {
+        const issue = explainProductError(e.message);
+        setActiveDraftIndex(index);
+        setDraftSteps((current) => ({ ...current, [drafts[index].key]: issue.step ?? (current[drafts[index].key] || 1) }));
+        setError(issue.message);
+        focusProductField(issue.field);
+        return;
+      }
+    }
     try {
-      payload = drafts.map(productBody);
       const photoSize = payload.reduce((sum, item) => sum + [...item.images, ...(item.mainImage ? [item.mainImage] : [])].reduce((size, image) => size + (image.data?.length || 0), 0), 0);
       if (photoSize > 32 * 1024 * 1024) throw new Error('O lote de fotos ficou muito grande. Cadastre menos produtos ou reduza o número de imagens.');
     } catch (e) {
-      setError(e.message);
+      const issue = explainProductError(e.message);
+      setError(issue.message);
       return;
     }
 
@@ -342,7 +400,12 @@ export default function ProductWorkspace({ product, categories, preferences, sto
       }
       onSaved();
     } catch (e) {
-      setError(e.message);
+      const issue = explainProductError(e.message);
+      setError(issue.message);
+      if (issue.step !== undefined && drafts[activeDraftIndex]) {
+        setDraftSteps((current) => ({ ...current, [drafts[activeDraftIndex].key]: issue.step }));
+        focusProductField(issue.field);
+      }
       setBusy(false);
     }
   }
@@ -397,6 +460,9 @@ export default function ProductWorkspace({ product, categories, preferences, sto
 
       {drafts.length > 1 && <nav className="pr-draft-navigation" aria-label="Itens deste cadastro">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveDraftIndex((current) => Math.max(0, current - 1))} disabled={activeDraftIndex === 0}>Anterior</button>
+        {drafts[activeDraftIndex]?.mainImage?.url
+          ? <img className="pr-draft-thumb" src={drafts[activeDraftIndex].mainImage.url} alt={`Imagem do item ${activeDraftIndex + 1}`} />
+          : <span className="pr-draft-thumb is-empty" aria-hidden="true"><Icon name="box" size={20} /></span>}
         <label className="field">
           <span>Item {activeDraftIndex + 1} de {drafts.length}</span>
           <select className="input" value={activeDraftIndex} onChange={(event) => setActiveDraftIndex(Number(event.target.value))}>
@@ -414,7 +480,11 @@ export default function ProductWorkspace({ product, categories, preferences, sto
           count={drafts.length}
           step={draftSteps[drafts[activeDraftIndex].key] || 0}
           onStepChange={(step, message = '') => {
-            setError(message);
+            if (message) {
+              const issue = explainProductError(message);
+              setError(issue.message);
+              focusProductField(issue.field);
+            } else setError('');
             if (!message) setDraftSteps((current) => ({ ...current, [drafts[activeDraftIndex].key]: step }));
           }}
           categories={categories}

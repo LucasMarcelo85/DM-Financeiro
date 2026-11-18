@@ -451,6 +451,7 @@ export default function PortfolioEditor() {
     box: (p, key) => { const sel = selectedRef.current; if (sel) setBox(sel, p, key); },
     patchTheme: (p, key) => commit(patchTheme(docRef.current, p), key || 'theme'),
     patchSeo: (p, key) => commit(patchSeo(docRef.current, p), key || 'seo'),
+    patchBranding: (branding, key) => commit({ ...docRef.current, branding }, key || 'branding'),
     patchPixel: (p, key) => commit(patchPixel(docRef.current, p), key || 'pixel'),
     patchCatalog: (p, key) => commit(patchCatalog(docRef.current, p), key || 'catalog'),
     addProductsIndividually,

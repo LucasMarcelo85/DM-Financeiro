@@ -10,6 +10,7 @@ import {
 import { FONTS, FONT_GROUPS, THEME_PRESETS, pageUrl, parseVideo } from '../../lib/portfolio/model.js';
 import { MASK_LIST, SHAPE_LIST, SHAPE_PATHS } from '../../lib/portfolio/shapes.js';
 import { maskPhone } from '../../lib/format.js';
+import { SiteIdentityFields } from './SiteSettingsPanel.jsx';
 
 // Painel de propriedades. Com um elemento selecionado mostra as opções dele; sem seleção mostra as da página.
 const ALIGN = [['left', 'Esq.'], ['center', 'Centro'], ['right', 'Dir.'], ['justify', 'Justif.']];
@@ -763,9 +764,9 @@ export function PageInspector({ doc, meta, api, categories, products = [] }) {
   return (
     <div className="ce-insp">
       <p className="muted small pe-insp-hint">Clique em um elemento para editar. Sem nada selecionado, você ajusta a página inteira.</p>
-      <Section title="Identidade, avisos e app">
-        <p className="muted small">Configure o nome e a logo da loja, os avisos do site e a identidade do aplicativo instalado.</p>
-        <button type="button" className="btn btn-primary btn-sm" onClick={api.openSiteSettings}>Abrir configurações do site</button>
+      <Section title="Logo da aba e aplicativo">
+        <SiteIdentityFields branding={doc.branding} onChange={api.patchBranding} />
+        <button type="button" className="btn btn-ghost btn-sm" onClick={api.openSiteSettings}>Avisos do site</button>
       </Section>
       <AddressSection meta={meta} onSaveSlug={api.saveSlug} onCopy={api.copyLink} />
       <Section title="Fundo e cores">
