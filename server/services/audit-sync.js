@@ -3,7 +3,7 @@ import { config, evolutionConfigured } from '../config.js';
 import { computeAccess } from './access.js';
 import { listenerCount } from './audit-hub.js';
 import * as evo from './evolution.js';
-import { syncInstance } from './audit.js';
+import { syncInstance, syncState } from './audit.js';
 import { evolutionWebhookUrl } from '../utils/webhooks.js';
 
 // A auditoria não depende só do webhook: o servidor também busca as mensagens na Evolution sozinho.
@@ -11,6 +11,7 @@ import { evolutionWebhookUrl } from '../utils/webhooks.js';
 // A primeira busca de uma conexão traz o histórico todo, sem precisar clicar em nada.
 const lastRun = new Map(); // conexão -> quando buscou pela última vez
 const healed = new Set(); // conexões cujo webhook/configuração já foi reafirmado neste processo
+const inFlight = new Set();
 let timer = null;
 let ticking = false;
 
@@ -18,13 +19,21 @@ export async function auditSyncTick() {
   if (ticking || !evolutionConfigured()) return;
   ticking = true;
   try {
-    const instances = await prisma.instance.findMany({ where: { purpose: 'auditoria', provider: 'evolution' }, include: { user: true } });
+    const instances = await prisma.instance.findMany({
+      where: { purpose: 'auditoria', provider: 'evolution' },
+      select: {
+        id: true, userId: true, name: true, auditScope: true, lastSyncAt: true,
+        user: { select: { role: true, trialEndsAt: true, accessUntil: true } },
+      },
+    });
     const now = Date.now();
     for (const inst of instances) {
       if (!computeAccess(inst.user).hasAccess) continue;
+      if (syncState(inst.id)?.running || inFlight.has(inst.id)) continue;
       const every = listenerCount(inst.userId, inst.auditScope) > 0 ? config.auditSync.intervalMs : config.auditSync.idleMs;
       if (now - (lastRun.get(inst.id) || 0) < every) continue;
       lastRun.set(inst.id, now);
+      inFlight.add(inst.id);
       // Cada conexão roda por conta própria: um histórico grande de uma não atrasa a tela ao vivo das outras.
       (async () => {
         try {
@@ -37,6 +46,8 @@ export async function auditSyncTick() {
           await syncInstance(inst, { deep: !inst.lastSyncAt });
         } catch (e) {
           console.warn(`[auditoria] busca automática de ${inst.name}: ${e.message}`);
+        } finally {
+          inFlight.delete(inst.id);
         }
       })();
     }
@@ -48,8 +59,11 @@ export async function auditSyncTick() {
 }
 
 export function startAuditSync() {
-  if (!config.auditSync.intervalMs) return;
-  timer = setInterval(auditSyncTick, Math.min(config.auditSync.intervalMs, 5000));
+  if (!config.auditSync.intervalMs || timer) return;
+  timer = setInterval(auditSyncTick, config.auditSync.intervalMs);
   setTimeout(auditSyncTick, 2000);
 }
-export const stopAuditSync = () => clearInterval(timer);
+export function stopAuditSync() {
+  if (timer) clearInterval(timer);
+  timer = null;
+}

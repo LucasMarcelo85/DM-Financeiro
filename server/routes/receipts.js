@@ -1,7 +1,7 @@
 import { Router } from 'express';
 import { prisma } from '../prisma.js';
 import { AppError } from '../utils/helpers.js';
-import { addDays, localToday, parseISODate, toISODate } from '../utils/schedule.js';
+import { addDays, firstOccurrence, localToday, parseISODate, toISODate } from '../utils/schedule.js';
 import { rateClient } from '../utils/rating.js';
 import { billingPaymentDTO } from '../utils/serialize.js';
 
@@ -96,8 +96,22 @@ router.get('/clients', async (req, res) => {
 // Desfaz a marcação de pago.
 router.delete('/:id', async (req, res) => {
   const id = Number(req.params.id);
-  const removed = Number.isInteger(id) ? await prisma.billingPayment.deleteMany({ where: { id, userId: req.user.id } }) : { count: 0 };
-  if (removed.count !== 1) throw new AppError(404, 'Pagamento não encontrado.');
+  if (!Number.isInteger(id)) throw new AppError(404, 'Pagamento não encontrado.');
+  const payment = await prisma.billingPayment.findFirst({ where: { id, userId: req.user.id } });
+  if (!payment) throw new AppError(404, 'Pagamento não encontrado.');
+  await prisma.$transaction(async (tx) => {
+    await tx.billingPayment.delete({ where: { id: payment.id } });
+    if (!payment.scheduleId) return;
+    const schedule = await tx.schedule.findFirst({ where: { id: payment.scheduleId, userId: req.user.id } });
+    if (schedule?.recurrence !== 'semanal' || schedule.status !== 'concluida' || toISODate(payment.dueDate) !== toISODate(schedule.dueDate)) return;
+    const occurrence = firstOccurrence(schedule);
+    if (occurrence) {
+      await tx.schedule.update({
+        where: { id: schedule.id },
+        data: { status: 'ativa', nextDueDate: occurrence.nextDueDate, nextRunAt: occurrence.nextRunAt, attempts: 0, lastError: null },
+      });
+    }
+  });
   res.json({ ok: true });
 });
 

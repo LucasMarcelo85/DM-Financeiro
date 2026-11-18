@@ -283,6 +283,7 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
                 )}
               </div>
               <div className="instance-actions">
+                <button className="btn btn-ghost btn-sm" onClick={() => setLabelFor(i)}><Icon name="edit" size={16} /> Nome</button>
                 {i.provider === 'meta' ? (
                   <>
                     <button className="btn btn-ghost btn-sm" onClick={() => connect(i)} disabled={busy === `c${i.id}`}>{busy === `c${i.id}` ? 'Testando...' : 'Testar conexão'}</button>
@@ -291,7 +292,6 @@ export default function InstanceManager({ purpose = 'envio', auditScope = 'main'
                   </>
                 ) : (
                   <>
-                    {audit && <button className="btn btn-ghost btn-sm" onClick={() => setLabelFor(i)}><Icon name="edit" size={16} /> Nome</button>}
                     {!i.connected && <button className="btn btn-primary btn-sm" onClick={() => connect(i)} disabled={busy === `c${i.id}`}>{busy === `c${i.id}` ? 'Gerando...' : 'Ler QR Code'}</button>}
                     {i.connected && audit && <button className="btn btn-ghost btn-sm" onClick={() => sync(i)} disabled={busy === `s${i.id}`}>{busy === `s${i.id}` ? 'Iniciando...' : 'Importar tudo agora'}</button>}
                     {i.connected && (

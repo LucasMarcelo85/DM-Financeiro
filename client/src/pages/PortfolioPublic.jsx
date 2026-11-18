@@ -5,7 +5,7 @@ import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageS
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import PortfolioPushPrompt from '../components/portfolio/PortfolioPushPrompt.jsx';
 import PortfolioInstallPrompt from '../components/portfolio/PortfolioInstallPrompt.jsx';
-import ImageLightboxProvider, { useImageLightbox } from '../components/portfolio/ImageLightbox.jsx';
+import ImageLightboxProvider from '../components/portfolio/ImageLightbox.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
 import { makeGrapesFrameDocument } from '../lib/portfolio/grapesPreview.js';
@@ -63,13 +63,16 @@ export default function PortfolioPublic({ fixedUser = '' }) {
     const query = new URLSearchParams({ u: owner.slug });
     if (!page.isMain) query.set('p', page.slug);
     query.set('v', String(page.updatedAt || ''));
-    const iconUrl = `/api/public/portfolio/icon?${query}`;
+    const primary = /^#[\da-f]{6}$/i.test(page.doc.theme?.primary) ? page.doc.theme.primary : '#f2a33a';
+    const fallbackIcon = `data:image/svg+xml,${encodeURIComponent(`<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512"><rect width="512" height="512" rx="112" fill="${primary}"/><text x="256" y="350" font-size="280" font-weight="700" text-anchor="middle" fill="#14202e" font-family="sans-serif">DM</text></svg>`)}`;
+    const iconUrl = page.doc.branding?.logo || fallbackIcon;
+    const touchIconUrl = page.doc.branding?.logo192 || page.doc.branding?.logo || fallbackIcon;
     // Tira o ícone/manifest que já estavam na página (o "DM" padrão ou os que o servidor entregou) para a logo da loja valer sozinha.
     const previous = [...document.head.querySelectorAll('link[rel="icon"], link[rel="shortcut icon"], link[rel="apple-touch-icon"], link[rel="manifest"]')];
     previous.forEach((link) => link.remove());
     const links = [
       ['icon', iconUrl],
-      ['apple-touch-icon', iconUrl],
+      ['apple-touch-icon', touchIconUrl],
       ...(page.doc.branding?.installEnabled !== false ? [['manifest', `/api/public/portfolio/manifest?${query}`]] : []),
     ].map(([rel, href]) => {
       const link = document.createElement('link');
@@ -109,7 +112,6 @@ export default function PortfolioPublic({ fixedUser = '' }) {
 function PublicPage({ page, products, store, slug, credit, installEvent, onInstallEventConsumed }) {
   const { doc } = page;
   const legacyFrameRef = useRef(null);
-  const lightbox = useImageLightbox();
   const { device, scale } = usePageScale();
   const isCatalog = doc.kind === 'catalog' && Boolean(store);
   const cart = useCart(slug);
@@ -120,39 +122,6 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
   const showCart = isCatalog && !directOrder && cartOpen;
-  const bindLegacyImageZoom = useCallback(() => {
-    const frameDocument = legacyFrameRef.current?.contentDocument;
-    if (!frameDocument || !lightbox) return undefined;
-    const onImageClick = (event) => {
-      const image = event.target?.closest?.('img');
-      if (!image?.currentSrc) return;
-      event.preventDefault();
-      event.stopPropagation();
-      const source = image.currentSrc;
-      if (!/^(?:https?:\/\/|data:image\/)/i.test(source)) return;
-      const rawHref = image.closest('a')?.href || '';
-      const href = /^(?:https?:\/\/|mailto:|tel:|\/|#)/i.test(rawHref) ? rawHref : '';
-      lightbox.openImage(source, String(image.alt || '').slice(0, 500), href);
-    };
-    frameDocument.addEventListener('click', onImageClick, true);
-    return () => frameDocument.removeEventListener('click', onImageClick, true);
-  }, [lightbox]);
-  useEffect(() => {
-    if (doc.editor !== 'grapesjs') return undefined;
-    const frame = legacyFrameRef.current;
-    if (!frame) return undefined;
-    let cleanup = () => {};
-    const onLoad = () => {
-      cleanup();
-      cleanup = bindLegacyImageZoom() || (() => {});
-    };
-    frame.addEventListener('load', onLoad);
-    if (frame.contentDocument?.readyState === 'complete') onLoad();
-    return () => {
-      frame.removeEventListener('load', onLoad);
-      cleanup();
-    };
-  }, [bindLegacyImageZoom, doc.editor, page.id]);
 
   if (doc.editor === 'grapesjs') {
     return (

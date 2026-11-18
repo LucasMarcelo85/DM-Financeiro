@@ -52,6 +52,7 @@ export default function Layout() {
   const { user, logout, pinUnlocked } = useAuth();
   const { pathname } = useLocation();
   const [openOrders, setOpenOrders] = useState(0);
+  const [menuOpen, setMenuOpen] = useState(false);
   const base = NAV.filter((i) => i.feature !== 'catalog' || (user.limits?.catalogProducts ?? 0) > 0); // Produtos e Pedidos só nos planos com catálogo digital
   const all = user.role === 'admin'
     ? [...base, { to: '/admin', label: 'Usuários', icon: 'users', always: true, end: true }, { to: '/admin/planos', label: 'Gerir planos', icon: 'tag', always: true }]
@@ -72,6 +73,20 @@ export default function Layout() {
   const blocked = !user.access.hasAccess;
   const fallbackPath = all.find((item) => isTabInPlan(user, tabOfPath(item.to)) && !isTabLocked(user, pinUnlocked, tabOfPath(item.to)))?.to || '/perfil';
 
+  useEffect(() => { setMenuOpen(false); }, [pathname]);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const previousOverflow = document.body.style.overflow;
+    const closeOnEscape = (event) => { if (event.key === 'Escape') setMenuOpen(false); };
+    document.body.style.overflow = 'hidden';
+    document.addEventListener('keydown', closeOnEscape);
+    return () => {
+      document.body.style.overflow = previousOverflow;
+      document.removeEventListener('keydown', closeOnEscape);
+    };
+  }, [menuOpen]);
+
   useEffect(() => {
     if ((user.limits?.catalogProducts ?? 0) < 1) return undefined;
     let alive = true;
@@ -83,15 +98,13 @@ export default function Layout() {
     return () => { alive = false; clearInterval(timer); };
   }, [user.limits?.catalogProducts]);
 
-  // No celular a barra de baixo rola: mantém o item da página atual à vista.
-  useEffect(() => {
-    document.querySelector('.nav-link.is-active')?.scrollIntoView({ inline: 'center', block: 'nearest' });
-  }, [pathname]);
-
   return (
     <div className="shell">
-      <aside className="sidebar">
+      <aside className={`sidebar${menuOpen ? ' is-mobile-open' : ''}`}>
         <div className="sidebar-top">
+          <button type="button" className="icon-btn mobile-menu-toggle" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuOpen}>
+            <span className="hamburger-icon" aria-hidden="true"><i /><i /><i /></span>
+          </button>
           <Brand light />
           <PinToggle className="topbar-pin" />
           <button className="icon-btn topbar-logout" onClick={logout} aria-label="Sair">
@@ -128,6 +141,7 @@ export default function Layout() {
           </button>
         </div>
       </aside>
+      {menuOpen && <button type="button" className="mobile-menu-backdrop" onClick={() => setMenuOpen(false)} aria-label="Fechar menu" />}
 
       <main className="main">
         <div className={`page ${pathname.startsWith('/auditoria') || pathname.startsWith('/produtos') ? 'page-wide' : ''}`}>

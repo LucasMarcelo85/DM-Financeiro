@@ -7,9 +7,10 @@ import Icon from '../components/Icon.jsx';
 import Modal from '../components/Modal.jsx';
 import PayModal from '../components/PayModal.jsx';
 import ScheduleItem from '../components/ScheduleItem.jsx';
+import WhatsAppManagerModal from '../components/WhatsAppManagerModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, firstName, isoToBR, todayISO } from '../lib/format.js';
-import { KIND, dueInMonthISO, overdueDues } from '../lib/schedule.js';
+import { KIND, dueDatesInMonthISO, overdueDues } from '../lib/schedule.js';
 
 const WEEK = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
 const short = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', maximumFractionDigits: c % 100 ? 2 : 0 });
@@ -24,8 +25,7 @@ function CalendarView({ items, renderItem, kind }) {
   const byDay = useMemo(() => {
     const map = {};
     for (const s of items) {
-      const d = dueInMonthISO(s, y, m0);
-      if (d) (map[d] ||= []).push(s);
+      for (const d of dueDatesInMonthISO(s, y, m0)) (map[d] ||= []).push(s);
     }
     return map;
   }, [items, y, m0]);
@@ -36,7 +36,7 @@ function CalendarView({ items, renderItem, kind }) {
   while (cells.length % 7) cells.push(null);
   const iso = (d) => `${y}-${String(m0 + 1).padStart(2, '0')}-${String(d).padStart(2, '0')}`;
 
-  const all = Object.values(byDay).flat().filter((s) => s.status !== 'pausada');
+  const all = [...new Map(Object.values(byDay).flat().filter((s) => s.status !== 'pausada').map((s) => [s.id, s])).values()];
   const sum = all.reduce((a, s) => a + (s.amountCents || 0), 0);
   const move = (n) => { const d = new Date(y, m0 + n, 1); setYm({ y: d.getFullYear(), m0: d.getMonth() }); setSelected(null); };
   const dayItems = selected ? byDay[selected] || [] : [];
@@ -121,6 +121,7 @@ export default function Schedules({ kind }) {
   const [version, setVersion] = useState(0);
   const [payTarget, setPayTarget] = useState(null);
   const [confirmUndo, setConfirmUndo] = useState(null);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   const loadClients = useCallback(
     () => (kind === 'cobranca' ? api.get('/receipts/clients').then((r) => setClients(r.clients)).catch(() => setClients([])) : Promise.resolve()),
@@ -209,7 +210,10 @@ export default function Schedules({ kind }) {
           <h1>{cfg.title}</h1>
           {kind === 'cobranca' ? <HelpNote topic="cobrancas" /> : <p className="muted">Agende lembretes de vencimento avulsos ou mensais.</p>}
         </div>
-        <Link to={`${cfg.route}/${kind === 'cobranca' ? 'nova' : 'novo'}`} className="btn btn-primary"><Icon name="plus" size={18} /> {cfg.newLabel}</Link>
+        <div className="btn-group">
+          {kind === 'cobranca' && <button type="button" className="btn btn-ghost" onClick={() => setWhatsappOpen(true)}><Icon name="chat" size={17} /> WhatsApp</button>}
+          <Link to={`${cfg.route}/${kind === 'cobranca' ? 'nova' : 'novo'}`} className="btn btn-primary"><Icon name="plus" size={18} /> {cfg.newLabel}</Link>
+        </div>
       </header>
 
       {kind === 'cobranca' && (
@@ -262,6 +266,7 @@ export default function Schedules({ kind }) {
       )}
 
       {payTarget && <PayModal s={payTarget} busy={busyId === payTarget.id} onClose={() => setPayTarget(null)} onConfirm={confirmPaid} />}
+      {whatsappOpen && <WhatsAppManagerModal onClose={() => setWhatsappOpen(false)} />}
       {confirmUndo && (
         <Modal title="Desfazer pagamento?" onClose={() => setConfirmUndo(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmUndo(null)}>Cancelar</button><button className="btn btn-danger" onClick={() => undoPaid(confirmUndo)}>Desfazer pagamento</button></>}>
@@ -271,7 +276,7 @@ export default function Schedules({ kind }) {
       {confirmSend && (
         <Modal title={`Enviar ${cfg.singular} agora?`} onClose={() => setConfirmSend(null)}
           footer={<><button className="btn btn-ghost" onClick={() => setConfirmSend(null)}>Cancelar</button><button className="btn btn-primary" onClick={() => sendNow(confirmSend)}>Enviar agora</button></>}>
-          <p>A mensagem vai para <strong>{confirmSend.contact.name}</strong> agora.{confirmSend.recurrence === 'avulsa' && confirmSend.status === 'ativa' ? ' Como é avulsa, o envio agendado será cancelado para não duplicar.' : ' Os próximos envios mensais continuam como estão.'}</p>
+          <p>A mensagem vai para <strong>{confirmSend.contact.name}</strong> agora.{confirmSend.recurrence === 'avulsa' && confirmSend.status === 'ativa' ? ' Como é avulsa, o envio agendado será cancelado para não duplicar.' : confirmSend.recurrence === 'semanal' ? ' As cobranças nos dias selecionados continuam até o pagamento ser registrado.' : ' Os próximos envios mensais continuam como estão.'}</p>
         </Modal>
       )}
       {confirmDel && (

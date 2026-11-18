@@ -7,6 +7,7 @@ import NoAiMarketingModal from '../components/ai/NoAiMarketingModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
 import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
+import WhatsAppManagerModal from '../components/WhatsAppManagerModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { formatStoredPhone } from '../lib/format.js';
 
@@ -386,6 +387,7 @@ export default function AiService() {
   const [testing, setTesting] = useState(null);
   const [actionsAgent, setActionsAgent] = useState(null);
   const [noAiMarketingOpen, setNoAiMarketingOpen] = useState(false);
+  const [whatsappOpen, setWhatsappOpen] = useState(false);
 
   const load = useCallback(async () => {
     try {
@@ -455,6 +457,7 @@ export default function AiService() {
       <header className="page-head head-row ai-page-head">
         <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
+          <button type="button" className="btn btn-ghost" onClick={() => setWhatsappOpen(true)}><Icon name="chat" size={17} /> WhatsApp</button>
           <button type="button" className="btn btn-ghost" onClick={refreshUsage}><Icon name="refresh" size={17} /> Atualizar uso</button>
           {tab === 'agentes' && (
             <>
@@ -539,6 +542,7 @@ export default function AiService() {
       {campaignAgent && <CampaignModal agent={campaignAgent} onClose={() => setCampaignAgent(null)} />}
       {noAiMarketingOpen && data && <NoAiMarketingModal data={data} onClose={() => setNoAiMarketingOpen(false)} />}
       {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} />}
+      {whatsappOpen && <WhatsAppManagerModal onClose={() => { setWhatsappOpen(false); load(); }} />}
     </>
   );
 }

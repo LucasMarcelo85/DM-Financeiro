@@ -54,6 +54,7 @@ export default function PortfolioEditor() {
   const [leave, setLeave] = useState(false);
   const [leaveTarget, setLeaveTarget] = useState('/portfolio');
   const [panelOpen, setPanelOpen] = useState(false);
+  const [leftPanelOpen, setLeftPanelOpen] = useState(false);
   const [leftTab, setLeftTab] = useState('add'); // 'add' | 'layers' | 'site'
   const [products, setProducts] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -140,7 +141,24 @@ export default function PortfolioEditor() {
     setPreview(false);
     setSelectedId(null);
     setLeftTab('site');
+    setLeftPanelOpen(false);
     setPanelOpen(true);
+  }
+
+  function toggleLeftPanel() {
+    if (leftPanelOpen) setLeftPanelOpen(false);
+    else {
+      setPanelOpen(false);
+      setLeftPanelOpen(true);
+    }
+  }
+
+  function toggleRightPanel() {
+    if (panelOpen) setPanelOpen(false);
+    else {
+      setLeftPanelOpen(false);
+      setPanelOpen(true);
+    }
   }
 
   // ---------------------------------------------------------------- histórico
@@ -306,6 +324,7 @@ export default function PortfolioEditor() {
     commit(el.t === 'spacer' ? moveLayer(withEl, el.id, 'back') : withEl);
     setSelectedId(el.id);
     setPreview(false);
+    setLeftPanelOpen(false);
     setPanelOpen(true);
     return el;
   }
@@ -322,6 +341,7 @@ export default function PortfolioEditor() {
     commit({ ...d, manual: { ...d.manual, tablet: true, mobile: true }, elements: [...d.elements, bg, text, button] });
     setSelectedId(text.id);
     setPreview(false);
+    setLeftPanelOpen(false);
     setPanelOpen(true);
   }
 
@@ -476,7 +496,7 @@ export default function PortfolioEditor() {
       else if (mod && key === 's') { e.preventDefault(); save(); }
       else if (mod && key === 'd' && sel) { e.preventDefault(); act('duplicate'); }
       else if (!mod && (key === 'delete' || key === 'backspace') && sel) { e.preventDefault(); act('delete'); }
-      else if (key === 'escape') setSelectedId(null);
+      else if (key === 'escape') { setSelectedId(null); setLeftPanelOpen(false); setPanelOpen(false); }
       else if (sel && key.startsWith('arrow')) {
         const el = findElement(docRef.current, sel);
         if (!el || el.locked) return;
@@ -534,7 +554,7 @@ export default function PortfolioEditor() {
         <button type="button" className={`btn btn-ghost btn-sm ${animate ? 'is-on' : ''}`} aria-pressed={animate} onClick={() => { setAnimate((a) => !a); setReplay((r) => r + 1); }} title="Ver as animações rodando">
           <EIcon name="play" size={15} /> <span className="ce-lbl">{animate ? 'Parar animações' : 'Testar animações'}</span>
         </button>
-        <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); setAnimate(false); }} title="Ver a página sem as ferramentas de edição">
+        <button type="button" className={`btn btn-ghost btn-sm ${preview ? 'is-on' : ''}`} aria-pressed={preview} onClick={() => { setPreview((p) => !p); setSelectedId(null); setAnimate(false); setLeftPanelOpen(false); setPanelOpen(false); }} title="Ver a página sem as ferramentas de edição">
           <EIcon name="eye" size={15} /> <span className="ce-lbl">{preview ? 'Voltar a editar' : 'Visualizar'}</span>
         </button>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setPublished(!meta.published)} disabled={!!busy}>{busy === 'publish' ? 'Aguarde...' : meta.published ? 'Despublicar' : 'Publicar'}</button>
@@ -547,7 +567,14 @@ export default function PortfolioEditor() {
       <div className="ce-body" style={{ '--pe-l': `${panelW.l}px`, '--pe-r': `${panelW.r}px` }}>
         <div className="pe-resizer is-left" role="separator" aria-orientation="vertical" aria-label="Arrastar para alterar a largura das ferramentas" title="Arraste para ajustar" onPointerDown={(e) => startResize('l', e)} />
         <div className="pe-resizer is-right" role="separator" aria-orientation="vertical" aria-label="Arrastar para alterar a largura das propriedades" title="Arraste para ajustar" onPointerDown={(e) => startResize('r', e)} />
-        <nav className="ce-palette pe-left" aria-label="Elementos">
+        {(leftPanelOpen || panelOpen) && <button type="button" className="pe-mobile-backdrop" onClick={() => { setLeftPanelOpen(false); setPanelOpen(false); }} aria-label="Fechar menus" />}
+        <button type="button" className={`pe-mobile-panel-toggle is-left${leftPanelOpen ? ' is-active' : ''}`} onClick={toggleLeftPanel} aria-expanded={leftPanelOpen} aria-controls="pe-mobile-left-drawer">
+          <EIcon name={leftPanelOpen ? 'x' : 'layers'} size={17} /><span>{leftPanelOpen ? 'Fechar' : 'Elementos'}</span>
+        </button>
+        <button type="button" className={`pe-mobile-panel-toggle is-right${panelOpen ? ' is-active' : ''}`} onClick={toggleRightPanel} aria-expanded={panelOpen} aria-controls="pe-mobile-right-drawer">
+          <EIcon name={panelOpen ? 'x' : 'settings'} size={17} /><span>{panelOpen ? 'Fechar' : 'Propriedades'}</span>
+        </button>
+        <nav id="pe-mobile-left-drawer" className={`ce-palette pe-left${leftPanelOpen ? ' is-open' : ''}`} aria-label="Elementos">
           <div className="pe-left-tabs" role="tablist">
             <button type="button" role="tab" aria-selected={leftTab === 'add'} className={leftTab === 'add' ? 'is-on' : ''} onClick={() => setLeftTab('add')}>Adicionar</button>
             <button type="button" role="tab" aria-selected={leftTab === 'layers'} className={leftTab === 'layers' ? 'is-on' : ''} onClick={() => setLeftTab('layers')}>Camadas</button>
@@ -571,7 +598,7 @@ export default function PortfolioEditor() {
                 const b = el.box[device];
                 return (
                   <li key={el.id} className={`${selectedId === el.id ? 'is-on' : ''}${b.hide ? ' is-off' : ''}`}>
-                    <button type="button" className="pe-layer-name" onClick={() => { setSelectedId(el.id); setPanelOpen(true); }}>
+                    <button type="button" className="pe-layer-name" onClick={() => { setSelectedId(el.id); setLeftPanelOpen(false); setPanelOpen(true); }}>
                       {el.name || (el.t === 'text' ? (el.text || '').slice(0, 22) || 'Texto' : el.t === 'button' ? el.label : ELEMENT_LABELS[el.t])}
                       <small>{ELEMENT_LABELS[el.t]}</small>
                     </button>
@@ -598,7 +625,7 @@ export default function PortfolioEditor() {
               </>
             ) : (
               <Stage doc={doc} device={device} zoom={zoom} selectedId={selectedId} products={products} animate={animate} replay={replay}
-                onSelect={(sid) => { setLeftTab('add'); setSelectedId(sid); if (sid) setPanelOpen(true); }}
+                onSelect={(sid) => { setLeftTab('add'); setSelectedId(sid); if (sid) { setLeftPanelOpen(false); setPanelOpen(true); } }}
                 onBox={setBox} onInteract={setInteracting}
                 onDropType={(t, x, y, codeType) => {
                   const added = addNew(t, t === 'custom' ? { name: 'JavaScript' } : undefined, { x: Math.round(x - 100), y: Math.round(y - 30) });
@@ -608,6 +635,7 @@ export default function PortfolioEditor() {
                 onEdit={(eid) => {
                   const el = findElement(docRef.current, eid);
                   if (!el) return;
+                  setLeftPanelOpen(false);
                   setPanelOpen(true);
                   if (el.t === 'text') setTimeout(() => document.getElementById('text-content')?.focus(), 60);
                   else if (el.t === 'image') { if (el.src) setImageTool({ id: eid, tool: 'crop' }); else fileRef.current?.click(); }
@@ -618,8 +646,8 @@ export default function PortfolioEditor() {
           {!doc.elements.length && !preview && <p className="pe-empty-hint">Comece adicionando elementos pela barra à esquerda: clique ou arraste para a página. Também dá para soltar uma imagem do seu computador aqui.</p>}
         </main>
 
-        <aside className={`ce-side ${panelOpen ? 'is-open' : ''}`} aria-label="Propriedades">
-          <button type="button" className="ce-side-toggle" onClick={() => setPanelOpen((o) => !o)} aria-expanded={panelOpen}>
+        <aside id="pe-mobile-right-drawer" className={`ce-side ${panelOpen ? 'is-open' : ''}`} aria-label="Propriedades">
+          <button type="button" className="ce-side-toggle" onClick={toggleRightPanel} aria-expanded={panelOpen}>
             {panelOpen ? 'Fechar propriedades' : selected ? `Propriedades: ${ELEMENT_LABELS[selected.t]}` : 'Propriedades da página'}
           </button>
           {leftTab === 'site' && !selected

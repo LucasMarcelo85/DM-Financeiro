@@ -25,7 +25,7 @@
 .pv-modal-primary, .pv-modal-secondary { border: 0; border-radius: 8px; padding: 10px 16px; font: inherit; font-weight: 650; text-decoration: none; cursor: pointer; }
 .pv-modal-primary { background: var(--p, #f2a33a); color: var(--on-p, #14202e); }
 .pv-modal-secondary { background: #e2e8f0; color: #14202e; }
-.pv-modal-image { display: block; max-width: 100%; max-height: 260px; margin: 16px auto; border-radius: 12px; object-fit: contain; }
+.pv-modal-image { display: block; width: auto; max-width: 100%; max-height: 150px; margin: 12px auto; border-radius: 12px; object-fit: contain; }
 .pv-modal-questions { display: grid; gap: 16px; margin-top: 20px; }
 .pv-modal-question { display: grid; gap: 7px; color: #334155; font-size: .95rem; font-weight: 600; }
 .pv-modal-question input:not([type="checkbox"]), .pv-modal-question textarea, .pv-modal-question select { width: 100%; min-height: 42px; box-sizing: border-box; border: 1px solid #cbd5e1; border-radius: 8px; padding: 9px 11px; background: #fff; color: #14202e; font: inherit; }
@@ -129,9 +129,6 @@
 /* ---------- imagem, ícone, forma ---------- */
 .pv-img { position: relative; width: 100%; height: 100%; overflow: hidden; box-sizing: border-box; }
 .pv-img img { width: 100%; height: 100%; display: block; user-select: none; -webkit-user-drag: none; }
-.pv-image-trigger, .pv-car-image-trigger, .pv-modal-image-trigger { display: block; width: 100%; height: 100%; padding: 0; border: 0; background: transparent; cursor: zoom-in; }
-.pv-modal-image-trigger { height: auto; margin: 16px 0; }
-.pv-modal-image-trigger .pv-modal-image { margin: 0 auto; }
 .pv-image-lightbox { position: fixed; inset: 0; z-index: 2147483647; display: grid; grid-template-columns: minmax(0, 1fr); grid-template-rows: minmax(0, 1fr); place-items: center; box-sizing: border-box; padding: 56px 20px; background: rgb(0 0 0 / 92%); touch-action: pinch-zoom; }
 /* A linha do grid é limitada (minmax(0, 1fr)) e a altura também é calculada pela tela: assim a foto inteira cabe, mesmo vertical, sem ser cortada no celular. */
 .pv-image-lightbox > img { display: block; width: auto; height: auto; max-width: 100%; max-height: 100%; max-height: calc(100dvh - 112px); object-fit: contain; }
@@ -153,7 +150,6 @@
 .pv-car-track { display: flex; width: 100%; height: 100%; transition: transform .5s ease; }
 .pv-car-slide { flex: 0 0 100%; height: 100%; }
 .pv-car-slide a { display: block; width: 100%; height: 100%; }
-.pv-car-image-trigger { cursor: zoom-in; }
 .pv-car-slide img { width: 100%; height: 100%; display: block; user-select: none; }
 .pv-car-btn { position: absolute; top: 50%; transform: translateY(-50%); width: 40px; height: 40px; border: 0; border-radius: 50%; background: rgba(0, 0, 0, .45); color: #fff; font-size: 26px; line-height: 1; cursor: pointer; }
 .pv-car-btn.is-prev { left: 10px; }
@@ -261,6 +257,7 @@
 .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: 0 0 42%; height: auto; min-height: var(--img-h, 180px); }
 .pv-card-img { flex: none; }
 @media (max-width: 600px) {
+  .pv-modal-image { max-height: 120px; margin: 8px auto; }
   .pv-card-img img { object-fit: contain; }
   .pv-card.is-horizontal { flex-direction: column; }
   .pv-card.is-horizontal .pv-card-img,

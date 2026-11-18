@@ -59,6 +59,7 @@ export const scheduleDTO = (s) => ({
   mediaId: s.mediaId ?? null,
   media: s.media ? { id: s.media.id, name: s.media.name, kind: s.media.kind } : null,
   daysBefore: s.daysBefore,
+  weekDays: s.weekDays || [],
   sendTime: s.sendTime,
   nextRunAt: ms(s.nextRunAt),
   lastRunAt: ms(s.lastRunAt),

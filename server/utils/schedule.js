@@ -65,10 +65,22 @@ export function localToday(now = new Date(), tz = config.timezone) {
 export const runAtFor = (due, daysBefore, hhmm) => zonedToUtc(addDays(due, -daysBefore), hhmm);
 
 // Primeira ocorrência que ainda vai acontecer (a partir de "agora").
-export function firstOccurrence({ recurrence, dueDate, daysBefore, sendTime }, now = new Date()) {
+export function firstOccurrence(schedule, now = new Date()) {
+  const { recurrence, dueDate, daysBefore, sendTime } = schedule;
   if (recurrence === 'avulsa') {
     const runAt = runAtFor(dueDate, daysBefore, sendTime);
     return runAt > now ? { nextDueDate: dueDate, nextRunAt: runAt } : null;
+  }
+  if (recurrence === 'semanal') {
+    const weekDays = schedule.weekDays || [];
+    const start = localToday(now) > dueDate ? localToday(now) : dueDate;
+    for (let offset = 0; offset < 400; offset += 1) {
+      const runDay = addDays(start, offset);
+      if (!weekDays.includes(runDay.getUTCDay())) continue;
+      const nextRunAt = zonedToUtc(runDay, sendTime);
+      if (nextRunAt > now) return { nextDueDate: dueDate, nextRunAt };
+    }
+    return null;
   }
   for (let k = 0; k < 600; k++) {
     const due = dueForMonthOffset(dueDate, k);
@@ -80,6 +92,16 @@ export function firstOccurrence({ recurrence, dueDate, daysBefore, sendTime }, n
 
 // Próxima ocorrência mensal depois da que acabou de ser tratada.
 export function occurrenceAfter(schedule, now = new Date()) {
+  if (schedule.recurrence === 'semanal') {
+    const start = localToday(now);
+    for (let offset = 0; offset < 8; offset += 1) {
+      const runDay = addDays(start, offset);
+      if (runDay < schedule.dueDate || !(schedule.weekDays || []).includes(runDay.getUTCDay())) continue;
+      const nextRunAt = zonedToUtc(runDay, schedule.sendTime);
+      if (nextRunAt > now) return { nextDueDate: schedule.dueDate, nextRunAt };
+    }
+    return null;
+  }
   const base = monthIndexDiff(schedule.dueDate, schedule.nextDueDate ?? schedule.dueDate);
   for (let k = base + 1; k < base + 600; k++) {
     const due = dueForMonthOffset(schedule.dueDate, k);
@@ -93,6 +115,7 @@ export function occurrenceAfter(schedule, now = new Date()) {
 // 5 meses atrás até o mês que vem (pagamento adiantado).
 export function payableDues(schedule, today = localToday()) {
   if (schedule.recurrence === 'avulsa') return [schedule.dueDate];
+  if (schedule.recurrence === 'semanal') return [schedule.dueDate];
   const kNow = monthIndexDiff(schedule.dueDate, today);
   const out = [];
   for (let k = Math.max(0, kNow - 5); k <= Math.max(0, kNow + 1); k++) out.push(dueForMonthOffset(schedule.dueDate, k));
@@ -109,6 +132,16 @@ export function dueInMonth(schedule, year, month0) {
   if (schedule.recurrence === 'avulsa') {
     const d = schedule.dueDate;
     return d.getUTCFullYear() === year && d.getUTCMonth() === month0 ? d : null;
+  }
+  if (schedule.recurrence === 'semanal') {
+    const start = new Date(Date.UTC(year, month0, 1));
+    const end = new Date(Date.UTC(year, month0 + 1, 0));
+    const weekDays = schedule.weekDays || [];
+    for (let day = Math.max(start.getUTCDate(), schedule.dueDate.getUTCMonth() === month0 && schedule.dueDate.getUTCFullYear() === year ? schedule.dueDate.getUTCDate() : 1); day <= end.getUTCDate(); day += 1) {
+      const date = new Date(Date.UTC(year, month0, day));
+      if (weekDays.includes(date.getUTCDay())) return date;
+    }
+    return null;
   }
   const k = (year - schedule.dueDate.getUTCFullYear()) * 12 + (month0 - schedule.dueDate.getUTCMonth());
   return k >= 0 ? dueForMonthOffset(schedule.dueDate, k) : null;

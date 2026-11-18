@@ -10,7 +10,7 @@ import { ensureDefaultStockFlow, syncProductStock } from '../services/inventory.
 
 // Produtos e serviços do usuário (usados no portfólio e no catálogo digital).
 const router = Router();
-const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true, externalUrl: true }, orderBy: { position: 'asc' } };
+const imgSelect = { select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true, mime: true, externalUrl: true }, orderBy: { position: 'asc' } };
 const optionSelect = { select: { id: true, position: true, label: true, priceCents: true, minQuantity: true, scope: true, minCartCents: true }, orderBy: { position: 'asc' } };
 const productInclude = {
   images: imgSelect,
@@ -162,7 +162,7 @@ router.get('/export', async (req, res) => {
   });
   res.json({ rows: products.map((product) => {
     const images = product.images.map((image) => ({
-      ...(image.externalUrl ? { url: image.externalUrl } : { data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}` }),
+      ...(image.externalUrl ? { url: image.externalUrl } : image.data ? { data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}` } : {}),
       label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode,
     }));
     return {
@@ -319,7 +319,10 @@ router.patch('/:id', async (req, res) => {
   const p = await prisma.$transaction(async (tx) => {
     await tx.productImage.deleteMany({ where: { productId: current.id, id: { notIn: [...keep] } } });
     for (const [position, im] of images.entries()) {
-      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: { position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity } });
+      if (im.id !== undefined) await tx.productImage.update({ where: { id: im.id }, data: {
+        position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity,
+        ...(im.upload ? { mime: im.upload.mime, data: im.upload.data, externalUrl: null } : im.removeImage ? { mime: null, data: null, externalUrl: null } : im.externalUrl ? { mime: null, data: null, externalUrl: im.externalUrl } : {}),
+      } });
       else await tx.productImage.create({ data: { productId: current.id, position, isPrimary: im.isPrimary, label: im.label, size: im.size, color: im.color, colorHex: im.colorHex, barcode: im.barcode, priceCents: im.priceCents, stockQuantity: im.stockQuantity, mime: im.upload?.mime || null, data: im.upload?.data || null, externalUrl: im.externalUrl || null } });
     }
     await tx.productPriceOption.deleteMany({ where: { productId: current.id, id: { notIn: [...keepPriceOptions] } } });

@@ -132,7 +132,7 @@ export default function Dashboard() {
               {stats.upcoming.map((u) => (
                 <li key={u.id}>
                   <span className="history-main"><strong>{u.contactName}</strong>{u.amountCents != null ? ` · ${brl(u.amountCents)}` : ''}</span>
-                  <span className={`tag ${u.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{u.recurrence === 'mensal' ? 'Mensal' : 'Avulsa'}</span>
+                  <span className={`tag ${u.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{u.recurrence === 'mensal' ? 'Mensal' : u.recurrence === 'semanal' ? 'Até pagar' : 'Avulsa'}</span>
                   <time>{fmtRun(u.nextRunAt)}</time>
                 </li>
               ))}

@@ -11,7 +11,7 @@ import { useToast } from '../components/Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
 import { formatStoredPhone, plural } from '../lib/format.js';
 
-const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 60 }; // days: 7, 30 ou 60 (as mensagens com mais de 60 dias são apagadas sozinhas)
+const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 7 };
 const POLL_MS = 4000; // canal de segurança: pergunta ao servidor o que chegou (funciona mesmo se o tempo real for barrado)
 const REFRESH_MS = 30000; // atualiza a lista inteira (nomes, não lidas, ordem) de tempos em tempos
 

@@ -118,7 +118,7 @@ async function finalize(schedule, status, error, now) {
     attempts: 0,
     sentCount: schedule.sentCount + (status === 'failed' ? 0 : 1),
   };
-  if (schedule.recurrence === 'mensal') {
+  if (schedule.recurrence === 'mensal' || schedule.recurrence === 'semanal') {
     const next = occurrenceAfter(schedule, now);
     Object.assign(data, next ? { nextDueDate: next.nextDueDate, nextRunAt: next.nextRunAt } : { nextRunAt: null, status: 'concluida' });
   } else {

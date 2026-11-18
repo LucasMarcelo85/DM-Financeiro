@@ -20,13 +20,19 @@ async function getOwned(req) {
 }
 
 function parseFields(body, kind) {
-  const recurrence = body.recurrence === 'mensal' ? 'mensal' : body.recurrence === 'avulsa' ? 'avulsa' : null;
-  if (!recurrence) throw new AppError(400, 'Escolha se é avulso ou mensal.');
+  const recurrence = body.recurrence === 'mensal' ? 'mensal' : body.recurrence === 'semanal' && kind === 'cobranca' ? 'semanal' : body.recurrence === 'avulsa' ? 'avulsa' : null;
+  if (!recurrence) throw new AppError(400, 'Escolha se é avulso, mensal ou cobrança até pagar.');
+
+  if (recurrence === 'semanal' && !Array.isArray(body.weekDays)) throw new AppError(400, 'Selecione pelo menos um dia da semana para cobrar.');
+  const weekDays = recurrence === 'semanal' ? [...new Set(body.weekDays)].sort((a, b) => a - b) : [];
+  if (recurrence === 'semanal' && (!weekDays.length || weekDays.some((day) => !Number.isInteger(day) || day < 0 || day > 6))) {
+    throw new AppError(400, 'Selecione pelo menos um dia da semana para cobrar.');
+  }
 
   const dueDate = parseISODate(body.dueDate);
   if (!dueDate) throw new AppError(400, 'Informe a data do vencimento.');
 
-  const daysBefore = Number(body.daysBefore ?? 0);
+  const daysBefore = recurrence === 'semanal' ? 0 : Number(body.daysBefore ?? 0);
   if (!Number.isInteger(daysBefore) || daysBefore < 0 || daysBefore > 30) throw new AppError(400, 'Os dias de antecedência devem ficar entre 0 e 30.');
 
   const sendTime = String(body.sendTime || '09:00');
@@ -46,9 +52,9 @@ function parseFields(body, kind) {
   }
 
   const sendNow = body.sendMode === 'agora';
-  if (sendNow && recurrence === 'mensal') throw new AppError(400, 'Enviar agora só vale para envio avulso.');
+  if (sendNow && recurrence !== 'avulsa') throw new AppError(400, 'Enviar agora só vale para envio avulso.');
 
-  return { recurrence, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow, mediaId: body.mediaId === '' || body.mediaId == null ? null : Number(body.mediaId) };
+  return { recurrence, weekDays, dueDate, daysBefore, sendTime, text, extra, amountCents, sendNow, mediaId: body.mediaId === '' || body.mediaId == null ? null : Number(body.mediaId) };
 }
 
 // O arquivo precisa ser do usuário. Cobrança aceita só documento; lembrete aceita foto, vídeo ou documento.
@@ -119,7 +125,7 @@ router.post('/', async (req, res) => {
   const mediaId = await resolveMediaId(req.user.id, kind, f.mediaId);
 
   const base = {
-    userId: req.user.id, contactId: contact.id, instanceId, mediaId, kind, recurrence: f.recurrence, amountCents: f.amountCents,
+    userId: req.user.id, contactId: contact.id, instanceId, mediaId, kind, recurrence: f.recurrence, weekDays: f.weekDays, amountCents: f.amountCents,
     text: f.text, extra: f.extra, dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
   };
 
@@ -168,7 +174,7 @@ router.patch('/:id', async (req, res) => {
     where: { id: current.id },
     data: {
       ...(contact ? { contactId: contact.id } : {}),
-      instanceId, mediaId, recurrence: f.recurrence, amountCents: f.amountCents, text: f.text, extra: f.extra,
+      instanceId, mediaId, recurrence: f.recurrence, weekDays: f.weekDays, amountCents: f.amountCents, text: f.text, extra: f.extra,
       dueDate: f.dueDate, daysBefore: f.daysBefore, sendTime: f.sendTime,
       nextDueDate: occ?.nextDueDate ?? null, nextRunAt: occ?.nextRunAt ?? null,
       status: paused ? 'pausada' : 'ativa', attempts: 0, lastError: null,
@@ -228,8 +234,14 @@ router.post('/:id/paid', async (req, res) => {
 
   let payment;
   try {
-    payment = await prisma.billingPayment.create({
-      data: { userId: req.user.id, scheduleId: s.id, contactId: s.contactId, contactName: s.contact.name, amountCents: s.amountCents, dueDate, paidAt },
+    payment = await prisma.$transaction(async (tx) => {
+      const created = await tx.billingPayment.create({
+        data: { userId: req.user.id, scheduleId: s.id, contactId: s.contactId, contactName: s.contact.name, amountCents: s.amountCents, dueDate, paidAt },
+      });
+      if (s.recurrence === 'semanal' && toISODate(dueDate) === toISODate(s.dueDate) && s.status === 'ativa') {
+        await tx.schedule.update({ where: { id: s.id }, data: { status: 'concluida', nextRunAt: null, attempts: 0 } });
+      }
+      return created;
     });
   } catch (e) {
     if (e?.code === 'P2002') throw new AppError(409, 'Esse vencimento já está marcado como pago.');

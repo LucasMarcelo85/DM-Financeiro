@@ -180,7 +180,7 @@ export default function Products({ allow = [] }) {
           {data.products.map((p) => (
             <li key={p.id} className={`pr-card rounded-xl border-slate-200 shadow-sm transition duration-200 hover:-translate-y-0.5 hover:shadow-lg ${p.active ? '' : 'is-off'}`}>
               <button type="button" className="pr-img transition duration-200 hover:brightness-95" onClick={() => canManageProducts && setEditing(p)} disabled={!canManageProducts} aria-label={`Editar ${p.name}`}>
-                {(p.mainImage || p.images[0]) ? <img src={(p.mainImage || p.images[0]).url} alt="" loading="lazy" /> : <Icon name="box" size={28} />}
+                {(p.mainImage || p.images.find((image) => image.url)) ? <img src={(p.mainImage || p.images.find((image) => image.url)).url} alt="" loading="lazy" /> : <Icon name="box" size={28} />}
                 {p.images.length > 0 && <span className="pr-var">{p.images.length} {plural(p.images.length, 'variação', 'variações')}</span>}
               </button>
               <div className="pr-body">

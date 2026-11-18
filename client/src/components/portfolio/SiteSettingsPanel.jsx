@@ -1,12 +1,13 @@
 import { useRef, useState } from 'react';
-import { fitImage } from '../../lib/contract/image.js';
+import { prepareProductImage } from '../../lib/portfolio/imageTools.js';
 import { useToast } from '../Toast.jsx';
 import { Check } from './Fields.jsx';
 
 const newNoticeId = () => `notice-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 8)}`;
 
 async function squareLogos(file) {
-  const { src } = await fitImage(file, 512);
+  if (file.size > 15 * 1024 * 1024) throw new Error('A logo é muito grande. Escolha um arquivo de até 15 MB.');
+  const { src } = await prepareProductImage(file, { maxDim: 512, maxBytes: 500 * 1024 });
   const image = new Image();
   const loaded = new Promise((resolve, reject) => {
     image.onload = resolve;
@@ -39,8 +40,9 @@ export function SiteIdentityFields({ branding = {}, onChange }) {
     const file = event.target.files?.[0];
     event.target.value = '';
     if (!file) return;
-    if (!['image/png', 'image/jpeg', 'image/webp'].includes(file.type)) {
-      toast('Use uma logo PNG, JPG ou WebP.', 'error');
+    if (!['image/png', 'image/jpeg', 'image/webp', 'image/heic', 'image/heif'].includes(file.type)
+      && !/\.(png|jpe?g|webp|heic|heif)$/i.test(file.name || '')) {
+      toast('Use uma logo PNG, JPG, WebP ou HEIC/HEIF.', 'error');
       return;
     }
     setBusy(true);
@@ -73,7 +75,7 @@ export function SiteIdentityFields({ branding = {}, onChange }) {
           ? <img src={branding.logo} alt="Prévia da logo" />
           : <span className="site-logo-empty">Sem logo</span>}
         <div className="btn-group">
-          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp" hidden onChange={pickLogo} />
+          <input ref={fileRef} type="file" accept="image/png,image/jpeg,image/webp,image/heic,image/heif,.heic,.heif" hidden onChange={pickLogo} />
           <button type="button" className="btn btn-ghost btn-sm" onClick={() => fileRef.current?.click()} disabled={busy}>
             {busy ? 'Preparando...' : branding.logo ? 'Trocar logo' : 'Adicionar logo'}
           </button>

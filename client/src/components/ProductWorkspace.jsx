@@ -151,7 +151,7 @@ function draftFromProduct(product, stockFlows) {
   const variation = (image) => ({
     key: `image-${image.id}`,
     id: image.id,
-    url: image.url,
+    url: image.url || null,
     label: image.label || '',
     color: image.color || '',
     colorHex: image.colorHex || '',
@@ -165,7 +165,7 @@ function draftFromProduct(product, stockFlows) {
     ? { key: `image-${product.mainImage.id}`, id: product.mainImage.id, url: product.mainImage.url, stockQuantity: String(product.stockQuantity || 0) }
     : legacyRows
       ? (rows.find((image) => image.isPrimary) ? variation(rows.find((image) => image.isPrimary)) : null)
-      : rows[0] || null;
+      : Object.hasOwn(product, 'mainImage') ? null : rows[0] || null;
   const variationRows = product.mainImage || legacyRows ? rows.filter((image) => !image.isPrimary) : rows.slice(1);
   return {
     key: `product-${product.id}`,
@@ -240,7 +240,8 @@ function productBody(draft) {
       image.customVariationValue?.trim() && `${image.customVariationType.trim()}: ${image.customVariationValue.trim()}`,
     ].filter(Boolean);
     return {
-      ...(image.id ? { id: image.id } : image.externalUrl ? { url: image.externalUrl } : { data: image.data }),
+      ...(image.id ? { id: image.id } : {}),
+      ...(image.data ? { data: image.data } : image.externalUrl ? { url: image.externalUrl } : image.imageRemoved ? { removeImage: true } : {}),
       label: details.join(' · ').slice(0, 100),
       color: image.color?.trim() || '',
       colorHex: image.colorHex || '',
@@ -334,7 +335,6 @@ export default function ProductWorkspace({ product, categories, preferences, sto
 
   function addVariationWithUrl(key, url) {
     const draft = drafts.find((item) => item.key === key);
-    if (!draft?.mainImage) return setError('Adicione primeiro a foto principal deste produto.');
     if (draft.variations.length >= MAX_IMAGES - 1) return setError(`Cada produto pode ter até ${MAX_IMAGES - 1} fotos de variação.`);
     setDrafts((current) => current.map((item) => item.key === key ? {
       ...item,
@@ -346,7 +346,6 @@ export default function ProductWorkspace({ product, categories, preferences, sto
     const selected = [...files];
     if (!selected.length) return;
     const draft = drafts.find((item) => item.key === key);
-    if (!draft?.mainImage) return setError('Adicione primeiro a foto principal deste produto.');
     if (draft.variations.length + selected.length > MAX_IMAGES - 1) return setError(`Cada produto pode ter até ${MAX_IMAGES - 1} fotos de variação.`);
     setUploading(true);
     setError('');
@@ -357,6 +356,34 @@ export default function ProductWorkspace({ product, categories, preferences, sto
         ...item,
         variations: [...item.variations, ...prepared.map((image) => ({ ...image, variationType: '', variationValue: '', customVariationType: '', customVariationValue: '' }))],
       } : item));
+    } catch (e) {
+      setError(e.message);
+    } finally {
+      setUploading(false);
+    }
+  }
+
+  function addBlankVariation(key) {
+    const draft = drafts.find((item) => item.key === key);
+    if (!draft || draft.variations.length >= MAX_IMAGES - 1) return;
+    setDrafts((current) => current.map((item) => item.key === key ? {
+      ...item,
+      variations: [...item.variations, { key: newKey(), url: null, label: '', stockQuantity: '0', variationType: '', variationValue: '', customVariationType: '', customVariationValue: '' }],
+    } : item));
+  }
+
+  async function replaceVariation(key, variationKey, file) {
+    if (!file) return;
+    setUploading(true);
+    setError('');
+    try {
+      const photo = await imageFromFile(file);
+      setDrafts((current) => current.map((draft) => draft.key === key ? {
+        ...draft,
+        variations: draft.variations.map((image) => image.key === variationKey ? {
+          ...image, ...photo, key: image.key, id: image.id, stockQuantity: image.stockQuantity,
+        } : image),
+      } : draft));
     } catch (e) {
       setError(e.message);
     } finally {
@@ -497,6 +524,8 @@ export default function ProductWorkspace({ product, categories, preferences, sto
           onReplaceMainUrl={(url) => replaceMainPhotoWithUrl(drafts[activeDraftIndex].key, url)}
           onAddVariations={(files) => addVariations(drafts[activeDraftIndex].key, files)}
           onAddVariationUrl={(url) => addVariationWithUrl(drafts[activeDraftIndex].key, url)}
+          onAddBlankVariation={() => addBlankVariation(drafts[activeDraftIndex].key)}
+          onReplaceVariation={(variationKey, file) => replaceVariation(drafts[activeDraftIndex].key, variationKey, file)}
           onRemove={() => removeCurrentDraft(drafts[activeDraftIndex].key)}
           onRemoveVariation={(variationKey) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.filter((image) => image.key !== variationKey) })}
           onPatchVariation={(variationKey, changes) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.map((image) => image.key === variationKey ? { ...image, ...changes } : image) })}
@@ -518,7 +547,7 @@ export default function ProductWorkspace({ product, categories, preferences, sto
   );
 }
 
-function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onRemove, onRemoveVariation, onPatchVariation }) {
+function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
   const steps = ['Fotos', 'Informações', 'Preço', 'Estoque', 'Revisar'];
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
@@ -578,7 +607,7 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
           <strong>Foto principal</strong>
           <small className="muted">Esta é a imagem de referência para os dados abaixo.</small>
             <ProductImageUrl onAdd={onReplaceMainUrl} disabled={uploading} />
-            {draft.variations.length > 0 && <div className="pr-mini-gallery">{draft.variations.map((image) => <img key={image.key} src={image.url} alt={image.label || 'Foto de variação'} />)}</div>}
+            {draft.variations.some((image) => image.url) && <div className="pr-mini-gallery">{draft.variations.filter((image) => image.url).map((image) => <img key={image.key} src={image.url} alt={image.label || 'Foto de variação'} />)}</div>}
         </aside>
         }
 
@@ -601,8 +630,22 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
             <div className="pr-section-title"><span>1</span><div><h3>Fotos e variações</h3><p>A foto principal apresenta o item. Se houver opções como cores ou tamanhos, adicione uma foto para cada uma. Se não houver, pode seguir sem preencher nada.</p></div></div>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => <div className="pr-variation-row" key={image.key}>
-                <div className="pr-variation-thumb"><img src={image.url} alt={`Variação ${variationIndex + 1} de ${draft.name || `produto ${index + 1}`}`} /><span>Variação {variationIndex + 1}</span></div>
                 <div className="pr-variation-fields">
+                  <div className="field pr-variation-photo">
+                    <span>Imagem da variação <small>(opcional)</small></span>
+                    <div className="pr-variation-photo-control">
+                      {image.url && <img src={image.url} alt={`Imagem da variação ${variationIndex + 1}`} />}
+                      <label className={`btn btn-ghost btn-sm ${uploading ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
+                        <Icon name={image.url ? 'edit' : 'plus'} size={15} /> {image.url ? 'Trocar imagem' : 'Adicionar imagem'}
+                      </label>
+                      <input id={`variation-image-${image.key}`} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
+                        const file = event.currentTarget.files?.[0];
+                        event.currentTarget.value = '';
+                        void onReplaceVariation(image.key, file);
+                      }} />
+                      {image.url && <button type="button" className="link-btn" disabled={uploading} onClick={() => onPatchVariation(image.key, { url: null, data: null, externalUrl: null, imageRemoved: Boolean(image.id) })}>Remover imagem</button>}
+                    </div>
+                  </div>
                   <label className="field"><span>Cor <small>(opcional)</small></span><span className="pr-variation-color">
                     <input type="color" value={image.colorHex || colorHexForName(image.color) || '#cccccc'} onChange={(event) => onPatchVariation(image.key, { colorHex: event.target.value })} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
                     <input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" />
@@ -624,16 +667,16 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
               </div>)}
             </div>
             {draft.variations.length < MAX_IMAGES - 1 && <>
-              <label className={`btn btn-ghost btn-sm pr-add-variation ${!draft.mainImage || uploading ? 'is-disabled' : ''}`} htmlFor={variationPickerId}>
-                <Icon name="plus" size={16} /> Adicionar fotos das variações
-                <input id={variationPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={!draft.mainImage || uploading} onChange={(event) => {
+              <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>
+              <label className={`btn btn-ghost btn-sm pr-add-variation ${uploading ? 'is-disabled' : ''}`} htmlFor={variationPickerId}>
+                <Icon name="plus" size={16} /> Criar variações a partir de fotos
+                <input id={variationPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={uploading} onChange={(event) => {
                   const files = Array.from(event.currentTarget.files || []);
                   event.currentTarget.value = '';
                   void onAddVariations(files);
                 }} />
               </label>
-              {!draft.mainImage && <small className="muted">Adicione primeiro a foto principal para criar variações.</small>}
-              <ProductImageUrl onAdd={onAddVariationUrl} disabled={!draft.mainImage || uploading} label="Adicionar variação por URL" />
+              <ProductImageUrl onAdd={onAddVariationUrl} disabled={uploading} label="Criar variação por URL" />
             </>}
           </section>}
 
@@ -678,9 +721,9 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
                 <span>{flow.name}{flow.isDefault ? ' (site e fluxo principal)' : ''}</span>
               </label>)}
             </fieldset>}
-            {draft.stockEnabled && <div className="pr-stock-list">
+            {draft.stockEnabled &&             <div className="pr-stock-list">
               {draft.variations.length > 0 ? draft.variations.map((image, imageIndex) => <label className="field pr-stock-row" key={image.key}>
-                <span className="pr-stock-product"><img src={image.url} alt="" />{image.label || `Variação ${imageIndex + 1}`}</span>
+                <span className="pr-stock-product">{image.url && <img src={image.url} alt="" />}{image.label || `Variação ${imageIndex + 1}`}</span>
                 <input className="input" type="number" min="0" max="1000000" value={image.stockQuantity || '0'} onChange={(event) => {
                   const value = event.target.value;
                   onPatch({ variations: draft.variations.map((row) => row.key === image.key ? { ...row, stockQuantity: value } : row) });
@@ -695,7 +738,7 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
           {step === 4 && <section className="pr-editor-section">
             <div className="pr-section-title"><span>4</span><div><h3>Detalhes e conferência</h3><p>Revise a imagem, as variações, os preços e complete as informações do produto.</p></div></div>
             <div className="pr-review-card">
-              <div className="pr-review-photos">{draft.mainImage && <figure><img src={draft.mainImage.url} alt="Imagem principal" /><figcaption>Imagem principal</figcaption></figure>}{draft.variations.map((image, imageIndex) => <figure key={image.key}><img src={image.url} alt={`Foto da variação ${imageIndex + 1}`} /><figcaption>{image.label || `Variação ${imageIndex + 1}`}</figcaption></figure>)}{!draft.mainImage && !draft.variations.length && <span>Sem foto</span>}</div>
+              <div className="pr-review-photos">{draft.mainImage && <figure><img src={draft.mainImage.url} alt="Imagem principal" /><figcaption>Imagem principal</figcaption></figure>}{draft.variations.map((image, imageIndex) => <figure key={image.key}>{image.url ? <img src={image.url} alt={`Foto da variação ${imageIndex + 1}`} /> : <span>Sem imagem</span>}<figcaption>{image.label || `Variação ${imageIndex + 1}`}</figcaption></figure>)}{!draft.mainImage && !draft.variations.length && <span>Sem foto</span>}</div>
               <p><strong>{draft.name || 'Nome do item'}</strong> · {draft.category || 'Categoria'}</p>
               <p>{draft.kind === 'servico' ? 'Serviço' : 'Produto'} · {draft.variations.length ? `${draft.variations.length} ${plural(draft.variations.length, 'variação', 'variações')}` : 'Sem variações'} · {draft.onRequest ? 'Preço sob consulta' : draft.price ? `Preço: R$ ${draft.price}` : 'Preço não informado'}</p>
               <p>{draft.stockEnabled ? 'Controle de estoque ativo' : 'Sem controle de estoque'} · {draft.active ? 'Ativo' : 'Inativo'}</p>

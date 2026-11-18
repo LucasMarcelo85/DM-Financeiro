@@ -49,7 +49,7 @@ export function rowsFromOrder(order, productMap) {
   return (order.items || []).map((item) => {
     const product = productMap.get(item.productId);
     const image = product?.images?.find((i) => i.id === item.imageId);
-    const main = product?.mainImage || product?.images?.[0];
+    const main = product?.mainImage || product?.images?.find((image) => image.url);
     return {
       photo: (image || main)?.url || '',
       code: image?.barcode || product?.barcode || '',
@@ -66,7 +66,7 @@ export function rowsFromOrder(order, productMap) {
 export function rowsFromProducts(products) {
   return products.map((product) => {
     const stock = product.images?.length ? product.images.reduce((sum, i) => sum + (i.stockQuantity || 0), 0) : product.stockQuantity || 0;
-    const main = product.mainImage || product.images?.[0];
+    const main = product.mainImage || product.images?.find((image) => image.url);
     return {
       photo: main?.url || '', code: product.barcode || '', name: product.name, variation: '', category: product.category || '',
       qty: product.stockEnabled ? stock : 1, unitCents: product.priceCents || 0, totalCents: (product.priceCents || 0) * (product.stockEnabled ? stock : 1),

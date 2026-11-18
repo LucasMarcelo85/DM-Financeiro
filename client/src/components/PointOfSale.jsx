@@ -437,7 +437,7 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
           {!visibleProducts.length ? <div className="empty-hero"><h2>Nenhum produto disponível</h2><p>Cadastre e ative produtos para vender no caixa.</p></div> : (
             <div className="pos-product-grid">
               {visibleProducts.map((product) => {
-                const image = product.mainImage || product.images?.[0];
+                const image = product.mainImage || product.images?.find((row) => row.url);
                 const tier = tierPrice(product, cart);
                 const unit = tier?.priceCents ?? image?.priceCents ?? product.priceCents;
                 const availableStock = stockFor(product);

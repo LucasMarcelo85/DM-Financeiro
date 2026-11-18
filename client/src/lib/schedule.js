@@ -4,6 +4,12 @@ import { addDaysISO, fmtRun, isoDay, isoToBR, todayISO } from './format.js';
 const pad = (n) => String(n).padStart(2, '0');
 const iso = (y, m0, d) => `${y}-${pad(m0 + 1)}-${pad(d)}`;
 const daysIn = (y, m0) => new Date(Date.UTC(y, m0 + 1, 0)).getUTCDate();
+const DAY_NAMES = ['dom', 'seg', 'ter', 'qua', 'qui', 'sex', 'sáb'];
+
+export function weekDaysLabel(days = []) {
+  const labels = [...new Set(days)].sort((a, b) => a - b).map((day) => DAY_NAMES[day]).filter(Boolean);
+  return labels.length === 7 ? 'todos os dias' : labels.join(', ');
+}
 
 export const KIND = {
   cobranca: {
@@ -17,17 +23,34 @@ export const KIND = {
 };
 
 // Vencimento de um agendamento dentro de um mês (ou null).
-export function dueInMonthISO(s, y, m0) {
+export function dueDatesInMonthISO(s, y, m0) {
   const [ay, am, ad] = s.dueDate.split('-').map(Number);
-  if (s.recurrence === 'avulsa') return ay === y && am - 1 === m0 ? s.dueDate : null;
+  if (s.recurrence === 'avulsa') return ay === y && am - 1 === m0 ? [s.dueDate] : [];
+  if (s.recurrence === 'semanal') {
+    const days = s.weekDays || [];
+    return Array.from({ length: daysIn(y, m0) }, (_, index) => iso(y, m0, index + 1))
+      .filter((date) => date >= s.dueDate && days.includes(new Date(`${date}T00:00:00Z`).getUTCDay()));
+  }
   const k = (y - ay) * 12 + (m0 - (am - 1));
-  return k < 0 ? null : iso(y, m0, Math.min(ad, daysIn(y, m0)));
+  return k < 0 ? [] : [iso(y, m0, Math.min(ad, daysIn(y, m0)))];
 }
 
+export function dueInMonthISO(s, y, m0) { return dueDatesInMonthISO(s, y, m0)[0] || null; }
+
 // Primeira data de envio, no relógio do navegador (apenas para mostrar o resumo no formulário).
-export function previewFirstRun({ recurrence, dueDate, daysBefore, sendTime }, now = new Date()) {
+export function previewFirstRun({ recurrence, dueDate, daysBefore, sendTime, weekDays = [] }, now = new Date()) {
   const [ay, am, ad] = dueDate.split('-').map(Number);
   const [hh, mm] = sendTime.split(':').map(Number);
+  if (recurrence === 'semanal') {
+    for (let offset = 0; offset < 400; offset += 1) {
+      const runDay = addDaysISO(dueDate, offset);
+      const [ry, rm, rd] = runDay.split('-').map(Number);
+      if (!weekDays.includes(new Date(ry, rm - 1, rd).getDay())) continue;
+      const run = new Date(ry, rm - 1, rd, hh, mm);
+      if (run > now) return { due: dueDate, runDay, time: sendTime, run, k: 0 };
+    }
+    return null;
+  }
   const at = (k) => {
     const total = am - 1 + k;
     const y = ay + Math.floor(total / 12);

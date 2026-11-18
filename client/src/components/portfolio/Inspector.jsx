@@ -437,7 +437,7 @@ function ProductsSection({ el, api, products }) {
             {list.map((p) => (
               <label key={p.id} className="pe-check pe-prod">
                 <input type="checkbox" checked={ids.includes(p.id)} onChange={() => toggle(p.id)} />
-                {(p.mainImage || p.images[0]) && <img src={(p.mainImage || p.images[0]).url} alt="" />}
+                {(p.mainImage || p.images.find((image) => image.url)) && <img src={(p.mainImage || p.images.find((image) => image.url)).url} alt="" />}
                 <span>{p.name}<small>{p.category}</small></span>
               </label>
             ))}
@@ -723,7 +723,7 @@ function CatalogSection({ doc, api, categories, meta, products = [] }) {
                 {orderedProducts.map((product) => (
                   <label key={product.id} className="pe-check pe-prod">
                     <input type="checkbox" checked={selectedIds.includes(product.id)} onChange={() => toggleProduct(product.id)} />
-                    {(product.mainImage || product.images[0]) && <img src={(product.mainImage || product.images[0]).url} alt="" />}
+                    {(product.mainImage || product.images.find((image) => image.url)) && <img src={(product.mainImage || product.images.find((image) => image.url)).url} alt="" />}
                     <span>{product.name}<small>{product.category}</small></span>
                   </label>
                 ))}

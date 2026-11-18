@@ -53,6 +53,7 @@ enum MessageStatus {
 enum Recurrence {
   avulsa
   mensal
+  semanal
 }
 
 enum ScheduleStatus {
@@ -155,6 +156,7 @@ model Instance {
   @@index([userId, purpose])
   @@index([userId, purpose, auditScope])
   @@index([storeId, purpose])
+  @@index([purpose, provider])
   @@index([metaPhoneNumberId])
   @@map("instances")
 }
@@ -232,6 +234,7 @@ model Schedule {
   // Vencimento da próxima ocorrência ainda não enviada.
   nextDueDate DateTime?      @map("next_due_date") @db.Date
   daysBefore  Int            @default(0) @map("days_before")
+  weekDays    Int[]          @default([]) @map("week_days")
   sendTime    String         @map("send_time")
   nextRunAt   DateTime?      @map("next_run_at")
   attempts    Int            @default(0)
@@ -566,6 +569,7 @@ model UserAddon {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId])
+  @@index([paidUntil])
   @@map("user_addons")
 }
 
@@ -599,6 +603,7 @@ model VerificationCode {
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
 
   @@index([userId, purpose])
+  @@index([expiresAt])
   @@map("verification_codes")
 }
 
@@ -781,6 +786,7 @@ model Order {
   @@index([userId, createdAt])
   @@index([createdAt])
   @@index([userId, deletedAt, createdAt])
+  @@index([deletedAt])
   @@index([storeId])
   @@map("orders")
 }
@@ -1145,6 +1151,7 @@ model AiConversation {
   @@index([agentId, updatedAt])
   @@index([userId, updatedAt])
   @@index([userId, storeId, updatedAt])
+  @@index([updatedAt])
   @@map("ai_conversations")
 }
 
@@ -1162,5 +1169,6 @@ model AiMessage {
 
   @@unique([conversationId, externalId])
   @@index([conversationId, createdAt])
+  @@index([createdAt])
   @@map("ai_messages")
 }

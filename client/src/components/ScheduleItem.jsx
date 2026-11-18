@@ -3,7 +3,7 @@ import Icon from './Icon.jsx';
 import Stars from './Stars.jsx';
 import { brl, formatStoredPhone, initials, isoToBR } from '../lib/format.js';
 import { clientHabit } from '../lib/billing.js';
-import { KIND, beforeText, dueText, nextText, overdueDues, statusInfo } from '../lib/schedule.js';
+import { KIND, beforeText, dueText, nextText, overdueDues, statusInfo, weekDaysLabel } from '../lib/schedule.js';
 
 export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onDelete, onPaid, onUndo }) {
   const st = statusInfo(s);
@@ -23,10 +23,10 @@ export default function ScheduleItem({ s, busy, rating, onSendNow, onToggle, onD
           {s.amountCents != null && <span className="sched-amount">{brl(s.amountCents)}</span>}
         </div>
         <div className="sched-meta">
-          <span className={`tag ${s.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{s.recurrence === 'mensal' ? 'Mensal' : 'Avulsa'}</span>
+          <span className={`tag ${s.recurrence === 'mensal' ? 'tag-monthly' : ''}`}>{s.recurrence === 'mensal' ? 'Mensal' : s.recurrence === 'semanal' ? 'Até pagar' : 'Avulsa'}</span>
           <span className={`pill ${st.cls}`}>{st.label}</span>
           {overdue.length > 0 && <span className="pill pill-failed">Em atraso</span>}
-          <span>{dueText(s)} · avisa {beforeText(s.daysBefore)}, {s.sendTime}</span>
+          <span>{s.recurrence === 'semanal' ? `Cobrar ${weekDaysLabel(s.weekDays)} até pagar, ${s.sendTime}` : `${dueText(s)} · avisa ${beforeText(s.daysBefore)}, ${s.sendTime}`}</span>
         </div>
         {overdue.length > 0 && (
           <div className="sched-overdue">

@@ -4,7 +4,6 @@ import { api } from '../../api.js';
 import InfinitePayMark from '../InfinitePayMark.jsx';
 import { ProductCard, minPrice } from './Canvas.jsx';
 import { IconSvg } from './Canvas.jsx';
-import { useImageLightbox } from './ImageLightbox.jsx';
 import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
@@ -95,9 +94,8 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder }) {
   const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
   const [qty, setQty] = useState(1);
-  const [imageOpen, setImageOpen] = useState(false);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
-  const img = selectedVariation || p.mainImage || p.images[0] || null;
+  const img = selectedVariation || p.mainImage || p.images.find((image) => image.url) || null;
   const productQty = cartItems.filter((item) => item.productId === p.id).reduce((sum, item) => sum + item.qty, 0) + qty;
   const cartQty = cartItems.reduce((sum, item) => sum + item.qty, 0) + qty;
   const productById = new Map(products.map((product) => [product.id, product]));
@@ -123,30 +121,19 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
   useEffect(() => {
     const onKey = (e) => {
       if (e.key !== 'Escape') return;
-      if (imageOpen) setImageOpen(false);
-      else onClose();
+      onClose();
     };
     document.addEventListener('keydown', onKey);
     const prev = document.body.style.overflow;
     document.body.style.overflow = 'hidden';
     return () => { document.removeEventListener('keydown', onKey); document.body.style.overflow = prev; };
-  }, [imageOpen, onClose]);
+  }, [onClose]);
   return createPortal(
     <div className="cat-overlay" onMouseDown={(e) => e.target === e.currentTarget && onClose()}>
       <div className="cat-modal" style={themeVars(theme)} role="dialog" aria-modal="true" aria-label={p.name}>
         <button type="button" className="cat-x" onClick={onClose} aria-label="Fechar">×</button>
         <div className="cat-modal-img">
-          {img && (
-            <button type="button" className="cat-image-preview" onClick={() => setImageOpen(true)} aria-label="Visualizar imagem completa">
-              <img src={img.url} alt={p.name} />
-              <span className="cat-image-preview-action" aria-hidden="true">
-                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
-                  <path d="M8 3H5a2 2 0 0 0-2 2v3M16 3h3a2 2 0 0 1 2 2v3M21 16v3a2 2 0 0 1-2 2h-3M8 21H5a2 2 0 0 1-2-2v-3" />
-                </svg>
-                <span>Ampliar</span>
-              </span>
-            </button>
-          )}
+          {img?.url ? <img src={img.url} alt={p.name} /> : <span className="cat-product-no-image">Sem imagem</span>}
         </div>
         <div className="cat-modal-body">
           <span className="pv-card-cat">{p.category}</span>
@@ -154,8 +141,8 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           {p.images.length > 0 && (
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
-                <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => { setIdx(n); setImageOpen(true); }}>
-                  <img src={i.url} alt="" /><span>{i.label}</span>
+                <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
+                  {i.url ? <img src={i.url} alt="" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
                 </button>
               ))}
             </div>
@@ -187,16 +174,6 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
           )}
         </div>
       </div>
-      {imageOpen && img && (
-        createPortal(
-          <div className="cat-image-viewer" role="dialog" aria-modal="true" aria-label={`Imagem completa de ${p.name}`}
-            onMouseDown={(event) => { if (event.target === event.currentTarget) setImageOpen(false); }}>
-            <button type="button" className="cat-image-viewer-close" onClick={() => setImageOpen(false)} aria-label="Fechar imagem">×</button>
-            <img src={img.url} alt={p.name} />
-          </div>,
-          document.body,
-        )
-      )}
     </div>,
     document.body,
   );
@@ -321,7 +298,6 @@ const loadCustomer = (slug) => {
 };
 
 export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) {
-  const imageLightbox = useImageLightbox();
   const cfg = doc.catalog;
   const { lines, subtotal } = priced(cart.items, products);
   const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : key === 'retirada' ? store.pickup : store[key])?.enabled);
@@ -546,12 +522,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
           <ul className="cat-lines">
             {lines.map((l) => (
               <li key={l.id}>
-                <span className="cat-line-img">{(l.img || l.p.mainImage || l.p.images[0]) && (() => {
-                  const image = l.img || l.p.mainImage || l.p.images[0];
-                  return imageLightbox
-                    ? <button type="button" className="cat-line-image-trigger" onClick={() => imageLightbox.openImage(image.url, l.p.name)} aria-label={`Ampliar imagem de ${l.p.name}`}><img src={image.url} alt="" /></button>
-                    : <img src={image.url} alt="" />;
-                })()}</span>
+                <span className="cat-line-img">{(l.img?.url || l.p.mainImage?.url || l.p.images.find((image) => image.url)?.url) && <img src={l.img?.url || l.p.mainImage?.url || l.p.images.find((image) => image.url).url} alt="" />}</span>
                 <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming && <small className="cat-tier-hint">{l.upcoming.scope === 'cart_value' ? `Carrinho a partir de ${brl(l.upcoming.minCartCents)}` : `Leve ${l.upcoming.minQuantity} ${l.upcoming.scope === 'cart_quantity' ? 'itens no carrinho' : 'deste produto'}`} para pagar {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} max={l.p.stockEnabled ? (l.img ? l.img.stockQuantity : l.p.stockQuantity) : 99} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>

@@ -91,21 +91,26 @@ export function cleanProduct(b = {}) {
   const images = [];
   const cleanImage = (im, i, isPrimary) => {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');
+    if (im.id !== undefined && (!Number.isInteger(im.id) || im.id < 1)) throw new AppError(400, 'Identificador de imagem inválido.');
     const size = isPrimary ? '' : line(im.size, 20);
     const color = isPrimary ? '' : line(im.color, 20);
     const colorHex = !isPrimary && /^#[0-9a-fA-F]{6}$/.test(im.colorHex || '') ? im.colorHex.toLowerCase() : '';
     const stockQuantity = intIn(im.stockQuantity ?? 0, 0, 1_000_000, `Estoque da variação ${i + 1}`);
     const label = isPrimary ? '' : (line(im.label, 100) || [color, size].filter(Boolean).join(' · '));
     if (!isPrimary && !label && !Number.isInteger(im.id)) throw new AppError(400, `Informe ao menos uma característica para a variação ${i + 1}.`);
-    const out = { isPrimary, label, size, color, colorHex, barcode: isPrimary ? '' : cleanBarcode(im.barcode), priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
+    const out = { ...(im.id === undefined ? {} : { id: im.id }), isPrimary, label, size, color, colorHex, barcode: isPrimary ? '' : cleanBarcode(im.barcode), priceCents: null, stockQuantity: isPrimary ? 0 : stockQuantity };
+    if (im.removeImage === true) {
+      if (isPrimary || !im.id) throw new AppError(400, 'Só é possível remover a imagem de uma variação existente.');
+      out.removeImage = true;
+      return out;
+    }
     if (im.data) out.upload = decodeProductImage(im.data);
     else if (im.url !== undefined || im.externalUrl !== undefined) {
       const externalUrl = cleanProductImageUrl(im.externalUrl ?? im.url);
       if (!externalUrl) throw new AppError(400, 'Informe uma URL HTTPS válida para a imagem do produto.');
       out.externalUrl = externalUrl;
     }
-    else if (Number.isInteger(im.id)) out.id = im.id;
-    else throw new AppError(400, 'Imagem inválida.');
+    else if (isPrimary || !label) throw new AppError(400, 'Imagem inválida.');
     return out;
   };
   if (rawMainImage) images.push(cleanImage(rawMainImage, 0, true));
@@ -232,12 +237,12 @@ export const publicProduct = (p) => {
     barcode: image.barcode || '',
     priceCents: image.priceCents,
     stockQuantity: image.stockQuantity ?? 0,
-    url: image.externalUrl || `/api/public/product-image/${image.id}`,
+    url: image.externalUrl || (image.mime || image.data ? `/api/public/product-image/${image.id}` : null),
   });
   return {
     id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, barcode: p.barcode || '', priceCents: p.priceCents,
     stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
-    mainImage: mainImage ? { id: mainImage.id, url: mainImage.externalUrl || `/api/public/product-image/${mainImage.id}` } : null,
+    mainImage: mainImage && (mainImage.externalUrl || mainImage.mime || mainImage.data) ? { id: mainImage.id, url: mainImage.externalUrl || `/api/public/product-image/${mainImage.id}` } : null,
     images: images.filter((image) => !image.isPrimary).map(imageDto),
     priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
   };

@@ -76,7 +76,7 @@ function Body({ m, q, version, onOpen }) {
   );
 }
 
-export default function ChatView({ days = 60, chat, canSend, liveItems, liveStatus, liveEdit, liveMedia, onBack, onRead, onSent, onSide }) {
+export default function ChatView({ days = 7, chat, canSend, liveItems, liveStatus, liveEdit, liveMedia, onBack, onRead, onSent, onSide }) {
   const toast = useToast();
   const [messages, setMessages] = useState([]);
   const [hasOlder, setHasOlder] = useState(false);

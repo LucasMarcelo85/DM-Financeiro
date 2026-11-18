@@ -70,7 +70,7 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
         })}
       </ul>
       {!loading && chats.length === 0 && (
-        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId || filters.kind !== 'all' || filters.days !== 60 ? 'Nenhuma conversa encontrada com esses filtros.' : 'Nenhuma conversa ainda. As conversas e mensagens aparecem aqui sozinhas assim que chegarem.'}</p>
+        <p className="au-empty">{filters.q || filters.labelId || filters.unread || filters.instanceId || filters.kind !== 'all' || filters.days !== 7 ? 'Nenhuma conversa encontrada com esses filtros.' : 'Nenhuma conversa ainda. As conversas e mensagens aparecem aqui sozinhas assim que chegarem.'}</p>
       )}
       {loading && <p className="au-empty">Carregando...</p>}
       {hasMore && !loading && <button type="button" className="btn btn-ghost btn-sm au-more" onClick={onMore}>Carregar mais conversas</button>}
