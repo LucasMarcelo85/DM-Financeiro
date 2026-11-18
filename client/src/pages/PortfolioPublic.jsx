@@ -143,7 +143,7 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
       <PortfolioPushPrompt slug={slug} page={page} />
       <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} />
       {!showCart && (
-        <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center' }}>
+        <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }}>
           <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />
         </main>
       )}
