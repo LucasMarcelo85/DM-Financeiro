@@ -8,6 +8,7 @@ import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
+import { selectPriceOption } from '../../../../shared/price-tiers.js';
 
 
 // ---------------------------------------------------------------- carrinho (guardado no aparelho do cliente)
@@ -40,15 +41,14 @@ export function useCart(slug) {
   };
 }
 
-// Faixa de preço vigente: a de maior quantidade mínima já atingida (faixas sem valor não se aplicam).
+// Por critério, aplica a faixa de maior limite alcançado; entre critérios, prevalece a última cadastrada.
 const tierReached = (option, productQty, cartQty, cartCents) => option.scope === 'cart_quantity'
   ? (option.minQuantity || 1) <= cartQty
   : option.scope === 'cart_value'
     ? (option.minCartCents || 0) <= cartCents
     : (option.minQuantity || 1) <= productQty;
-export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0) => [...(options || [])]
-  .filter((option) => option.priceCents !== null && tierReached(option, productQty, cartQty, cartCents))
-  .at(-1) || null;
+export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0) =>
+  selectPriceOption(options, (option) => tierReached(option, productQty, cartQty, cartCents));
 export const nextTier = (options, productQty, cartQty = productQty, cartCents = 0) => [...(options || [])]
   .filter((option) => option.priceCents !== null && !tierReached(option, productQty, cartQty, cartCents))
   .sort((a, b) => (a.scope === 'cart_value' ? a.minCartCents : a.minQuantity) - (b.scope === 'cart_value' ? b.minCartCents : b.minQuantity))[0] || null;

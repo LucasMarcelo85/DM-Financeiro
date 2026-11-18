@@ -11,6 +11,7 @@ import { resolvePublicOwner } from '../utils/store.js';
 import { paymentConnections, infinitePayReady } from './catalog-payments.js';
 import { emitApiWebhook } from './api-webhooks.js';
 import { ensureDefaultStockFlow, mirrorStockLevel } from './inventory.js';
+import { selectPriceOption } from '../../shared/price-tiers.js';
 
 // Pedido do catálogo digital: valida tudo no servidor (preços, frete e campos obrigatórios), grava o pedido e já salva
 // o cliente na aba Clientes (o telefone é único por usuário).
@@ -116,13 +117,11 @@ export async function createOrder(userSlug, body = {}) {
     const oldPrimaryImageId = it.imageId && p.images.some((image) => image.id === Number(it.imageId) && image.isPrimary);
     if (it.imageId && !img && !oldPrimaryImageId) throw new AppError(400, 'Uma variação escolhida não existe mais. Atualize a página.');
     if (p.images.some((image) => !image.isPrimary) && !img) throw new AppError(400, `Escolha uma variação de ${p.name}.`);
-    const eligible = p.priceOptions.filter((option) => {
-      if (option.priceCents === null) return false;
+    const priceOption = selectPriceOption(p.priceOptions, (option) => {
       if (option.scope === 'cart_quantity') return (option.minQuantity || 1) <= cartQuantity;
       if (option.scope === 'cart_value') return (option.minCartCents || 0) <= cartBaseCents;
       return (option.minQuantity || 1) <= (qtyByProduct.get(p.id) || qty);
     });
-    const priceOption = eligible.at(-1) || null;
     const unit = priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const variation = [img?.label, priceOption?.label].filter(Boolean).join(' · ');
     items.push({ productId: p.id, imageId: img?.id || null, stockTracked: p.stockEnabled, name: p.name, variation, qty, unitCents: unit, totalCents: unit * qty });
