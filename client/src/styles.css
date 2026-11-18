@@ -1530,6 +1530,13 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-variation-color { display: flex; align-items: center; gap: .5rem; }
 .pr-variation-color input[type='color'] { width: 2.5rem; height: 2.5rem; flex: none; padding: .15rem; border: 1px solid var(--line); border-radius: 9px; background: #fff; cursor: pointer; }
 .pr-variation-color .input { min-width: 0; }
+.pr-suggestion-field > label { font-weight: 600; font-size: .925rem; }
+.pr-suggestions { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; min-width: 0; margin-top: .15rem; }
+.pr-suggestions > small { flex: 0 0 100%; color: var(--muted); font-size: .72rem; }
+.pr-suggestion-chip { display: inline-flex; align-items: center; gap: .35rem; min-height: 1.8rem; padding: .2rem .55rem; border: 1px solid var(--line); border-radius: 999px; background: #fff; color: var(--ink); font: inherit; font-size: .75rem; cursor: pointer; }
+.pr-suggestion-chip:hover { border-color: var(--ink); background: var(--amber-soft); }
+.pr-suggestion-chip:focus-visible { outline: 2px solid var(--ink); outline-offset: 2px; }
+.pr-suggestion-swatch { width: .75rem; height: .75rem; flex: none; border: 1px solid var(--line); border-radius: 50%; background: var(--pr-swatch, #cbd5e1); }
 .pr-remove-variation { grid-column: 1 / -1; justify-self: end; align-self: end; min-width: 0; white-space: nowrap; }
 .pr-base-price, .pr-price-rule { display: grid; grid-template-columns: 3.25rem minmax(0, 1fr) auto; align-items: center; gap: .7rem; min-width: 0; padding: .7rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #fbfcfe; }
 .pr-current-product-image { display: grid; place-items: center; width: 3.25rem; height: 3.25rem; overflow: hidden; border-radius: 8px; background: #edf1f6; }
@@ -1537,6 +1544,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-base-price > .field small { font-size: .78rem; }
 .pr-price-rule { position: relative; grid-template-columns: 3.25rem minmax(0, 1fr); align-items: start; padding-top: 2rem; }
 .pr-price-rule-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
+.pr-price-rule-fields > .pr-suggestions { grid-column: 1 / -1; }
 .pr-price-rule-fields > .check-line { align-self: center; }
 .pr-rule-number { position: absolute; top: .45rem; right: .6rem; color: var(--muted); font-size: .75rem; font-weight: 700; }
 .pr-stock-list { display: grid; grid-template-columns: repeat(auto-fit, minmax(12rem, 1fr)); gap: .65rem; }

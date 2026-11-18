@@ -22,3 +22,8 @@ export function colorHexForName(name) {
   const normalized = value.normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
   return COLOR_NAMES[normalized] || null;
 }
+
+export function colorNameForHex(hex) {
+  const value = String(hex || '').toLowerCase();
+  return Object.entries(COLOR_NAMES).find(([, colorHex]) => colorHex === value)?.[0] || '';
+}

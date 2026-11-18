@@ -6,18 +6,22 @@ import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
 import { generateEan13 } from '../lib/barcode.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
-import { colorHexForName } from '../lib/productColors.js';
+import { colorHexForName, colorNameForHex } from '../lib/productColors.js';
 
 const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
 const DEFAULT_VARIATION_TYPES = ['Cor', 'Tamanho', 'Litros', 'Unidade'];
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
 
+function normalizeSuggestion(value) {
+  return String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
+}
+
 function uniqueSuggestions(values) {
   const distinct = new Map();
   for (const value of values) {
     const label = typeof value === 'string' ? value.trim() : '';
-    const key = label.toLocaleLowerCase('pt-BR');
+    const key = normalizeSuggestion(label);
     if (label && !distinct.has(key)) distinct.set(key, label);
   }
   return [...distinct.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
@@ -27,14 +31,22 @@ function collectVariationSuggestions(products, drafts) {
   const colors = [];
   const sizes = [];
   const types = [];
+  const colorHexByName = new Map();
   const valuesByType = new Map();
-  const addAttribute = (type, value) => {
+  const addColor = (name, hex) => {
+    const label = String(name || '').trim();
+    if (!label) return;
+    colors.push(label);
+    const colorHex = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : colorHexForName(label);
+    if (colorHex) colorHexByName.set(normalizeSuggestion(label), colorHex);
+  };
+  const addAttribute = (type, value, hex = '') => {
     const label = String(type || '').trim();
     const sample = String(value || '').trim();
     if (!label) return;
-    const normalized = label.toLocaleLowerCase('pt-BR');
+    const normalized = normalizeSuggestion(label);
     if (normalized === 'cor') {
-      if (sample) colors.push(sample);
+      addColor(sample, hex);
       return;
     }
     if (normalized === 'tamanho') {
@@ -47,14 +59,14 @@ function collectVariationSuggestions(products, drafts) {
 
   for (const product of [...(products || []), ...(drafts || [])]) {
     for (const image of [...(product.images || []), ...(product.variations || [])]) {
-      if (image.color) colors.push(image.color);
+      if (image.color) addColor(image.color, image.colorHex);
       if (image.size) sizes.push(image.size);
       const type = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
-      addAttribute(type, image.variationValue);
-      addAttribute(image.customVariationType, image.customVariationValue);
+      addAttribute(type, image.variationValue, image.colorHex);
+      addAttribute(image.customVariationType, image.customVariationValue, image.colorHex);
       for (const part of String(image.label || '').split(' · ')) {
         const separator = part.indexOf(':');
-        if (separator > 0) addAttribute(part.slice(0, separator), part.slice(separator + 1));
+        if (separator > 0) addAttribute(part.slice(0, separator), part.slice(separator + 1), image.colorHex);
       }
     }
   }
@@ -63,8 +75,61 @@ function collectVariationSuggestions(products, drafts) {
     colors: uniqueSuggestions(colors),
     sizes: uniqueSuggestions(sizes),
     types: uniqueSuggestions(types),
-    valuesByType: Object.fromEntries([...valuesByType].map(([type, values]) => [type, uniqueSuggestions(values)])),
+    colorHexByName: Object.fromEntries(colorHexByName),
+    valuesByType: Object.fromEntries([...valuesByType].map(([type, values]) => [normalizeSuggestion(type), uniqueSuggestions(values)])),
   };
+}
+
+function collectPriceSuggestions(products, drafts) {
+  const byLabel = new Map();
+  let order = 0;
+  for (const product of [...(products || []), ...(drafts || [])]) {
+    for (const option of product.priceOptions || []) {
+      const label = String(option.label || '').trim();
+      if (!label) continue;
+      const scope = ['same_product', 'cart_quantity', 'cart_value'].includes(option.scope) ? option.scope : 'same_product';
+      const minQuantity = String(Math.max(1, Number(option.minQuantity) || 1));
+      const minCartCents = Number.isInteger(option.minCartCents) ? option.minCartCents : moneyToCents(option.minCartValue || '');
+      const key = normalizeSuggestion(label);
+      const signature = `${scope}:${scope === 'cart_value' ? minCartCents : minQuantity}`;
+      if (!byLabel.has(key)) byLabel.set(key, { label, rules: new Map() });
+      const group = byLabel.get(key);
+      const rule = group.rules.get(signature) || {
+        label: group.label,
+        scope,
+        minQuantity,
+        minCartValue: centsToMasked(minCartCents),
+        count: 0,
+      };
+      rule.count += 1;
+      rule.order = order;
+      group.rules.set(signature, rule);
+      order += 1;
+    }
+  }
+  return [...byLabel.values()].map(({ rules }) => [...rules.values()]
+    .sort((a, b) => a.count - b.count || a.order - b.order).at(-1))
+    .filter(Boolean)
+    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
+}
+
+function SuggestionButtons({ label, options = [], onSelect, swatchFor }) {
+  if (!options.length) return null;
+  return (
+    <div className="pr-suggestions" role="group" aria-label={label}>
+      <small>Usados antes:</small>
+      {options.slice(0, 8).map((option) => {
+        const value = typeof option === 'string' ? option : option.label;
+        const swatch = swatchFor?.(value);
+        return (
+          <button type="button" className="pr-suggestion-chip" key={value} onClick={() => onSelect(value)} title={`Usar ${value}`}>
+            {swatch && <i className="pr-suggestion-swatch" style={{ '--pr-swatch': swatch }} aria-hidden="true" />}
+            {value}
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function explainProductError(message) {
@@ -298,7 +363,7 @@ function productBody(draft) {
       ...(image.data ? { data: image.data } : image.externalUrl ? { url: image.externalUrl } : image.imageRemoved ? { removeImage: true } : {}),
       label: details.join(' · ').slice(0, 100),
       color: image.color?.trim() || '',
-      colorHex: image.colorHex || '',
+      colorHex: image.colorHex || colorHexForName(image.color) || '',
       barcode: image.barcode?.trim() || '',
       size: image.size?.trim() || '',
       stockQuantity: Number(image.stockQuantity) || 0,
@@ -333,6 +398,7 @@ export default function ProductWorkspace({ product, products = [], categories, p
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
   const categorySuggestions = useMemo(() => uniqueSuggestions([...(categories || []), ...drafts.map((draft) => draft.category)]), [categories, drafts]);
   const variationSuggestions = useMemo(() => collectVariationSuggestions(products, drafts), [products, drafts]);
+  const priceSuggestions = useMemo(() => collectPriceSuggestions(products, drafts), [products, drafts]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -572,6 +638,7 @@ export default function ProductWorkspace({ product, products = [], categories, p
           }}
           categories={categorySuggestions}
           variationSuggestions={variationSuggestions}
+          priceSuggestions={priceSuggestions}
           preferences={preferences}
           stockFlows={stockFlows}
           editing={editing}
@@ -604,19 +671,46 @@ export default function ProductWorkspace({ product, products = [], categories, p
   );
 }
 
-function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, variationSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
+function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, variationSuggestions, priceSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
   const steps = ['Fotos', 'Informações', 'Preço', 'Estoque', 'Revisar'];
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
   const colorListId = `variation-colors-${draft.key}`;
   const sizeListId = `variation-sizes-${draft.key}`;
   const typeListId = `variation-types-${draft.key}`;
+  const priceLabelSuggestions = uniqueSuggestions([
+    ...(preferences?.priceLabels || []),
+    ...(priceSuggestions || []).map((option) => option.label),
+    ...draft.priceOptions.map((option) => option.label),
+  ]);
   const variationTypes = uniqueSuggestions([
     ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
     ...(variationSuggestions?.types || []),
     ...draft.variations.map((image) => image.variationType).filter(Boolean),
   ]).filter((type) => !['cor', 'tamanho', 'outro'].includes(type.toLocaleLowerCase('pt-BR')));
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
+  const selectPriceLabel = (key, label) => {
+    const suggestion = priceSuggestions?.find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(label));
+    const changes = { label };
+    if (suggestion) {
+      changes.scope = suggestion.scope;
+      changes.minQuantity = suggestion.minQuantity;
+      changes.minCartValue = suggestion.minCartValue;
+    }
+    updateOption(key, changes);
+  };
+  const setColorName = (image, name) => {
+    const mappedHex = variationSuggestions?.colorHexByName?.[normalizeSuggestion(name)] || colorHexForName(name);
+    const sameName = normalizeSuggestion(image.color) === normalizeSuggestion(name);
+    onPatchVariation(image.key, {
+      color: name,
+      colorHex: mappedHex || (!image.color?.trim() || sameName ? image.colorHex || '' : ''),
+    });
+  };
+  const setColorSample = (image, hex) => {
+    const colorName = colorNameForHex(hex);
+    onPatchVariation(image.key, { colorHex: hex, ...(colorName ? { color: colorName } : {}) });
+  };
   const addPriceOption = () => onPatch({ priceOptions: [...draft.priceOptions, {
     key: newKey(), label: '', scope: 'same_product', minQuantity: String(draft.priceOptions.length ? Number(draft.priceOptions[draft.priceOptions.length - 1].minQuantity || 1) + 1 : 1), minCartValue: '', price: '', onRequest: false,
   }] });
@@ -697,7 +791,7 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
               {draft.variations.map((image, variationIndex) => {
                 const valueListId = `variation-values-${draft.key}-${variationIndex}`;
                 const valueType = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
-                const suggestions = variationSuggestions?.valuesByType?.[String(valueType || '').toLocaleLowerCase('pt-BR')] || [];
+                const suggestions = variationSuggestions?.valuesByType?.[normalizeSuggestion(valueType)] || [];
                 return (
                   <div className="pr-variation-row" key={image.key}>
                     <div className="pr-variation-fields">
@@ -716,11 +810,25 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
                           {image.url && <button type="button" className="link-btn" disabled={uploading} onClick={() => onPatchVariation(image.key, { url: null, data: null, externalUrl: null, imageRemoved: Boolean(image.id) })}>Remover imagem</button>}
                         </div>
                       </div>
-                      <label className="field"><span>Cor <small>(opcional)</small></span><span className="pr-variation-color">
-                        <input type="color" value={image.colorHex || colorHexForName(image.color) || '#cccccc'} onChange={(event) => onPatchVariation(image.key, { colorHex: event.target.value })} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
-                        <input className="input" list={colorListId} value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" />
-                      </span><small>Escolha a amostra visual e informe o nome da cor.</small></label>
-                      <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" list={sizeListId} value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
+                      <div className="field pr-suggestion-field">
+                        <label htmlFor={`variation-color-name-${image.key}`}>Cor <small>(opcional)</small></label>
+                        <div className="pr-variation-color">
+                          <input type="color" value={image.colorHex || variationSuggestions?.colorHexByName?.[normalizeSuggestion(image.color)] || colorHexForName(image.color) || '#cccccc'} onChange={(event) => setColorSample(image, event.target.value)} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
+                          <input id={`variation-color-name-${image.key}`} className="input" list={colorListId} value={image.color || ''} maxLength={20} onChange={(event) => setColorName(image, event.target.value)} placeholder="Ex.: Azul-marinho" />
+                        </div>
+                        <small>Escolha uma cor visualmente ou use uma já cadastrada.</small>
+                        <SuggestionButtons
+                          label={`Cores cadastradas para a variação ${variationIndex + 1}`}
+                          options={variationSuggestions?.colors || []}
+                          onSelect={(color) => setColorName(image, color)}
+                          swatchFor={(color) => variationSuggestions?.colorHexByName?.[normalizeSuggestion(color)] || colorHexForName(color) || '#cbd5e1'}
+                        />
+                      </div>
+                      <div className="field pr-suggestion-field">
+                        <label htmlFor={`variation-size-${image.key}`}>Tamanho <small>(opcional)</small></label>
+                        <input id={`variation-size-${image.key}`} className="input" list={sizeListId} value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" />
+                        <SuggestionButtons label={`Tamanhos cadastrados para a variação ${variationIndex + 1}`} options={variationSuggestions?.sizes || []} onSelect={(size) => onPatchVariation(image.key, { size })} />
+                      </div>
                       <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
                         <option value="">Não se aplica</option>
                         {variationTypes.map((type) => <option key={type} value={type}>{type}</option>)}
@@ -760,10 +868,13 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
               <label className="field"><span>Preço por unidade</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /><small>{draft.onRequest ? 'O cliente precisa consultar o valor.' : 'Preço normal de uma unidade.'}</small></label>
               <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
             </div>
-            {draft.priceOptions.map((option, optionIndex) => <div className="pr-price-rule" key={option.key}>
+            {draft.priceOptions.map((option, optionIndex) => {
+              const priceLabelListId = `price-labels-${draft.key}-${option.key}`;
+              return <div className="pr-price-rule" key={option.key}>
               <div className="pr-current-product-image">{draft.mainImage && <img src={draft.mainImage.url} alt="" />}</div>
               <div className="pr-price-rule-fields">
-                <label className="field"><span>Nome da faixa</span><input className="input" list={`price-labels-${draft.key}`} value={option.label} onChange={(event) => updateOption(option.key, { label: event.target.value })} placeholder="Ex.: Varejo, Atacarejo" /></label>
+                <label className="field"><span>Nome da faixa</span><input className="input" list={priceLabelListId} value={option.label} onChange={(event) => selectPriceLabel(option.key, event.target.value)} placeholder="Ex.: Varejo, Atacarejo" /></label>
+                <SuggestionButtons label="Nomes de faixas cadastrados" options={priceLabelSuggestions} onSelect={(label) => selectPriceLabel(option.key, label)} />
                 <label className="field"><span>Aplicar quando</span><select className="input" value={option.scope} onChange={(event) => updateOption(option.key, { scope: event.target.value })}><option value="same_product">Comprar esta quantidade deste item</option><option value="cart_quantity">Comprar esta quantidade de itens no total</option><option value="cart_value">O carrinho atingir este valor</option></select></label>
                 {option.scope === 'cart_value'
                   ? <label className="field"><span>Subtotal mínimo (R$)</span><input className="input" inputMode="numeric" value={option.minCartValue} onChange={(event) => updateOption(option.key, { minCartValue: maskMoney(event.target.value) })} placeholder="0,00" /></label>
@@ -772,9 +883,10 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
                 <label className="check-line"><input type="checkbox" checked={option.onRequest} onChange={(event) => updateOption(option.key, { onRequest: event.target.checked, price: event.target.checked ? '' : option.price })} /><span>Preço sob consulta</span></label>
                 <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ priceOptions: draft.priceOptions.filter((item) => item.key !== option.key) })}>Excluir faixa</button>
               </div>
-              <datalist id={`price-labels-${draft.key}`}>{(preferences?.priceLabels || []).map((label) => <option key={label} value={label} />)}</datalist>
+              <datalist id={priceLabelListId}>{priceLabelSuggestions.map((label) => <option key={label} value={label} />)}</datalist>
               <span className="pr-rule-number">Faixa {optionIndex + 1}</span>
-            </div>)}
+            </div>;
+            })}
             {draft.priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceOption}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
           </section>}
 
