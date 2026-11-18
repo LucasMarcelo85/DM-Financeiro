@@ -2,6 +2,22 @@
 .pv-root { position: relative; min-height: 100vh; display: flex; flex-direction: column; background: var(--bg, #fff); color: var(--tx, #14202e); font-family: var(--bf, system-ui, sans-serif); overflow-x: hidden; }
 .pv-bg { position: absolute; inset: 0; z-index: 0; pointer-events: none; }
 .pv-main { position: relative; z-index: 1; flex: 1 0 auto; display: flex; justify-content: center; }
+.pv-dialog-backdrop { position: fixed; inset: 0; z-index: 2147483647; display: grid; place-items: center; overflow-y: auto; overscroll-behavior: contain; padding: max(1rem, env(safe-area-inset-top)) 1rem max(1rem, env(safe-area-inset-bottom)); background: rgb(15 34 56 / 68%); backdrop-filter: blur(4px); }
+.pv-dialog { position: relative; width: min(100%, 34rem); max-height: calc(100vh - 2rem); max-height: calc(100dvh - max(2rem, env(safe-area-inset-top) + env(safe-area-inset-bottom))); overflow: auto; overscroll-behavior: contain; padding: clamp(1.25rem, 4vw, 2rem); border: 1px solid color-mix(in srgb, var(--pv-dialog-primary) 42%, var(--pv-dialog-text)); border-radius: 1.25rem; background: var(--pv-dialog-bg); color: var(--pv-dialog-text); box-shadow: 0 24px 80px rgb(0 0 0 / 35%); }
+.pv-dialog-title { margin: 0; padding-right: 2.75rem; font-size: clamp(1.25rem, 1rem + 1vw, 1.7rem); }
+.pv-dialog-content { display: grid; gap: .9rem; margin-top: 1rem; line-height: 1.55; overflow-wrap: anywhere; }
+.pv-dialog-content > p { margin: 0; }
+.pv-dialog-close { position: absolute; top: .7rem; right: .7rem; display: grid; width: 2.5rem; height: 2.5rem; place-items: center; padding: 0; border: 1px solid color-mix(in srgb, var(--pv-dialog-primary) 55%, var(--pv-dialog-text)); border-radius: 50%; background: color-mix(in srgb, var(--pv-dialog-primary) 15%, var(--pv-dialog-bg)); color: var(--pv-dialog-text); font: 600 1.75rem/1 system-ui, sans-serif; cursor: pointer; }
+.pv-dialog-close:hover { background: color-mix(in srgb, var(--pv-dialog-primary) 25%, var(--pv-dialog-bg)); }
+.pv-dialog-close:focus-visible, .pv-dialog-primary:focus-visible { outline: 3px solid var(--pv-dialog-primary); outline-offset: 3px; }
+.pv-dialog-notices { display: grid; gap: .75rem; }
+.pv-dialog-notice { padding: .85rem 1rem; border-inline-start: 4px solid var(--pv-dialog-primary); border-radius: .65rem; background: color-mix(in srgb, var(--pv-dialog-primary) 13%, var(--pv-dialog-bg)); color: var(--pv-dialog-text); }
+.pv-dialog-notice p { margin: .25rem 0 0; white-space: pre-wrap; }
+.pv-dialog-primary { justify-self: start; min-height: 2.75rem; padding: .65rem 1.1rem; border: 0; border-radius: 999px; background: var(--pv-dialog-primary); color: var(--pv-dialog-on-primary); font: inherit; font-weight: 750; cursor: pointer; }
+.pv-dialog-primary:disabled { opacity: .6; cursor: wait; }
+.pv-dialog-message { margin: 0; color: var(--pv-dialog-text); }
+.pv-install-help { display: grid; gap: .65rem; padding: .9rem 1rem; border-radius: .75rem; background: color-mix(in srgb, var(--pv-dialog-primary) 10%, var(--pv-dialog-bg)); }
+.pv-install-help p { margin: 0; }
 .pv-canvas { position: relative; transform-origin: top left; }
 .pv-region { display: contents; }
 .pv-clips { position: absolute; width: 0; height: 0; overflow: hidden; }

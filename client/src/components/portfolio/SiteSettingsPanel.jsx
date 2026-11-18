@@ -117,7 +117,7 @@ export default function SiteSettingsPanel({ branding = {}, onChange }) {
           <div className="site-settings-heading">
             <div>
               <strong>Avisos exibidos no site</strong>
-              <p className="muted small">Os avisos aparecem como banners destacados no topo da página publicada; o visitante pode fechá-los no ×. Salve a página para aplicar.</p>
+              <p className="muted small">Os avisos aparecem em um modal central sobre o site; o visitante pode fechá-lo no ×. Salve a página para aplicar.</p>
             </div>
             <button type="button" className="btn btn-ghost btn-sm" disabled={notices.length >= 10}
               onClick={() => onChange({ ...branding, notices: [...notices, { id: newNoticeId(), title: '', message: '' }] }, 'branding:notices')}>

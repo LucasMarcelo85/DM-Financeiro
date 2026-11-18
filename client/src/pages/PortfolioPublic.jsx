@@ -5,6 +5,7 @@ import PortfolioCanvas, { ClipDefs, PageBackground, PageCredit, pvVars, usePageS
 import { CartBar, CartPage, priced, useCart, useCartView } from '../components/portfolio/Catalog.jsx';
 import PortfolioPushPrompt from '../components/portfolio/PortfolioPushPrompt.jsx';
 import PortfolioInstallPrompt from '../components/portfolio/PortfolioInstallPrompt.jsx';
+import PortfolioDialog from '../components/portfolio/PortfolioDialog.jsx';
 import ImageLightboxProvider from '../components/portfolio/ImageLightbox.jsx';
 import { normalizeDoc } from '../lib/portfolio/doc.js';
 import { initPixels, track } from '../lib/portfolio/pixel.js';
@@ -119,6 +120,9 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
   const { count: cartCount } = priced(cart.items, products);
   const pixelOn = Boolean(doc.pixel.meta || doc.pixel.google || doc.pixel.tiktok);
   const directOrder = isCatalog && doc.catalog?.orderMode === 'direct';
+  const noticesExist = (doc.branding?.notices || []).some((notice) => notice.title || notice.message);
+  const [noticesClosed, setNoticesClosed] = useState(false);
+  const installPromptReady = !noticesExist || noticesClosed;
   const onLink = useCallback((el) => { if (pixelOn && ['whatsapp', 'phone'].includes(el.link?.kind)) track('Contact'); }, [pixelOn]);
   const style = useMemo(() => pvVars(doc.theme), [doc.theme]);
   const showCart = isCatalog && !directOrder && cartOpen;
@@ -126,9 +130,9 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
   if (doc.editor === 'grapesjs') {
     return (
       <div className="pv-root gpe-published" style={style}>
-        <PublicNotices notices={doc.branding?.notices} />
+        <PublicNotices notices={doc.branding?.notices} theme={doc.theme} onClose={() => setNoticesClosed(true)} />
         <PortfolioPushPrompt slug={slug} page={page} />
-        <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} />
+        <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} autoOpen={installPromptReady} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} theme={doc.theme} />
         <iframe ref={legacyFrameRef} title={doc.title || page.name || 'Página do portfólio'} sandbox="allow-same-origin" srcDoc={makeGrapesFrameDocument(doc.html, doc.css)} />
         {credit !== false && <PageCredit theme={doc.theme} />}
       </div>
@@ -139,9 +143,9 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
     <div className="pv-root" style={style}>
       <PageBackground theme={doc.theme} />
       <ClipDefs />
-      <PublicNotices notices={doc.branding?.notices} />
+      <PublicNotices notices={doc.branding?.notices} theme={doc.theme} onClose={() => setNoticesClosed(true)} />
       <PortfolioPushPrompt slug={slug} page={page} />
-      <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} />
+      <PortfolioInstallPrompt enabled={doc.branding?.installEnabled !== false} autoOpen={installPromptReady} installEvent={installEvent} onInstallEventConsumed={onInstallEventConsumed} theme={doc.theme} />
       {!showCart && (
         <main className="pv-main" style={{ flexDirection: 'column', alignItems: 'center', justifyContent: 'flex-start' }}>
           <PortfolioCanvas doc={doc} device={device} scale={scale} mode="public" animate products={products} shop={isCatalog ? { cart, pixelOn, whatsapp: store?.whatsapp, slug } : undefined} onLink={onLink} onCart={isCatalog && !directOrder ? () => goCart(true) : undefined} cartCount={cartCount} />
@@ -154,20 +158,20 @@ function PublicPage({ page, products, store, slug, credit, installEvent, onInsta
   );
 }
 
-function PublicNotices({ notices = [] }) {
-  const [dismissed, setDismissed] = useState(() => new Set());
-  const active = notices.filter((notice) => (notice.title || notice.message) && !dismissed.has(notice.id));
-  if (!active.length) return null;
+function PublicNotices({ notices = [], theme, onClose }) {
+  const [open, setOpen] = useState(true);
+  const active = notices.filter((notice) => notice.title || notice.message);
+  if (!active.length || !open) return null;
   return (
-    <aside className="pv-announcements" aria-label="Avisos da loja">
+    <PortfolioDialog title={active.length === 1 ? 'Aviso' : 'Avisos'} theme={theme} onClose={() => { setOpen(false); onClose?.(); }}>
+      <div className="pv-dialog-notices">
       {active.map((notice) => (
-        <section className="pv-announcement" key={notice.id}>
-          <button type="button" className="pv-announcement-close" onClick={() => setDismissed((current) => new Set(current).add(notice.id))}
-            aria-label={`Fechar aviso${notice.title ? `: ${notice.title}` : ''}`}>×</button>
+        <section className="pv-dialog-notice" key={notice.id}>
           {notice.title && <strong>{notice.title}</strong>}
           {notice.message && <p>{notice.message}</p>}
         </section>
       ))}
-    </aside>
+      </div>
+    </PortfolioDialog>
   );
 }
