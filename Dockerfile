@@ -17,6 +17,7 @@ COPY postcss.config.cjs tailwind.config.cjs ./
 COPY prisma ./prisma
 RUN npm ci
 
+COPY shared ./shared
 COPY client ./client
 RUN npm run build
 
@@ -47,6 +48,7 @@ COPY --from=build /app/node_modules ./node_modules
 COPY --from=build /app/client/dist ./client/dist
 COPY package.json ./
 COPY prisma ./prisma
+COPY --from=build /app/shared ./shared
 COPY server ./server
 COPY scripts ./scripts
 COPY docker-start.sh /usr/local/bin/docker-start.sh
