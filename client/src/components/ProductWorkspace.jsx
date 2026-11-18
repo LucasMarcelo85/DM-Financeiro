@@ -1,4 +1,4 @@
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import { api } from '../api.js';
 import Icon from './Icon.jsx';
 import { useToast } from './Toast.jsx';
@@ -12,6 +12,60 @@ const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
 const DEFAULT_VARIATION_TYPES = ['Cor', 'Tamanho', 'Litros', 'Unidade'];
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
+
+function uniqueSuggestions(values) {
+  const distinct = new Map();
+  for (const value of values) {
+    const label = typeof value === 'string' ? value.trim() : '';
+    const key = label.toLocaleLowerCase('pt-BR');
+    if (label && !distinct.has(key)) distinct.set(key, label);
+  }
+  return [...distinct.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
+}
+
+function collectVariationSuggestions(products, drafts) {
+  const colors = [];
+  const sizes = [];
+  const types = [];
+  const valuesByType = new Map();
+  const addAttribute = (type, value) => {
+    const label = String(type || '').trim();
+    const sample = String(value || '').trim();
+    if (!label) return;
+    const normalized = label.toLocaleLowerCase('pt-BR');
+    if (normalized === 'cor') {
+      if (sample) colors.push(sample);
+      return;
+    }
+    if (normalized === 'tamanho') {
+      if (sample) sizes.push(sample);
+      return;
+    }
+    types.push(label);
+    if (sample) valuesByType.set(normalized, [...(valuesByType.get(normalized) || []), sample]);
+  };
+
+  for (const product of [...(products || []), ...(drafts || [])]) {
+    for (const image of [...(product.images || []), ...(product.variations || [])]) {
+      if (image.color) colors.push(image.color);
+      if (image.size) sizes.push(image.size);
+      const type = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
+      addAttribute(type, image.variationValue);
+      addAttribute(image.customVariationType, image.customVariationValue);
+      for (const part of String(image.label || '').split(' · ')) {
+        const separator = part.indexOf(':');
+        if (separator > 0) addAttribute(part.slice(0, separator), part.slice(separator + 1));
+      }
+    }
+  }
+
+  return {
+    colors: uniqueSuggestions(colors),
+    sizes: uniqueSuggestions(sizes),
+    types: uniqueSuggestions(types),
+    valuesByType: Object.fromEntries([...valuesByType].map(([type, values]) => [type, uniqueSuggestions(values)])),
+  };
+}
 
 function explainProductError(message) {
   const value = String(message || '');
@@ -270,13 +324,15 @@ function productBody(draft) {
   };
 }
 
-export default function ProductWorkspace({ product, categories, preferences, stockFlows = [], available, onClose, onSaved }) {
+export default function ProductWorkspace({ product, products = [], categories, preferences, stockFlows = [], available, onClose, onSaved }) {
   const editing = Boolean(product);
   const toast = useToast();
   const defaultFlowIds = stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id);
   const [drafts, setDrafts] = useState(() => product ? [draftFromProduct(product, stockFlows)] : []);
   const [draftSteps, setDraftSteps] = useState({});
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
+  const categorySuggestions = useMemo(() => uniqueSuggestions([...(categories || []), ...drafts.map((draft) => draft.category)]), [categories, drafts]);
+  const variationSuggestions = useMemo(() => collectVariationSuggestions(products, drafts), [products, drafts]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -514,7 +570,8 @@ export default function ProductWorkspace({ product, categories, preferences, sto
             } else setError('');
             if (!message) setDraftSteps((current) => ({ ...current, [drafts[activeDraftIndex].key]: step }));
           }}
-          categories={categories}
+          categories={categorySuggestions}
+          variationSuggestions={variationSuggestions}
           preferences={preferences}
           stockFlows={stockFlows}
           editing={editing}
@@ -547,10 +604,18 @@ export default function ProductWorkspace({ product, categories, preferences, sto
   );
 }
 
-function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
+function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, variationSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
   const steps = ['Fotos', 'Informações', 'Preço', 'Estoque', 'Revisar'];
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
+  const colorListId = `variation-colors-${draft.key}`;
+  const sizeListId = `variation-sizes-${draft.key}`;
+  const typeListId = `variation-types-${draft.key}`;
+  const variationTypes = uniqueSuggestions([
+    ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
+    ...(variationSuggestions?.types || []),
+    ...draft.variations.map((image) => image.variationType).filter(Boolean),
+  ]).filter((type) => !['cor', 'tamanho', 'outro'].includes(type.toLocaleLowerCase('pt-BR')));
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const addPriceOption = () => onPatch({ priceOptions: [...draft.priceOptions, {
     key: newKey(), label: '', scope: 'same_product', minQuantity: String(draft.priceOptions.length ? Number(draft.priceOptions[draft.priceOptions.length - 1].minQuantity || 1) + 1 : 1), minCartValue: '', price: '', onRequest: false,
@@ -629,43 +694,51 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
           {step === 0 && <section className="pr-editor-section">
             <div className="pr-section-title"><span>1</span><div><h3>Fotos e variações</h3><p>A foto principal apresenta o item. Se houver opções como cores ou tamanhos, adicione uma foto para cada uma. Se não houver, pode seguir sem preencher nada.</p></div></div>
             <div className="pr-variation-list">
-              {draft.variations.map((image, variationIndex) => <div className="pr-variation-row" key={image.key}>
-                <div className="pr-variation-fields">
-                  <div className="field pr-variation-photo">
-                    <span>Imagem da variação <small>(opcional)</small></span>
-                    <div className="pr-variation-photo-control">
-                      {image.url && <img src={image.url} alt={`Imagem da variação ${variationIndex + 1}`} />}
-                      <label className={`btn btn-ghost btn-sm ${uploading ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
-                        <Icon name={image.url ? 'edit' : 'plus'} size={15} /> {image.url ? 'Trocar imagem' : 'Adicionar imagem'}
-                      </label>
-                      <input id={`variation-image-${image.key}`} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
-                        const file = event.currentTarget.files?.[0];
-                        event.currentTarget.value = '';
-                        void onReplaceVariation(image.key, file);
-                      }} />
-                      {image.url && <button type="button" className="link-btn" disabled={uploading} onClick={() => onPatchVariation(image.key, { url: null, data: null, externalUrl: null, imageRemoved: Boolean(image.id) })}>Remover imagem</button>}
+              {draft.variations.map((image, variationIndex) => {
+                const valueListId = `variation-values-${draft.key}-${variationIndex}`;
+                const valueType = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
+                const suggestions = variationSuggestions?.valuesByType?.[String(valueType || '').toLocaleLowerCase('pt-BR')] || [];
+                return (
+                  <div className="pr-variation-row" key={image.key}>
+                    <div className="pr-variation-fields">
+                      <div className="field pr-variation-photo">
+                        <span>Imagem da variação <small>(opcional)</small></span>
+                        <div className="pr-variation-photo-control">
+                          {image.url && <img src={image.url} alt={`Imagem da variação ${variationIndex + 1}`} />}
+                          <label className={`btn btn-ghost btn-sm ${uploading ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
+                            <Icon name={image.url ? 'edit' : 'plus'} size={15} /> {image.url ? 'Trocar imagem' : 'Adicionar imagem'}
+                          </label>
+                          <input id={`variation-image-${image.key}`} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
+                            const file = event.currentTarget.files?.[0];
+                            event.currentTarget.value = '';
+                            void onReplaceVariation(image.key, file);
+                          }} />
+                          {image.url && <button type="button" className="link-btn" disabled={uploading} onClick={() => onPatchVariation(image.key, { url: null, data: null, externalUrl: null, imageRemoved: Boolean(image.id) })}>Remover imagem</button>}
+                        </div>
+                      </div>
+                      <label className="field"><span>Cor <small>(opcional)</small></span><span className="pr-variation-color">
+                        <input type="color" value={image.colorHex || colorHexForName(image.color) || '#cccccc'} onChange={(event) => onPatchVariation(image.key, { colorHex: event.target.value })} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
+                        <input className="input" list={colorListId} value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" />
+                      </span><small>Escolha a amostra visual e informe o nome da cor.</small></label>
+                      <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" list={sizeListId} value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
+                      <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
+                        <option value="">Não se aplica</option>
+                        {variationTypes.map((type) => <option key={type} value={type}>{type}</option>)}
+                        <option value="Outro">Outro</option>
+                      </select></label>
+                      <label className="field"><span>Código de barras <small>(opcional)</small></span><input className="input" value={image.barcode || ''} maxLength={48} onChange={(event) => onPatchVariation(image.key, { barcode: event.target.value })} placeholder="Vazio = usa o do produto" /></label>
+                      {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" list={typeListId} value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
+                      <label className="field"><span>Valor da característica</span><input className="input" list={valueListId} value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
+                      <datalist id={valueListId}>{suggestions.map((value) => <option key={value} value={value} />)}</datalist>
                     </div>
+                    <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
                   </div>
-                  <label className="field"><span>Cor <small>(opcional)</small></span><span className="pr-variation-color">
-                    <input type="color" value={image.colorHex || colorHexForName(image.color) || '#cccccc'} onChange={(event) => onPatchVariation(image.key, { colorHex: event.target.value })} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
-                    <input className="input" value={image.color || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { color: event.target.value })} placeholder="Ex.: Azul-marinho" />
-                  </span><small>Escolha a amostra visual e informe o nome da cor.</small></label>
-                  <label className="field"><span>Tamanho <small>(opcional)</small></span><input className="input" value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" /></label>
-                  <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
-                    <option value="">Não se aplica</option>
-                    {[...new Set([
-                      ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
-                      ...(image.variationType ? [image.variationType] : []),
-                    ])].filter((type) => !['cor', 'tamanho'].includes(type.toLocaleLowerCase('pt-BR'))).map((type) => <option key={type} value={type}>{type}</option>)}
-                    <option value="Outro">Outro</option>
-                  </select></label>
-                  <label className="field"><span>Código de barras <small>(opcional)</small></span><input className="input" value={image.barcode || ''} maxLength={48} onChange={(event) => onPatchVariation(image.key, { barcode: event.target.value })} placeholder="Vazio = usa o do produto" /></label>
-                  {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
-                  <label className="field"><span>Valor da característica</span><input className="input" value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
-                </div>
-                <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
-              </div>)}
+                );
+              })}
             </div>
+            <datalist id={colorListId}>{(variationSuggestions?.colors || []).map((color) => <option key={color} value={color} />)}</datalist>
+            <datalist id={sizeListId}>{(variationSuggestions?.sizes || []).map((size) => <option key={size} value={size} />)}</datalist>
+            <datalist id={typeListId}>{(variationSuggestions?.types || []).map((type) => <option key={type} value={type} />)}</datalist>
             {draft.variations.length < MAX_IMAGES - 1 && <>
               <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>
               <label className={`btn btn-ghost btn-sm pr-add-variation ${uploading ? 'is-disabled' : ''}`} htmlFor={variationPickerId}>

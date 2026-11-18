@@ -88,6 +88,7 @@ export default function Products({ allow = [] }) {
       <StoreBar />
       <ProductWorkspace
         product={editing === 'new' ? null : editing}
+        products={data?.products || []}
         categories={data?.categories || []}
         preferences={data?.preferences}
         stockFlows={data?.stockFlows || []}

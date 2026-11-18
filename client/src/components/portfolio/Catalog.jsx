@@ -92,7 +92,7 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
 function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder }) {
-  const [idx, setIdx] = useState(() => p.images.length && p.mainImage ? -1 : 0);
+  const [idx, setIdx] = useState(0);
   const [qty, setQty] = useState(1);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
   const img = selectedVariation || p.mainImage || p.images.find((image) => image.url) || null;
