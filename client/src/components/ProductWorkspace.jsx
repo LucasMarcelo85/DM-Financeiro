@@ -491,7 +491,7 @@ export default function ProductWorkspace({ product, categories, preferences, sto
           ? <img className="pr-draft-thumb" src={drafts[activeDraftIndex].mainImage.url} alt={`Imagem do item ${activeDraftIndex + 1}`} />
           : <span className="pr-draft-thumb is-empty" aria-hidden="true"><Icon name="box" size={20} /></span>}
         <label className="field">
-          <span>Item {activeDraftIndex + 1} de {drafts.length}</span>
+          <span className="pr-draft-count" aria-live="polite">Item {activeDraftIndex + 1} de {drafts.length}</span>
           <select className="input" value={activeDraftIndex} onChange={(event) => setActiveDraftIndex(Number(event.target.value))}>
             {drafts.map((draft, index) => <option key={draft.key} value={index}>{index + 1}. {draft.name || `${draft.kind === 'servico' ? 'Serviço' : 'Produto'} sem nome`} · {draftSteps[draft.key] === 4 ? 'Revisado' : 'Em andamento'}</option>)}
           </select>

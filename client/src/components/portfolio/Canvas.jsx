@@ -636,7 +636,7 @@ export default function PortfolioCanvas({ doc, device, scale = 1, mode = 'public
   };
   const body = (
     <div className="pv-fit" style={{ width: W * scale, height: H * scale, flex: 'none' }}>
-      <div className="pv-canvas" data-canvas style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
+      <div className="pv-canvas" data-canvas data-device={device} style={{ width: W, height: H, transform: scale === 1 ? undefined : `scale(${scale})` }}>
         {['header', 'body', 'footer'].map((region) => {
           const RegionTag = region === 'header' ? 'header' : region === 'footer' ? 'footer' : 'section';
           return (

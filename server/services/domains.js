@@ -57,6 +57,7 @@ export async function domainOwner(host) {
 const OPEN_API = new Set(['/api/public/portfolio', '/api/public/portfolio/image', '/api/public/domain-check']);
 const OPEN_API_ROUTES = [
   /^\/api\/public\/product-image\/\d+$/,
+  /^\/api\/public\/portfolio\/(?:manifest|icon|push-config|push-subscription)$/,
   /^\/api\/shop-app\//,
   /^\/api\/public\/cep\/\d{8}$/,
   /^\/api\/public\/catalog\/shipping\/quote$/,

@@ -258,12 +258,12 @@
 .pv-card-img { flex: none; }
 @media (max-width: 600px) {
   .pv-modal-image { max-height: 120px; margin: 8px auto; }
-  .pv-card-img img { object-fit: contain; }
-  .pv-card.is-horizontal { flex-direction: column; }
-  .pv-card.is-horizontal .pv-card-img,
-  .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: none; aspect-ratio: 1 / 1; min-height: 0; height: auto; }
-  .pv-card.is-horizontal .pv-card-body { align-content: start; }
 }
+.pv-canvas[data-device="mobile"] .pv-card-img img { object-fit: contain; }
+.pv-canvas[data-device="mobile"] .pv-card.is-horizontal { flex-direction: column; }
+.pv-canvas[data-device="mobile"] .pv-card.is-horizontal .pv-card-img,
+.pv-canvas[data-device="mobile"] .pv-card.is-horizontal.ratio-custom .pv-card-img { flex: none; aspect-ratio: 1 / 1; min-height: 0; height: auto; }
+.pv-canvas[data-device="mobile"] .pv-card.is-horizontal .pv-card-body { align-content: start; }
 
 /* ---------- rodapé discreto (em toda página) ---------- */
 .pv-credit { position: relative; z-index: 1; flex: none; padding: 14px 16px 18px; text-align: center; font: 400 11.5px/1.4 system-ui, -apple-system, 'Segoe UI', sans-serif; letter-spacing: .01em; color: var(--credit, #14202e); opacity: .62; }
