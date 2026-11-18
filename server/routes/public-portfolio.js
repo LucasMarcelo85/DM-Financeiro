@@ -9,11 +9,19 @@ import { publicCatalogConfig, publicProduct } from '../utils/catalog.js';
 import { loadCatalogOwner } from '../services/orders.js';
 import { vapidPublicKey } from '../services/portfolio-push.js';
 import { hostKey } from '../utils/domain.js';
+import { config } from '../config.js';
 
 // Página pública do portfólio (sem login): dominio/<usuário> e dominio/<usuário>/<página>.
 // Só aparece se a página estiver publicada e o dono ainda tiver acesso ao sistema (teste grátis ou plano pago).
 const router = Router();
 const PUSH_KEY = /^[A-Za-z0-9_-]{20,200}$/;
+
+const publicOrigin = (req) => {
+  const host = req.get('host');
+  const local = /^(localhost|127\.|\[::1\])/i.test(host || '');
+  const secure = req.protocol === 'https' || (config.appUrl.startsWith('https://') && !local);
+  return `${secure ? 'https' : 'http'}://${host}`;
+};
 
 function cleanPushSubscription(raw) {
   const endpoint = typeof raw?.endpoint === 'string' ? raw.endpoint : '';
@@ -64,7 +72,7 @@ router.get('/portfolio/manifest', async (req, res) => {
   if (!found) throw new AppError(404, 'Página não encontrada.');
   const { owner, page } = found;
   if (page.data?.branding?.installEnabled === false) throw new AppError(404, 'A instalação deste site está desativada.');
-  const origin = `${req.protocol}://${req.get('host')}`;
+  const origin = publicOrigin(req);
   const pagePath = req.customDomain
     ? (page.isMain ? '/' : `/${page.slug}`)
     : `/${owner.portfolioSlug}/${page.isMain ? '' : page.slug}`;
@@ -225,7 +233,7 @@ export async function portfolioShareMeta(req) {
   const found = await findPublicPage(userSlug, pageSlug);
   if (!found) return null;
   const { owner, page } = found;
-  const origin = `${req.protocol}://${req.get('host')}`;
+  const origin = publicOrigin(req);
   const doc = page.data || {};
   const q = `u=${encodeURIComponent(owner.portfolioSlug)}${pageSlug ? `&p=${encodeURIComponent(pageSlug)}` : ''}`;
   return {

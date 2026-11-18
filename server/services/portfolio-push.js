@@ -2,9 +2,15 @@ import { sendNotification, setVapidDetails } from 'web-push';
 import { config } from '../config.js';
 import { prisma } from '../prisma.js';
 
-const ready = Boolean(config.webPush.publicKey && config.webPush.privateKey && config.webPush.subject);
+const vapidSubject = (value) => (/^[^\s@:/]+@[^\s@]+\.[^\s@]+$/.test(value) ? `mailto:${value}` : value);
+let ready = Boolean(config.webPush.publicKey && config.webPush.privateKey && config.webPush.subject);
 if (ready) {
-  setVapidDetails(config.webPush.subject, config.webPush.publicKey, config.webPush.privateKey);
+  try {
+    setVapidDetails(vapidSubject(config.webPush.subject), config.webPush.publicKey, config.webPush.privateKey);
+  } catch (error) {
+    ready = false;
+    console.warn(`[push] notificações do portfólio desativadas: configuração VAPID inválida (${error.message}).`);
+  }
 } else {
   console.warn('[push] notificações do portfólio desativadas: configure VAPID_PUBLIC_KEY, VAPID_PRIVATE_KEY e VAPID_SUBJECT.');
 }
