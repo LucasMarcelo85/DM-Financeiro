@@ -129,10 +129,10 @@ function focusProductField(field) {
       category: '.pr-details-fields label:nth-child(2) input',
       barcode: '.pr-details-fields label:nth-child(5) input',
       price: '.pr-details-fields label:nth-child(3) input',
-      'price-option': '.pr-price-rule-fields label:nth-child(1) input',
-      'price-option-name': '.pr-price-rule-fields label:nth-child(1) input',
-      'price-option-min': '.pr-price-rule-fields label:nth-child(3) input',
-      'price-option-price': '.pr-price-rule-fields label:nth-child(4) input',
+      'price-option': '.pr-inline-prices input',
+      'price-option-name': '.pr-inline-prices input',
+      'price-option-min': '.pr-inline-prices input',
+      'price-option-price': '.pr-inline-prices input',
       variation: '.pr-variation-fields input, .pr-variation-fields select',
       stock: '.pr-stock-input input',
       'main-image': '.pr-main-photo',
@@ -150,6 +150,12 @@ async function imageFromFile(file) {
   return { key: newKey(), data: src, url: src, label: '', stockQuantity: '0' };
 }
 
+function priceRuleHint(option) {
+  if (option.scope === 'cart_value') return `Carrinho a partir de R$ ${option.minCartValue || '0,00'}`;
+  if (option.scope === 'cart_quantity') return `A partir de ${option.minQuantity || 1} un. no carrinho`;
+  return `A partir de ${option.minQuantity || 1} un. deste produto`;
+}
+
 function blankDraft(image = null, activeFlowIds = [], priceRules = []) {
   return {
     key: newKey(),
@@ -164,6 +170,7 @@ function blankDraft(image = null, activeFlowIds = [], priceRules = []) {
     stockEnabled: false,
     stockQuantity: '0',
     activeFlowIds,
+    legacyOptions: [],
     priceOptions: priceRules.map((rule) => ({
       key: newKey(),
       label: rule.label,
@@ -240,7 +247,7 @@ function colorNeedsSample(image) {
   return Boolean(image.color?.trim() && !image.colorHex && !colorHexForName(image.color));
 }
 
-function draftFromProduct(product, stockFlows) {
+function draftFromProduct(product, stockFlows, priceRules = []) {
   const rows = product.images || [];
   const variation = (image) => ({
     key: `image-${image.id}`,
@@ -275,16 +282,22 @@ function draftFromProduct(product, stockFlows) {
     stockEnabled: Boolean(product.stockEnabled),
     stockQuantity: String(product.stockQuantity || 0),
     activeFlowIds: product.activeFlowIds || stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id),
-    priceOptions: (product.priceOptions || []).map((option) => ({
-      key: `option-${option.id}`,
-      id: option.id,
-      label: option.label,
-      scope: option.scope || 'same_product',
-      minQuantity: String(option.minQuantity || 1),
-      minCartValue: centsToMasked(option.minCartCents || 0),
-      price: option.priceCents === null ? '' : centsToMasked(option.priceCents),
-      onRequest: option.priceCents === null,
-    })),
+    priceOptions: priceRules.map((rule) => {
+      const match = (product.priceOptions || []).find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(rule.label));
+      return {
+        key: match ? `option-${match.id}` : newKey(),
+        ...(match ? { id: match.id } : {}),
+        label: rule.label,
+        scope: rule.scope || 'same_product',
+        minQuantity: String(rule.minQuantity || 1),
+        minCartValue: centsToMasked(rule.minCartCents || 0),
+        price: match && match.priceCents !== null ? centsToMasked(match.priceCents) : '',
+        onRequest: false,
+      };
+    }),
+    legacyOptions: (product.priceOptions || [])
+      .filter((option) => !priceRules.some((rule) => normalizeSuggestion(rule.label) === normalizeSuggestion(option.label)))
+      .map((option) => ({ id: option.id, label: option.label, priceCents: option.priceCents, minQuantity: option.minQuantity || 1, scope: option.scope || 'same_product', minCartCents: option.minCartCents || 0 })),
     mainImage,
     variations: variationRows.map(variation),
   };
@@ -306,23 +319,17 @@ function productBody(draft) {
   if (!/^\d+$/.test(draft.stockQuantity) || Number(draft.stockQuantity) > 1_000_000) throw new Error('Informe um estoque válido entre 0 e 1.000.000.');
   if ([draft.mainImage, ...draft.variations].filter(Boolean).some((image) => !/^\d+$/.test(image.stockQuantity || '0') || Number(image.stockQuantity || 0) > 1_000_000)) throw new Error('Informe uma quantidade válida no estoque de cada imagem.');
 
-  const priceOptions = draft.priceOptions.map((option) => {
-    if (!option.label.trim()) throw new Error('Informe o nome de cada faixa de preço.');
-    if (!option.onRequest && !option.price) throw new Error(`${option.label}: informe o valor por unidade ou marque “Sob consulta”.`);
-    if (option.scope === 'cart_value') {
-      if (moneyToCents(option.minCartValue) < 1) throw new Error(`${option.label}: informe o valor mínimo do carrinho.`);
-    } else if (!/^\d+$/.test(option.minQuantity) || Number(option.minQuantity) < 1 || Number(option.minQuantity) > 999) {
-      throw new Error(`${option.label}: informe a quantidade mínima entre 1 e 999.`);
-    }
-    return {
+  const priceOptions = [
+    ...draft.priceOptions.filter((option) => moneyToCents(option.price) > 0).map((option) => ({
       ...(option.id ? { id: option.id } : {}),
       label: option.label.trim(),
-      priceCents: option.onRequest ? null : moneyToCents(option.price),
+      priceCents: moneyToCents(option.price),
       minQuantity: Number(option.minQuantity) || 1,
       scope: option.scope,
       minCartCents: moneyToCents(option.minCartValue),
-    };
-  });
+    })),
+    ...(draft.legacyOptions || []),
+  ];
 
   const images = draft.variations;
   const variationPayload = (image) => {
@@ -369,7 +376,7 @@ export default function ProductWorkspace({ product, products = [], categories, p
   const toast = useToast();
   const defaultFlowIds = stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id);
   const [drafts, setDrafts] = useState(() => product
-    ? [draftFromProduct(product, stockFlows)]
+    ? [draftFromProduct(product, stockFlows, preferences?.priceRules || [])]
     : [blankDraft(null, defaultFlowIds, preferences?.priceRules || [])]);
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
   const categorySuggestions = useMemo(() => uniqueSuggestions([...(categories || []), ...drafts.map((draft) => draft.category)]), [categories, drafts]);
@@ -598,8 +605,6 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
   const colorListId = `variation-colors-${draft.key}`;
   const sizeListId = `variation-sizes-${draft.key}`;
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
-  const addOption = () => onPatch({ priceOptions: [...draft.priceOptions, { key: newKey(), label: '', scope: 'same_product', minQuantity: String(Math.min(999, Math.max(1, ...draft.priceOptions.map((option) => Number(option.minQuantity) || 1)) + 5)), minCartValue: '', price: '', onRequest: false }] });
-  const removeOption = (key) => onPatch({ priceOptions: draft.priceOptions.filter((option) => option.key !== key) });
   const setColorName = (image, name) => {
     const mappedHex = variationSuggestions?.colorHexByName?.[normalizeSuggestion(name)] || colorHexForName(name);
     const sameName = normalizeSuggestion(image.color) === normalizeSuggestion(name);
@@ -645,34 +650,13 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
               <label className="field"><span>Categoria *</span><input className="input" list={`categories-${draft.key}`} value={draft.category} maxLength="60" onChange={(event) => onPatch({ category: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Serviços' : 'Ex.: Roupas'} /><datalist id={`categories-${draft.key}`}>{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
               <div className="pr-inline-prices">
                 <label className="field"><span>Preço base (R$)</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /></label>
+                {draft.priceOptions.map((option) => <label className="field" key={option.key}>
+                  <span>{option.label} (R$)</span>
+                  <input className="input" inputMode="numeric" value={option.price} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value), onRequest: false })} placeholder="0,00" />
+                  <small>{priceRuleHint(option)}</small>
+                </label>)}
               </div>
               <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
-              <fieldset className="field pr-price-options">
-                <legend>Faixas de preço / atacado <small>(opcional)</small></legend>
-                <small>Defina o preço por unidade a partir de uma quantidade deste produto, de peças no carrinho ou de um valor mínimo do carrinho. O preço da faixa é aplicado automaticamente.</small>
-                {draft.priceOptions.map((option, optionIndex) => (
-                  <div className="pr-price-rule-card" key={option.key}>
-                    <div className="pr-price-rule-fields">
-                      <label className="field"><span>Nome da faixa</span><input className="input" list={`price-labels-${draft.key}`} value={option.label} maxLength={40} onChange={(event) => updateOption(option.key, { label: event.target.value })} placeholder="Ex.: Atacado" /></label>
-                      <label className="field"><span>Critério</span>
-                        <select className="input" value={option.scope || 'same_product'} onChange={(event) => updateOption(option.key, { scope: event.target.value })}>
-                          <option value="same_product">Peças deste produto</option>
-                          <option value="cart_quantity">Peças no carrinho</option>
-                          <option value="cart_value">Valor do carrinho</option>
-                        </select>
-                      </label>
-                      {option.scope === 'cart_value'
-                        ? <label className="field"><span>A partir de (R$)</span><input className="input" inputMode="numeric" value={option.minCartValue} onChange={(event) => updateOption(option.key, { minCartValue: maskMoney(event.target.value) })} placeholder="0,00" /></label>
-                        : <label className="field"><span>A partir de (un.)</span><input className="input" inputMode="numeric" value={option.minQuantity} onChange={(event) => updateOption(option.key, { minQuantity: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="6" /></label>}
-                      <label className="field"><span>Preço por unidade (R$)</span><input className="input" inputMode="numeric" value={option.price} disabled={option.onRequest} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value), onRequest: false })} placeholder="0,00" /></label>
-                      <label className="check-line"><input type="checkbox" checked={Boolean(option.onRequest)} onChange={(event) => updateOption(option.key, { onRequest: event.target.checked, price: event.target.checked ? '' : option.price })} /><span>Sob consulta</span></label>
-                    </div>
-                    <button type="button" className="btn btn-sm pr-remove-rule" onClick={() => removeOption(option.key)} aria-label={`Remover faixa de preço ${optionIndex + 1}`}><Icon name="trash" size={16} /> Remover faixa</button>
-                  </div>
-                ))}
-                <datalist id={`price-labels-${draft.key}`}>{(preferences?.priceLabels || []).map((label) => <option key={label} value={label} />)}</datalist>
-                {draft.priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addOption}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
-              </fieldset>
               <label className="field"><span>Código de barras <small>(opcional)</small></span><span className="pr-barcode-row"><input className="input" value={draft.barcode || ''} maxLength={48} onChange={(event) => onPatch({ barcode: event.target.value })} placeholder="Digite ou use um leitor" /><button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ barcode: generateEan13() })}>Gerar</button></span><small>Usado em etiquetas e no PDV.</small></label>
             </div>
           </section>

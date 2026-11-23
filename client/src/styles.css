@@ -2615,3 +2615,19 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .pr-stock-mode button { min-height: 3.2rem; font-size: .95rem; }
   .pr-stock-input .input { max-width: none; }
 }
+
+/* ---------- Modal "Configurar" faixas de preço ---------- */
+.pr-preferences .btn-ghost { border-color: var(--amber); background: var(--amber-soft); color: var(--ink); }
+.pr-preferences .btn-ghost:hover:not(:disabled) { border-color: var(--amber-d); background: #fbe3b8; }
+.pr-preferences .pr-remove-rule { justify-self: end; border-color: #f1b4b6; background: var(--red-soft); color: var(--red-d); }
+.pr-preferences .pr-remove-rule:hover:not(:disabled) { border-color: var(--red); background: #fbd3d5; }
+.pr-preferences .input:focus { border-color: var(--amber-d); box-shadow: 0 0 0 3px rgba(242, 163, 58, .3); }
+.pr-preferences .pr-price-rule-card .pr-price-rule-fields { grid-template-columns: repeat(auto-fit, minmax(min(10rem, 100%), 1fr)); }
+.pr-preferences .pr-preference-group { display: grid; gap: .75rem; }
+.pr-inline-prices .field > small { color: var(--muted); font-size: .78rem; }
+@media (max-width: 48rem) {
+  .pr-preferences .input, .pr-preferences select.input { min-height: 3rem; font-size: 1rem; }
+  .pr-preferences .btn { min-height: 3rem; }
+  .pr-preferences .pr-price-rule-card .pr-price-rule-fields { grid-template-columns: minmax(0, 1fr); }
+  .pr-preferences .pr-remove-rule, .pr-preferences .pr-preference-group > .btn { justify-self: stretch; }
+}

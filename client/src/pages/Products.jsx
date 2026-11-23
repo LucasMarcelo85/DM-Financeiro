@@ -51,6 +51,7 @@ export default function Products({ allow = [] }) {
   const [kind, setKind] = useState('');
   const [editing, setEditing] = useState(null); // null | 'new' | produto
   const [confirmDel, setConfirmDel] = useState(null);
+  const [managePreferences, setManagePreferences] = useState(false);
   const [manageInventory, setManageInventory] = useState(false);
   const [showLabels, setShowLabels] = useState(false);
   const [showRomaneio, setShowRomaneio] = useState(false);
@@ -136,6 +137,7 @@ export default function Products({ allow = [] }) {
       {data && <div className="pr-toolbar rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <label className="pr-view-control"><span>Tamanho dos cards <strong>{cardView.cardWidth}px</strong></span><input type="range" min="160" max="360" step="8" value={cardView.cardWidth} onChange={(e) => setCardView((v) => ({ ...v, cardWidth: Number(e.target.value) }))} aria-label="Largura dos cards de produtos" /></label>
         <label className="pr-view-control"><span>Altura das fotos <strong>{cardView.imageHeight}px</strong></span><input type="range" min="90" max="280" step="10" value={cardView.imageHeight} onChange={(e) => setCardView((v) => ({ ...v, imageHeight: Number(e.target.value) }))} aria-label="Altura das fotos dos produtos" /></label>
+        {!shop && <button type="button" className="btn btn-primary btn-sm" onClick={() => setManagePreferences(true)}>Configurar</button>}
       </div>}
 
       {blocked && (
@@ -206,6 +208,13 @@ export default function Products({ allow = [] }) {
 
       {showLabels && data && <LabelPrinter products={data.products} onClose={() => setShowLabels(false)} onChanged={load} />}
       {showRomaneio && data && <RomaneioModal products={data.products} onClose={() => setShowRomaneio(false)} />}
+      {managePreferences && <ProductPreferencesModal preferences={data?.preferences} onClose={() => setManagePreferences(false)} onSaved={(preferences, sync) => {
+        setData((current) => current ? { ...current, preferences } : current);
+        setManagePreferences(false);
+        if (sync?.failed) toast(`Faixas salvas, mas ${plural(sync.failed, 'produto não foi atualizado', 'produtos não foram atualizados')}. Tente salvar novamente.`, 'error');
+        else toast(sync?.changed ? `Faixas salvas e aplicadas em ${plural(sync.changed, 'produto', 'produtos')}.` : 'Faixas de preço salvas.');
+        load();
+      }} />}
       {manageInventory && <InventoryManager onClose={() => { setManageInventory(false); load(); }} />}
       {confirmDel && (
         <Modal title="Excluir este item?" onClose={() => setConfirmDel(null)}
@@ -504,50 +513,84 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
   );
 }
 
+const normalizeRuleLabel = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
+
+async function syncProductPrices(rules, originalRules) {
+  const kept = new Set(rules.map((rule) => normalizeRuleLabel(rule.origLabel)).filter(Boolean));
+  const removed = new Set(originalRules.map((rule) => normalizeRuleLabel(rule.label)).filter((label) => !kept.has(label)));
+  const all = (await api.get('/products')).products || [];
+  const signature = (list) => JSON.stringify(list.map((o) => [o.id, o.label, o.priceCents, o.minQuantity || 1, o.scope || 'same_product', o.minCartCents || 0]));
+  let changed = 0;
+  let failed = 0;
+  for (const product of all) {
+    const current = product.priceOptions || [];
+    const used = new Set();
+    const next = [];
+    for (const rule of rules) {
+      const match = current.find((o) => !used.has(o.id) && normalizeRuleLabel(o.label) === normalizeRuleLabel(rule.origLabel || rule.label));
+      if (!match) continue;
+      used.add(match.id);
+      next.push({ id: match.id, label: rule.label, priceCents: match.priceCents, minQuantity: rule.minQuantity, scope: rule.scope, minCartCents: rule.minCartCents });
+    }
+    for (const o of current) {
+      if (used.has(o.id) || removed.has(normalizeRuleLabel(o.label))) continue;
+      next.push({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 });
+    }
+    if (signature(current) === signature(next)) continue;
+    try {
+      await api.patch(`/products/${product.id}`, { priceOptions: next });
+      changed += 1;
+    } catch {
+      failed += 1;
+    }
+  }
+  return { changed, failed };
+}
+
 function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   const toast = useToast();
-  const [priceRules, setPriceRules] = useState(() => (preferences?.priceRules || []).map((rule) => ({
-    ...rule,
+  const originalRules = preferences?.priceRules || [];
+  const [priceRules, setPriceRules] = useState(() => originalRules.map((rule) => ({
+    key: `rule-${Math.random()}`,
+    origLabel: rule.label,
+    label: rule.label,
+    scope: rule.scope || 'same_product',
+    minQuantity: String(rule.minQuantity || 1),
+    minCartValue: centsToMasked(rule.minCartCents || 0),
   })));
   const [busy, setBusy] = useState(false);
+  const patchRule = (key, changes) => setPriceRules((current) => current.map((rule) => (rule.key === key ? { ...rule, ...changes } : rule)));
 
   function addPriceRule() {
     if (priceRules.length >= 12) return;
     const minQuantity = priceRules.length === 0 ? 6 : priceRules.length === 1 ? 12 : Math.min(999, Math.max(1, ...priceRules.map((rule) => Number(rule.minQuantity) || 1)) + 1);
-    setPriceRules((current) => [...current, {
-      key: `price-rule-${Date.now()}-${Math.random()}`,
-      label: '',
-      scope: 'same_product',
-      minQuantity,
-      minCartCents: 0,
-    }]);
+    setPriceRules((current) => [...current, { key: `rule-${Date.now()}-${Math.random()}`, origLabel: '', label: '', scope: 'same_product', minQuantity: String(minQuantity), minCartValue: '' }]);
   }
 
   async function save() {
-    if (priceRules.some((rule) => !rule.label.trim())) {
-      toast('Informe o nome de cada preço configurado ou remova a linha vazia.', 'error');
-      return;
-    }
-    const names = priceRules.map((rule) => rule.label.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR'));
-    if (new Set(names).size !== names.length) {
-      toast('Use nomes diferentes para cada preço pré-configurado.', 'error');
-      return;
-    }
+    if (priceRules.some((rule) => !rule.label.trim())) return toast('Informe o nome de cada faixa ou remova a linha vazia.', 'error');
+    const names = priceRules.map((rule) => normalizeRuleLabel(rule.label));
+    if (new Set(names).size !== names.length) return toast('Use nomes diferentes para cada faixa de preço.', 'error');
+    if (priceRules.some((rule) => rule.scope !== 'cart_value' && (!/^\d+$/.test(rule.minQuantity) || Number(rule.minQuantity) < 1 || Number(rule.minQuantity) > 999))) return toast('Informe a quantidade mínima de cada faixa entre 1 e 999.', 'error');
+    if (priceRules.some((rule) => rule.scope === 'cart_value' && moneyToCents(rule.minCartValue) < 1)) return toast('Informe o valor mínimo do carrinho para cada faixa baseada em valor.', 'error');
     setBusy(true);
     try {
-      const savedPriceLabels = [...new Set([...(preferences?.priceLabels || []), ...priceRules.map((rule) => rule.label.trim())])].slice(0, 30);
+      const rules = priceRules.map((rule) => ({
+        origLabel: rule.origLabel,
+        label: rule.label.replace(/\s+/g, ' ').trim(),
+        scope: rule.scope,
+        minQuantity: rule.scope === 'cart_value' ? 1 : Number(rule.minQuantity) || 1,
+        minCartCents: rule.scope === 'cart_value' ? moneyToCents(rule.minCartValue) : 0,
+      }));
+      const savedPriceLabels = [...new Set([...(preferences?.priceLabels || []), ...rules.map((rule) => rule.label)])].slice(0, 30);
       const result = await api.put('/products/preferences', {
         categories: preferences?.categories || [],
         variationTypes: preferences?.variationTypes || ['Cor', 'Tamanho', 'Litros'],
         priceLabels: savedPriceLabels,
-        priceRules: priceRules.map((rule) => ({
-          label: rule.label.trim(),
-          scope: rule.scope,
-          minQuantity: rule.scope === 'cart_value' ? 1 : Number(rule.minQuantity) || 1,
-          minCartCents: rule.scope === 'cart_value' ? Number(rule.minCartCents) || 1 : 0,
-        })),
+        priceRules: rules.map(({ origLabel, ...rule }) => rule),
       });
-      onSaved(result.preferences);
+      const sync = await syncProductPrices(rules, originalRules).catch(() => ({ changed: 0, failed: 1 }));
+      onSaved(result.preferences, sync);
     } catch (e) {
       toast(e.message, 'error');
       setBusy(false);
@@ -555,22 +598,35 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Configuração de produtos" onClose={busy ? () => {} : onClose}
+    <Modal title="Configurar faixas de preço" onClose={busy ? () => {} : onClose}
       footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar configuração'}</button></>}>
       <div className="form pr-preferences">
         <fieldset className="field pr-preference-group">
-          <legend>Preços pré-configurados para novos produtos</legend>
-          <p className="muted small">Adicione os nomes dos preços que deseja preencher ao lado do preço base no cadastro.</p>
+          <legend>Faixas de preço / atacado</legend>
+          <p className="muted small">Cada faixa criada aqui aparece ao lado do preço base em todos os produtos, no cadastro e na edição, só para digitar o valor por unidade. O preço da faixa é aplicado automaticamente quando o cliente atingir a regra.</p>
           <div className="pr-price-template-list">
             {priceRules.map((rule, index) => (
-              <div className="pr-price-template" key={rule.key || `${rule.label}-${index}`}>
-                <label className="field"><span>Nome do preço</span><input className="input" value={rule.label} maxLength={40} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, label: event.target.value } : item))} placeholder="Ex.: Atacarejo" /></label>
-                <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceRules((current) => current.filter((_, row) => row !== index))} aria-label={`Remover configuração de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
+              <div className="pr-price-rule-card" key={rule.key}>
+                <div className="pr-price-rule-fields">
+                  <label className="field"><span>Nome da faixa</span><input className="input" value={rule.label} maxLength={40} onChange={(event) => patchRule(rule.key, { label: event.target.value })} placeholder="Ex.: Atacado" /></label>
+                  <label className="field"><span>Critério</span>
+                    <select className="input" value={rule.scope} onChange={(event) => patchRule(rule.key, { scope: event.target.value })}>
+                      <option value="same_product">Peças deste produto</option>
+                      <option value="cart_quantity">Peças no carrinho</option>
+                      <option value="cart_value">Valor do carrinho</option>
+                    </select>
+                  </label>
+                  {rule.scope === 'cart_value'
+                    ? <label className="field"><span>A partir de (R$)</span><input className="input" inputMode="numeric" value={rule.minCartValue} onChange={(event) => patchRule(rule.key, { minCartValue: maskMoney(event.target.value) })} placeholder="0,00" /></label>
+                    : <label className="field"><span>A partir de (un.)</span><input className="input" inputMode="numeric" value={rule.minQuantity} onChange={(event) => patchRule(rule.key, { minQuantity: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="6" /></label>}
+                </div>
+                <button type="button" className="btn btn-sm pr-remove-rule" onClick={() => setPriceRules((current) => current.filter((item) => item.key !== rule.key))} aria-label={`Remover faixa ${index + 1}`}><Icon name="trash" size={16} /> Remover faixa</button>
               </div>
             ))}
           </div>
-          {priceRules.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceRule}><Icon name="plus" size={16} /> Adicionar preço</button>}
-          {priceRules.length === 0 && <small className="muted">Nenhum campo adicional de preço será exibido nos novos produtos.</small>}
+          {priceRules.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceRule}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
+          {priceRules.length === 0 && <small className="muted">Nenhuma faixa criada: os produtos mostram apenas o preço base.</small>}
+          {priceRules.some((rule) => rule.origLabel) && <small className="muted">Renomear ou alterar a regra de uma faixa atualiza todos os produtos. Remover uma faixa apaga o valor dela em todos os produtos ao salvar.</small>}
         </fieldset>
       </div>
     </Modal>
