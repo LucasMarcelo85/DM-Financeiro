@@ -514,34 +514,10 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
 
 function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   const toast = useToast();
-  const defaults = {
-    categories: [],
-    variationTypes: ['Cor', 'Tamanho', 'Litros'],
-    priceLabels: ['Varejo', 'Atacarejo', 'Atacado', 'Mensal', 'Semestral', 'Anual'],
-    ...preferences,
-  };
-  const [lists, setLists] = useState(defaults);
-  const [drafts, setDrafts] = useState({ categories: '', variationTypes: '', priceLabels: '' });
   const [priceRules, setPriceRules] = useState(() => (preferences?.priceRules || []).map((rule) => ({
     ...rule,
-    minQuantity: String(rule.minQuantity || 1),
-    minCartValue: centsToMasked(rule.minCartCents || 0),
   })));
   const [busy, setBusy] = useState(false);
-  const sections = [
-    ['categories', 'Categorias', 'Ex.: Roupas, Bebidas, Consultoria'],
-    ['variationTypes', 'Tipos de variação', 'Ex.: Cor, Tamanho, Litros, Material'],
-    ['priceLabels', 'Nomes de preço', 'Ex.: Varejo, Atacado, Mensal, Anual'],
-  ];
-
-  function add(key) {
-    const value = drafts[key].replace(/\s+/g, ' ').trim();
-    if (!value) return;
-    setLists((current) => current[key].some((item) => item.toLocaleLowerCase('pt-BR') === value.toLocaleLowerCase('pt-BR'))
-      ? current
-      : { ...current, [key]: [...current[key], value] });
-    setDrafts((current) => ({ ...current, [key]: '' }));
-  }
 
   function addPriceRule() {
     if (priceRules.length >= 12) return;
@@ -550,8 +526,8 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
       key: `price-rule-${Date.now()}-${Math.random()}`,
       label: '',
       scope: 'same_product',
-      minQuantity: String(minQuantity),
-      minCartValue: '',
+      minQuantity,
+      minCartCents: 0,
     }]);
   }
 
@@ -560,23 +536,23 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
       toast('Informe o nome de cada preço configurado ou remova a linha vazia.', 'error');
       return;
     }
-    if (priceRules.some((rule) => rule.scope === 'cart_value'
-      ? moneyToCents(rule.minCartValue) < 1
-      : !/^\d+$/.test(rule.minQuantity) || Number(rule.minQuantity) < 1 || Number(rule.minQuantity) > 999)) {
-      toast('Confira o valor mínimo ou a quantidade mínima de cada preço configurado.', 'error');
+    const names = priceRules.map((rule) => rule.label.replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR'));
+    if (new Set(names).size !== names.length) {
+      toast('Use nomes diferentes para cada preço pré-configurado.', 'error');
       return;
     }
     setBusy(true);
     try {
-      const savedPriceLabels = [...new Set([...lists.priceLabels, ...priceRules.map((rule) => rule.label.trim())])];
+      const savedPriceLabels = [...new Set([...(preferences?.priceLabels || []), ...priceRules.map((rule) => rule.label.trim())])].slice(0, 30);
       const result = await api.put('/products/preferences', {
-        ...lists,
+        categories: preferences?.categories || [],
+        variationTypes: preferences?.variationTypes || ['Cor', 'Tamanho', 'Litros'],
         priceLabels: savedPriceLabels,
         priceRules: priceRules.map((rule) => ({
           label: rule.label.trim(),
           scope: rule.scope,
-          minQuantity: rule.scope === 'cart_value' ? 1 : Number(rule.minQuantity),
-          minCartCents: rule.scope === 'cart_value' ? moneyToCents(rule.minCartValue) : 0,
+          minQuantity: rule.scope === 'cart_value' ? 1 : Number(rule.minQuantity) || 1,
+          minCartCents: rule.scope === 'cart_value' ? Number(rule.minCartCents) || 1 : 0,
         })),
       });
       onSaved(result.preferences);
@@ -587,38 +563,16 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   }
 
   return (
-    <Modal title="Organizar categorias e opções" onClose={busy ? () => {} : onClose}
-      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar opções'}</button></>}>
+    <Modal title="Configuração de produtos" onClose={busy ? () => {} : onClose}
+      footer={<><button className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button><button className="btn btn-primary" onClick={save} disabled={busy}>{busy ? 'Salvando...' : 'Salvar configuração'}</button></>}>
       <div className="form pr-preferences">
-        <p className="muted">Crie listas para agilizar os próximos cadastros. Você também pode digitar uma opção diferente diretamente no produto.</p>
-        {sections.map(([key, title, placeholder]) => (
-          <fieldset className="field pr-preference-group" key={key}>
-            <legend>{title}</legend>
-            <div className="pr-preference-add">
-              <input className="input" value={drafts[key]} maxLength={key === 'categories' ? 60 : 40} placeholder={placeholder} onChange={(e) => setDrafts((current) => ({ ...current, [key]: e.target.value }))} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); add(key); } }} />
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => add(key)}>Adicionar</button>
-            </div>
-            <div className="pr-preference-chips">
-              {lists[key].map((value) => <button type="button" className="pr-preference-chip" key={value} onClick={() => setLists((current) => ({ ...current, [key]: current[key].filter((item) => item !== value) }))} title={`Remover ${value}`}>{value}<span aria-hidden="true"> ×</span></button>)}
-              {!lists[key].length && <small className="muted">Nenhuma opção salva.</small>}
-            </div>
-          </fieldset>
-        ))}
         <fieldset className="field pr-preference-group">
           <legend>Preços pré-configurados para novos produtos</legend>
-          <p className="muted small">Cada linha cria um campo de preço no cadastro. Defina também a regra usada para aplicar esse preço.</p>
+          <p className="muted small">Adicione os nomes dos preços que deseja preencher ao lado do preço base no cadastro.</p>
           <div className="pr-price-template-list">
             {priceRules.map((rule, index) => (
               <div className="pr-price-template" key={rule.key || `${rule.label}-${index}`}>
                 <label className="field"><span>Nome do preço</span><input className="input" value={rule.label} maxLength={40} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, label: event.target.value } : item))} placeholder="Ex.: Atacarejo" /></label>
-                <label className="field"><span>Aplicar quando</span><select className="input" value={rule.scope} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, scope: event.target.value } : item))}>
-                  <option value="same_product">A partir de uma quantidade deste produto</option>
-                  <option value="cart_quantity">A partir da quantidade total no carrinho</option>
-                  <option value="cart_value">Quando o carrinho atingir um valor</option>
-                </select></label>
-                {rule.scope === 'cart_value'
-                  ? <label className="field"><span>Valor mínimo (R$)</span><input className="input" inputMode="numeric" value={rule.minCartValue} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, minCartValue: maskMoney(event.target.value) } : item))} placeholder="0,00" /></label>
-                  : <label className="field"><span>Quantidade mínima</span><input className="input" type="number" min="1" max="999" value={rule.minQuantity} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, minQuantity: event.target.value.replace(/\D/g, '').slice(0, 3) } : item))} /></label>}
                 <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceRules((current) => current.filter((_, row) => row !== index))} aria-label={`Remover configuração de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
               </div>
             ))}

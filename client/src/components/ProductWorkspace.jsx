@@ -11,7 +11,6 @@ import { colorHexForName, colorNameForHex } from '../lib/productColors.js';
 
 const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
-const DEFAULT_VARIATION_TYPES = ['Cor', 'Tamanho', 'Litros', 'Unidade'];
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
 
 function normalizeSuggestion(value) {
@@ -79,39 +78,6 @@ function collectVariationSuggestions(products, drafts) {
     colorHexByName: Object.fromEntries(colorHexByName),
     valuesByType: Object.fromEntries([...valuesByType].map(([type, values]) => [normalizeSuggestion(type), uniqueSuggestions(values)])),
   };
-}
-
-function collectPriceSuggestions(products, drafts) {
-  const byLabel = new Map();
-  let order = 0;
-  for (const product of [...(products || []), ...(drafts || [])]) {
-    for (const option of product.priceOptions || []) {
-      const label = String(option.label || '').trim();
-      if (!label) continue;
-      const scope = ['same_product', 'cart_quantity', 'cart_value'].includes(option.scope) ? option.scope : 'same_product';
-      const minQuantity = String(Math.max(1, Number(option.minQuantity) || 1));
-      const minCartCents = Number.isInteger(option.minCartCents) ? option.minCartCents : moneyToCents(option.minCartValue || '');
-      const key = normalizeSuggestion(label);
-      const signature = `${scope}:${scope === 'cart_value' ? minCartCents : minQuantity}`;
-      if (!byLabel.has(key)) byLabel.set(key, { label, rules: new Map() });
-      const group = byLabel.get(key);
-      const rule = group.rules.get(signature) || {
-        label: group.label,
-        scope,
-        minQuantity,
-        minCartValue: centsToMasked(minCartCents),
-        count: 0,
-      };
-      rule.count += 1;
-      rule.order = order;
-      group.rules.set(signature, rule);
-      order += 1;
-    }
-  }
-  return [...byLabel.values()].map(({ rules }) => [...rules.values()]
-    .sort((a, b) => a.count - b.count || a.order - b.order).at(-1))
-    .filter(Boolean)
-    .sort((a, b) => a.label.localeCompare(b.label, 'pt-BR'));
 }
 
 function SuggestionButtons({ label, options = [], onSelect, swatchFor }) {
@@ -408,7 +374,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
   const categorySuggestions = useMemo(() => uniqueSuggestions([...(categories || []), ...drafts.map((draft) => draft.category)]), [categories, drafts]);
   const variationSuggestions = useMemo(() => collectVariationSuggestions(products, drafts), [products, drafts]);
-  const priceSuggestions = useMemo(() => collectPriceSuggestions(products, drafts), [products, drafts]);
   const [error, setError] = useState('');
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
@@ -469,36 +434,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
       ...draft,
       mainImage: { key: newKey(), url, externalUrl: url, stockQuantity: draft.mainImage?.stockQuantity || '0' },
     } : draft));
-  }
-
-  function addVariationWithUrl(key, url) {
-    const draft = drafts.find((item) => item.key === key);
-    if (draft.variations.length >= MAX_IMAGES - 1) return setError(`Cada produto pode ter até ${MAX_IMAGES - 1} fotos de variação.`);
-    setDrafts((current) => current.map((item) => item.key === key ? {
-      ...item,
-      variations: [...item.variations, { key: newKey(), url, externalUrl: url, label: '', stockQuantity: '0', variationType: '', variationValue: '', customVariationType: '', customVariationValue: '' }],
-    } : item));
-  }
-
-  async function addVariations(key, files) {
-    const selected = [...files];
-    if (!selected.length) return;
-    const draft = drafts.find((item) => item.key === key);
-    if (draft.variations.length + selected.length > MAX_IMAGES - 1) return setError(`Cada produto pode ter até ${MAX_IMAGES - 1} fotos de variação.`);
-    setUploading(true);
-    setError('');
-    try {
-      const prepared = [];
-      for (const file of selected) prepared.push(await imageFromFile(file));
-      setDrafts((current) => current.map((item) => item.key === key ? {
-        ...item,
-        variations: [...item.variations, ...prepared.map((image) => ({ ...image, variationType: '', variationValue: '', customVariationType: '', customVariationValue: '' }))],
-      } : item));
-    } catch (e) {
-      setError(e.message);
-    } finally {
-      setUploading(false);
-    }
   }
 
   function addBlankVariation(key) {
@@ -623,7 +558,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
           count={drafts.length}
           categories={categorySuggestions}
           variationSuggestions={variationSuggestions}
-          priceSuggestions={priceSuggestions}
           preferences={preferences}
           stockFlows={stockFlows}
           editing={editing}
@@ -631,20 +565,17 @@ export default function ProductWorkspace({ product, products = [], categories, p
           onPatch={(changes) => patchDraft(drafts[activeDraftIndex].key, changes)}
           onReplaceMain={(file) => replaceMainPhoto(drafts[activeDraftIndex].key, file)}
           onReplaceMainUrl={(url) => replaceMainPhotoWithUrl(drafts[activeDraftIndex].key, url)}
-          onAddVariations={(files) => addVariations(drafts[activeDraftIndex].key, files)}
-          onAddVariationUrl={(url) => addVariationWithUrl(drafts[activeDraftIndex].key, url)}
           onAddBlankVariation={() => addBlankVariation(drafts[activeDraftIndex].key)}
           onReplaceVariation={(variationKey, file) => replaceVariation(drafts[activeDraftIndex].key, variationKey, file)}
           onRemove={() => removeCurrentDraft(drafts[activeDraftIndex].key)}
           onRemoveVariation={(variationKey) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.filter((image) => image.key !== variationKey) })}
           onPatchVariation={(variationKey, changes) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.map((image) => image.key === variationKey ? { ...image, ...changes } : image) })}
-          onMoveVariation={(variationKey, direction) => setDrafts((current) => current.map((draft) => {
+          onSortVariations={() => setDrafts((current) => current.map((draft) => {
             if (draft.key !== drafts[activeDraftIndex].key) return draft;
-            const index = draft.variations.findIndex((image) => image.key === variationKey);
-            const nextIndex = index + direction;
-            if (index < 0 || nextIndex < 0 || nextIndex >= draft.variations.length) return draft;
-            const variations = [...draft.variations];
-            [variations[index], variations[nextIndex]] = [variations[nextIndex], variations[index]];
+            const variations = [...draft.variations].sort((a, b) => {
+              const label = (image) => [image.color, image.size, image.label].filter(Boolean).join(' ');
+              return label(a).localeCompare(label(b), 'pt-BR', { sensitivity: 'base', numeric: true });
+            });
             return { ...draft, variations };
           }))}
         />}
@@ -665,38 +596,11 @@ export default function ProductWorkspace({ product, products = [], categories, p
   );
 }
 
-function ProductDraftCard({ draft, index, count, categories, preferences, variationSuggestions, priceSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation, onMoveVariation }) {
+function ProductDraftCard({ draft, index, count, categories, variationSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation, onSortVariations }) {
   const mainPhotoPickerId = `main-photo-${draft.key}`;
-  const variationPickerId = `variation-photo-${draft.key}`;
   const colorListId = `variation-colors-${draft.key}`;
   const sizeListId = `variation-sizes-${draft.key}`;
-  const typeListId = `variation-types-${draft.key}`;
-  const priceLabelSuggestions = uniqueSuggestions([
-    ...(preferences?.priceLabels || []),
-    ...(priceSuggestions || []).map((option) => option.label),
-    ...draft.priceOptions.map((option) => option.label),
-  ]);
-  const variationTypes = uniqueSuggestions([
-    ...(preferences?.variationTypes?.length ? preferences.variationTypes : DEFAULT_VARIATION_TYPES),
-    ...(variationSuggestions?.types || []),
-    ...draft.variations.map((image) => image.variationType).filter(Boolean),
-  ]).filter((type) => !['cor', 'tamanho', 'outro'].includes(type.toLocaleLowerCase('pt-BR')));
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
-  const selectPriceLabel = (key, label) => {
-    const template = preferences?.priceRules?.find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(label));
-    const suggestion = priceSuggestions?.find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(label));
-    const changes = { label };
-    if (template) {
-      changes.scope = template.scope;
-      changes.minQuantity = String(template.minQuantity || 1);
-      changes.minCartValue = centsToMasked(template.minCartCents || 0);
-    } else if (suggestion) {
-      changes.scope = suggestion.scope;
-      changes.minQuantity = suggestion.minQuantity;
-      changes.minCartValue = suggestion.minCartValue;
-    }
-    updateOption(key, changes);
-  };
   const setColorName = (image, name) => {
     const mappedHex = variationSuggestions?.colorHexByName?.[normalizeSuggestion(name)] || colorHexForName(name);
     const sameName = normalizeSuggestion(image.color) === normalizeSuggestion(name);
@@ -709,9 +613,6 @@ function ProductDraftCard({ draft, index, count, categories, preferences, variat
     const colorName = colorNameForHex(hex);
     onPatchVariation(image.key, { colorHex: hex, ...(colorName ? { color: colorName } : {}) });
   };
-  const addPriceOption = () => onPatch({ priceOptions: [...draft.priceOptions, {
-    key: newKey(), label: '', scope: 'same_product', minQuantity: String(draft.priceOptions.length ? Number(draft.priceOptions[draft.priceOptions.length - 1].minQuantity || 1) + 1 : 1), minCartValue: '', price: '', onRequest: false,
-  }] });
   return (
     <article className="pr-product-editor-card">
       <header className="pr-product-card-head">
@@ -739,27 +640,27 @@ function ProductDraftCard({ draft, index, count, categories, preferences, variat
 
         <div className="pr-product-editor-content">
           <section className="pr-editor-section">
-            <div className="pr-section-title"><span>1</span><div><h3>Informações do produto</h3><p>Preencha o nome, a categoria e o preço principal.</p></div></div>
-            <div className="seg" role="radiogroup" aria-label="Tipo do item" style={{ '--n': 2 }}>
-              <button type="button" role="radio" aria-checked={draft.kind === 'produto'} className={draft.kind === 'produto' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'produto' })}>Produto</button>
-              <button type="button" role="radio" aria-checked={draft.kind === 'servico'} className={draft.kind === 'servico' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'servico' })}>Serviço</button>
-            </div>
+            <div className="pr-section-title"><span>1</span><div><h3>Informações do produto</h3><p>Preencha o nome, a categoria e os preços.</p></div></div>
             <div className="pr-details-fields">
               <label className="field"><span>Nome *</span><input className="input" value={draft.name} maxLength="120" onChange={(event) => onPatch({ name: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Manutenção' : 'Ex.: Camiseta básica'} /></label>
               <label className="field"><span>Categoria *</span><input className="input" list={`categories-${draft.key}`} value={draft.category} maxLength="60" onChange={(event) => onPatch({ category: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Serviços' : 'Ex.: Roupas'} /><datalist id={`categories-${draft.key}`}>{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
-              <label className="field"><span>Preço base (R$)</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /><small>{draft.onRequest ? 'O cliente precisa consultar o valor.' : 'Preço normal de uma unidade.'}</small></label>
+              <div className="pr-inline-prices">
+                <label className="field"><span>Preço base (R$)</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /></label>
+                {draft.priceOptions.map((option) => <label className="field" key={option.key}>
+                  <span>{option.label}</span>
+                  <input className="input" inputMode="numeric" value={option.price} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value), onRequest: false })} placeholder="0,00" />
+                </label>)}
+              </div>
               <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
               <label className="field"><span>Código de barras <small>(opcional)</small></span><span className="pr-barcode-row"><input className="input" value={draft.barcode || ''} maxLength={48} onChange={(event) => onPatch({ barcode: event.target.value })} placeholder="Digite ou use um leitor" /><button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ barcode: generateEan13() })}>Gerar</button></span><small>Usado em etiquetas e no PDV.</small></label>
             </div>
           </section>
 
           <section className="pr-editor-section">
-            <div className="pr-section-title"><span>2</span><div><h3>Variações</h3><p>Adicione cores, tamanhos ou outros tipos configurados. As fotos de cada variação são opcionais.</p></div></div>
+            <div className="pr-section-title"><span>2</span><div><h3>Variações</h3><p>Adicione cor, tamanho ou ambos. As fotos de cada variação são opcionais.</p></div></div>
+            <button type="button" className="btn btn-ghost btn-sm pr-sort-variations" onClick={onSortVariations} disabled={draft.variations.length < 2}>A–Z <span>Organizar variações</span></button>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => {
-                const valueListId = `variation-values-${draft.key}-${variationIndex}`;
-                const valueType = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
-                const suggestions = variationSuggestions?.valuesByType?.[normalizeSuggestion(valueType)] || [];
                 return (
                   <div className="pr-variation-row" key={image.key}>
                     <div className="pr-variation-fields">
@@ -797,19 +698,9 @@ function ProductDraftCard({ draft, index, count, categories, preferences, variat
                         <input id={`variation-size-${image.key}`} className="input" list={sizeListId} value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" />
                         <SuggestionButtons label={`Tamanhos cadastrados para a variação ${variationIndex + 1}`} options={variationSuggestions?.sizes || []} onSelect={(size) => onPatchVariation(image.key, { size })} />
                       </div>
-                      <label className="field"><span>Outra característica <small>(opcional)</small></span><select className="input" value={image.variationType || ''} onChange={(event) => onPatchVariation(image.key, { variationType: event.target.value, customVariationType: '' })}>
-                        <option value="">Não se aplica</option>
-                        {variationTypes.map((type) => <option key={type} value={type}>{type}</option>)}
-                        <option value="Outro">Outro</option>
-                      </select></label>
                       <label className="field"><span>Código de barras <small>(opcional)</small></span><input className="input" value={image.barcode || ''} maxLength={48} onChange={(event) => onPatchVariation(image.key, { barcode: event.target.value })} placeholder="Vazio = usa o do produto" /></label>
-                      {image.variationType === 'Outro' && <label className="field"><span>Qual característica?</span><input className="input" list={typeListId} value={image.customVariationType || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { customVariationType: event.target.value })} placeholder="Ex.: Material" /></label>}
-                      <label className="field"><span>Valor da característica</span><input className="input" list={valueListId} value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
-                      <datalist id={valueListId}>{suggestions.map((value) => <option key={value} value={value} />)}</datalist>
                     </div>
                     <div className="pr-variation-order">
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onMoveVariation(image.key, -1)} disabled={variationIndex === 0} aria-label={`Mover variação ${variationIndex + 1} para cima`} title="Mover para cima">↑</button>
-                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onMoveVariation(image.key, 1)} disabled={variationIndex === draft.variations.length - 1} aria-label={`Mover variação ${variationIndex + 1} para baixo`} title="Mover para baixo">↓</button>
                       <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
                     </div>
                   </div>
@@ -818,43 +709,7 @@ function ProductDraftCard({ draft, index, count, categories, preferences, variat
             </div>
             <datalist id={colorListId}>{(variationSuggestions?.colors || []).map((color) => <option key={color} value={color} />)}</datalist>
             <datalist id={sizeListId}>{(variationSuggestions?.sizes || []).map((size) => <option key={size} value={size} />)}</datalist>
-            <datalist id={typeListId}>{(variationSuggestions?.types || []).map((type) => <option key={type} value={type} />)}</datalist>
-            {draft.variations.length < MAX_IMAGES - 1 && <>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>
-              <label className={`btn btn-ghost btn-sm pr-add-variation ${uploading ? 'is-disabled' : ''}`} htmlFor={variationPickerId}>
-                <Icon name="plus" size={16} /> Criar variações a partir de fotos
-                <input id={variationPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={uploading} onChange={(event) => {
-                  const files = Array.from(event.currentTarget.files || []);
-                  event.currentTarget.value = '';
-                  void onAddVariations(files);
-                }} />
-              </label>
-              <ProductImageUrl onAdd={onAddVariationUrl} disabled={uploading} label="Criar variação por URL" />
-            </>}
-          </section>
-
-          <section className="pr-editor-section">
-            <div className="pr-section-title"><span>3</span><div><h3>Preços adicionais</h3><p>Informe valores para as condições configuradas. As regras serão aplicadas automaticamente.</p></div></div>
-            {draft.priceOptions.map((option, optionIndex) => {
-              const priceLabelListId = `price-labels-${draft.key}-${option.key}`;
-              return <div className="pr-price-rule" key={option.key}>
-              <div className="pr-current-product-image">{draft.mainImage && <img src={draft.mainImage.url} alt="" />}</div>
-              <div className="pr-price-rule-fields">
-                <label className="field"><span>Nome da faixa</span><input className="input" list={priceLabelListId} value={option.label} onChange={(event) => selectPriceLabel(option.key, event.target.value)} placeholder="Ex.: Varejo, Atacarejo" /></label>
-                <SuggestionButtons label="Nomes de faixas cadastrados" options={priceLabelSuggestions} onSelect={(label) => selectPriceLabel(option.key, label)} />
-                <label className="field"><span>Aplicar quando</span><select className="input" value={option.scope} onChange={(event) => updateOption(option.key, { scope: event.target.value })}><option value="same_product">Comprar esta quantidade deste item</option><option value="cart_quantity">Comprar esta quantidade de itens no total</option><option value="cart_value">O carrinho atingir este valor</option></select></label>
-                {option.scope === 'cart_value'
-                  ? <label className="field"><span>Subtotal mínimo (R$)</span><input className="input" inputMode="numeric" value={option.minCartValue} onChange={(event) => updateOption(option.key, { minCartValue: maskMoney(event.target.value) })} placeholder="0,00" /></label>
-                  : <label className="field"><span>Quantidade mínima (peças)</span><input className="input" type="number" min="1" max="999" value={option.minQuantity} onChange={(event) => updateOption(option.key, { minQuantity: event.target.value })} /></label>}
-                <label className="field"><span>Preço por unidade (R$)</span><input className="input" inputMode="numeric" value={option.price} disabled={option.onRequest} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value) })} placeholder="0,00" /></label>
-                <label className="check-line"><input type="checkbox" checked={option.onRequest} onChange={(event) => updateOption(option.key, { onRequest: event.target.checked, price: event.target.checked ? '' : option.price })} /><span>Preço sob consulta</span></label>
-                <button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ priceOptions: draft.priceOptions.filter((item) => item.key !== option.key) })}>Excluir faixa</button>
-              </div>
-              <datalist id={priceLabelListId}>{priceLabelSuggestions.map((label) => <option key={label} value={label} />)}</datalist>
-              <span className="pr-rule-number">Faixa {optionIndex + 1}</span>
-            </div>;
-            })}
-            {draft.priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceOption}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
+            {draft.variations.length < MAX_IMAGES - 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>}
           </section>
 
           <section className="pr-editor-section">
