@@ -581,9 +581,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
         />}
       </div>
 
-      {!editing && drafts.length > 0 && <button type="button" className="btn btn-ghost pr-add-blank" onClick={addBlankDraft} disabled={drafts.length >= Math.min(available, MAX_BATCH)}>
-        <Icon name="plus" size={17} /> Adicionar outro produto ou serviço
-      </button>}
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer className="pr-workspace-footer">
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
@@ -596,11 +593,13 @@ export default function ProductWorkspace({ product, products = [], categories, p
   );
 }
 
-function ProductDraftCard({ draft, index, count, categories, variationSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation, onSortVariations }) {
+function ProductDraftCard({ draft, index, count, categories, variationSuggestions, preferences, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation, onSortVariations }) {
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const colorListId = `variation-colors-${draft.key}`;
   const sizeListId = `variation-sizes-${draft.key}`;
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
+  const addOption = () => onPatch({ priceOptions: [...draft.priceOptions, { key: newKey(), label: '', scope: 'same_product', minQuantity: String(Math.min(999, Math.max(1, ...draft.priceOptions.map((option) => Number(option.minQuantity) || 1)) + 5)), minCartValue: '', price: '', onRequest: false }] });
+  const removeOption = (key) => onPatch({ priceOptions: draft.priceOptions.filter((option) => option.key !== key) });
   const setColorName = (image, name) => {
     const mappedHex = variationSuggestions?.colorHexByName?.[normalizeSuggestion(name)] || colorHexForName(name);
     const sameName = normalizeSuggestion(image.color) === normalizeSuggestion(name);
@@ -646,12 +645,34 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
               <label className="field"><span>Categoria *</span><input className="input" list={`categories-${draft.key}`} value={draft.category} maxLength="60" onChange={(event) => onPatch({ category: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Serviços' : 'Ex.: Roupas'} /><datalist id={`categories-${draft.key}`}>{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
               <div className="pr-inline-prices">
                 <label className="field"><span>Preço base (R$)</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /></label>
-                {draft.priceOptions.map((option) => <label className="field" key={option.key}>
-                  <span>{option.label}</span>
-                  <input className="input" inputMode="numeric" value={option.price} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value), onRequest: false })} placeholder="0,00" />
-                </label>)}
               </div>
               <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
+              <fieldset className="field pr-price-options">
+                <legend>Faixas de preço / atacado <small>(opcional)</small></legend>
+                <small>Defina o preço por unidade a partir de uma quantidade deste produto, de peças no carrinho ou de um valor mínimo do carrinho. O preço da faixa é aplicado automaticamente.</small>
+                {draft.priceOptions.map((option, optionIndex) => (
+                  <div className="pr-price-rule-card" key={option.key}>
+                    <div className="pr-price-rule-fields">
+                      <label className="field"><span>Nome da faixa</span><input className="input" list={`price-labels-${draft.key}`} value={option.label} maxLength={40} onChange={(event) => updateOption(option.key, { label: event.target.value })} placeholder="Ex.: Atacado" /></label>
+                      <label className="field"><span>Critério</span>
+                        <select className="input" value={option.scope || 'same_product'} onChange={(event) => updateOption(option.key, { scope: event.target.value })}>
+                          <option value="same_product">Peças deste produto</option>
+                          <option value="cart_quantity">Peças no carrinho</option>
+                          <option value="cart_value">Valor do carrinho</option>
+                        </select>
+                      </label>
+                      {option.scope === 'cart_value'
+                        ? <label className="field"><span>A partir de (R$)</span><input className="input" inputMode="numeric" value={option.minCartValue} onChange={(event) => updateOption(option.key, { minCartValue: maskMoney(event.target.value) })} placeholder="0,00" /></label>
+                        : <label className="field"><span>A partir de (un.)</span><input className="input" inputMode="numeric" value={option.minQuantity} onChange={(event) => updateOption(option.key, { minQuantity: event.target.value.replace(/\D/g, '').slice(0, 3) })} placeholder="6" /></label>}
+                      <label className="field"><span>Preço por unidade (R$)</span><input className="input" inputMode="numeric" value={option.price} disabled={option.onRequest} onChange={(event) => updateOption(option.key, { price: maskMoney(event.target.value), onRequest: false })} placeholder="0,00" /></label>
+                      <label className="check-line"><input type="checkbox" checked={Boolean(option.onRequest)} onChange={(event) => updateOption(option.key, { onRequest: event.target.checked, price: event.target.checked ? '' : option.price })} /><span>Sob consulta</span></label>
+                    </div>
+                    <button type="button" className="btn btn-sm pr-remove-rule" onClick={() => removeOption(option.key)} aria-label={`Remover faixa de preço ${optionIndex + 1}`}><Icon name="trash" size={16} /> Remover faixa</button>
+                  </div>
+                ))}
+                <datalist id={`price-labels-${draft.key}`}>{(preferences?.priceLabels || []).map((label) => <option key={label} value={label} />)}</datalist>
+                {draft.priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addOption}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
+              </fieldset>
               <label className="field"><span>Código de barras <small>(opcional)</small></span><span className="pr-barcode-row"><input className="input" value={draft.barcode || ''} maxLength={48} onChange={(event) => onPatch({ barcode: event.target.value })} placeholder="Digite ou use um leitor" /><button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ barcode: generateEan13() })}>Gerar</button></span><small>Usado em etiquetas e no PDV.</small></label>
             </div>
           </section>
