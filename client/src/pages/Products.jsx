@@ -137,7 +137,7 @@ export default function Products({ allow = [] }) {
       {data && <div className="pr-toolbar rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <label className="pr-view-control"><span>Tamanho dos cards <strong>{cardView.cardWidth}px</strong></span><input type="range" min="160" max="360" step="8" value={cardView.cardWidth} onChange={(e) => setCardView((v) => ({ ...v, cardWidth: Number(e.target.value) }))} aria-label="Largura dos cards de produtos" /></label>
         <label className="pr-view-control"><span>Altura das fotos <strong>{cardView.imageHeight}px</strong></span><input type="range" min="90" max="280" step="10" value={cardView.imageHeight} onChange={(e) => setCardView((v) => ({ ...v, imageHeight: Number(e.target.value) }))} aria-label="Altura das fotos dos produtos" /></label>
-        {!shop && <button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Organizar categorias e opções</button>}
+        {!shop && <button className="btn btn-ghost btn-sm" onClick={() => setManagePreferences(true)}>Configuração</button>}
       </div>}
 
       {blocked && (
@@ -522,6 +522,11 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   };
   const [lists, setLists] = useState(defaults);
   const [drafts, setDrafts] = useState({ categories: '', variationTypes: '', priceLabels: '' });
+  const [priceRules, setPriceRules] = useState(() => (preferences?.priceRules || []).map((rule) => ({
+    ...rule,
+    minQuantity: String(rule.minQuantity || 1),
+    minCartValue: centsToMasked(rule.minCartCents || 0),
+  })));
   const [busy, setBusy] = useState(false);
   const sections = [
     ['categories', 'Categorias', 'Ex.: Roupas, Bebidas, Consultoria'],
@@ -538,10 +543,42 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
     setDrafts((current) => ({ ...current, [key]: '' }));
   }
 
+  function addPriceRule() {
+    if (priceRules.length >= 12) return;
+    const minQuantity = priceRules.length === 0 ? 6 : priceRules.length === 1 ? 12 : Math.min(999, Math.max(1, ...priceRules.map((rule) => Number(rule.minQuantity) || 1)) + 1);
+    setPriceRules((current) => [...current, {
+      key: `price-rule-${Date.now()}-${Math.random()}`,
+      label: '',
+      scope: 'same_product',
+      minQuantity: String(minQuantity),
+      minCartValue: '',
+    }]);
+  }
+
   async function save() {
+    if (priceRules.some((rule) => !rule.label.trim())) {
+      toast('Informe o nome de cada preço configurado ou remova a linha vazia.', 'error');
+      return;
+    }
+    if (priceRules.some((rule) => rule.scope === 'cart_value'
+      ? moneyToCents(rule.minCartValue) < 1
+      : !/^\d+$/.test(rule.minQuantity) || Number(rule.minQuantity) < 1 || Number(rule.minQuantity) > 999)) {
+      toast('Confira o valor mínimo ou a quantidade mínima de cada preço configurado.', 'error');
+      return;
+    }
     setBusy(true);
     try {
-      const result = await api.put('/products/preferences', lists);
+      const savedPriceLabels = [...new Set([...lists.priceLabels, ...priceRules.map((rule) => rule.label.trim())])];
+      const result = await api.put('/products/preferences', {
+        ...lists,
+        priceLabels: savedPriceLabels,
+        priceRules: priceRules.map((rule) => ({
+          label: rule.label.trim(),
+          scope: rule.scope,
+          minQuantity: rule.scope === 'cart_value' ? 1 : Number(rule.minQuantity),
+          minCartCents: rule.scope === 'cart_value' ? moneyToCents(rule.minCartValue) : 0,
+        })),
+      });
       onSaved(result.preferences);
     } catch (e) {
       toast(e.message, 'error');
@@ -567,6 +604,28 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
             </div>
           </fieldset>
         ))}
+        <fieldset className="field pr-preference-group">
+          <legend>Preços pré-configurados para novos produtos</legend>
+          <p className="muted small">Cada linha cria um campo de preço no cadastro. Defina também a regra usada para aplicar esse preço.</p>
+          <div className="pr-price-template-list">
+            {priceRules.map((rule, index) => (
+              <div className="pr-price-template" key={rule.key || `${rule.label}-${index}`}>
+                <label className="field"><span>Nome do preço</span><input className="input" value={rule.label} maxLength={40} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, label: event.target.value } : item))} placeholder="Ex.: Atacarejo" /></label>
+                <label className="field"><span>Aplicar quando</span><select className="input" value={rule.scope} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, scope: event.target.value } : item))}>
+                  <option value="same_product">A partir de uma quantidade deste produto</option>
+                  <option value="cart_quantity">A partir da quantidade total no carrinho</option>
+                  <option value="cart_value">Quando o carrinho atingir um valor</option>
+                </select></label>
+                {rule.scope === 'cart_value'
+                  ? <label className="field"><span>Valor mínimo (R$)</span><input className="input" inputMode="numeric" value={rule.minCartValue} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, minCartValue: maskMoney(event.target.value) } : item))} placeholder="0,00" /></label>
+                  : <label className="field"><span>Quantidade mínima</span><input className="input" type="number" min="1" max="999" value={rule.minQuantity} onChange={(event) => setPriceRules((current) => current.map((item, row) => row === index ? { ...item, minQuantity: event.target.value.replace(/\D/g, '').slice(0, 3) } : item))} /></label>}
+                <button type="button" className="icon-btn icon-btn-danger" onClick={() => setPriceRules((current) => current.filter((_, row) => row !== index))} aria-label={`Remover configuração de preço ${index + 1}`}><Icon name="trash" size={17} /></button>
+              </div>
+            ))}
+          </div>
+          {priceRules.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceRule}><Icon name="plus" size={16} /> Adicionar preço</button>}
+          {priceRules.length === 0 && <small className="muted">Nenhum campo adicional de preço será exibido nos novos produtos.</small>}
+        </fieldset>
       </div>
     </Modal>
   );

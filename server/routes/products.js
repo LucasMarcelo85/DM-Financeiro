@@ -31,6 +31,7 @@ const defaultPreferences = {
   categories: [],
   variationTypes: ['Cor', 'Tamanho', 'Litros'],
   priceLabels: ['Varejo', 'Atacarejo', 'Atacado', 'Mensal', 'Semestral', 'Anual'],
+  priceRules: [],
 };
 
 function cleanPreferenceList(value, label, maxItems, maxLength) {
@@ -48,6 +49,37 @@ function cleanPreferenceList(value, label, maxItems, maxLength) {
       return true;
     })
     .slice(0, maxItems);
+}
+
+function cleanPriceRules(value) {
+  if (!Array.isArray(value)) throw new AppError(400, 'A lista de preços pré-configurados é inválida.');
+  if (value.length > 12) throw new AppError(400, 'Configure no máximo 12 preços.');
+  const seenLabels = new Set();
+  return value.map((rule) => {
+    if (!rule || typeof rule !== 'object' || Array.isArray(rule)) throw new AppError(400, 'Uma configuração de preço é inválida.');
+    const label = typeof rule.label === 'string' ? rule.label.replace(/\s+/g, ' ').trim().slice(0, 40) : '';
+    const scope = rule.scope;
+    const minQuantity = Number(rule.minQuantity);
+    const minCartCents = Number(rule.minCartCents);
+    if (!label) throw new AppError(400, 'Informe o nome de cada preço pré-configurado.');
+    const key = label.toLocaleLowerCase('pt-BR');
+    if (seenLabels.has(key)) throw new AppError(400, 'Use nomes diferentes para cada preço pré-configurado.');
+    seenLabels.add(key);
+    if (!['same_product', 'cart_quantity', 'cart_value'].includes(scope)) throw new AppError(400, 'A regra de aplicação do preço é inválida.');
+    if (scope === 'cart_value') {
+      if (!Number.isSafeInteger(minCartCents) || minCartCents < 1 || minCartCents > 100_000_000_000) {
+        throw new AppError(400, 'Informe um valor mínimo válido para o carrinho.');
+      }
+    } else if (!Number.isInteger(minQuantity) || minQuantity < 1 || minQuantity > 999) {
+      throw new AppError(400, 'Informe uma quantidade mínima entre 1 e 999.');
+    }
+    return {
+      label,
+      scope,
+      minQuantity: scope === 'cart_value' ? 1 : minQuantity,
+      minCartCents: scope === 'cart_value' ? minCartCents : 0,
+    };
+  });
 }
 
 async function owned(req) {
@@ -134,6 +166,7 @@ router.get('/', async (req, res) => {
       categories: savedPreferences.categories,
       variationTypes: savedPreferences.variationTypes,
       priceLabels: savedPreferences.priceLabels,
+      priceRules: savedPreferences.priceRules,
     } : {}),
   };
   let productLimit = limitsFor(req.user).catalogProducts;
@@ -219,17 +252,22 @@ router.post('/import', async (req, res) => {
 });
 
 router.put('/preferences', async (req, res) => {
+  const priceRules = cleanPriceRules(req.body?.priceRules ?? []);
+  const configuredLabels = priceRules.map((rule) => rule.label);
+  const savedPriceLabels = cleanPreferenceList(req.body?.priceLabels, 'formas de preço', 30, 40);
+  const mergedPriceLabels = [...new Set([...configuredLabels, ...savedPriceLabels])].slice(0, 30);
   const preferences = {
     categories: cleanPreferenceList(req.body?.categories, 'categorias', 100, 60),
     variationTypes: cleanPreferenceList(req.body?.variationTypes, 'tipos de variação', 30, 40),
-    priceLabels: cleanPreferenceList(req.body?.priceLabels, 'formas de preço', 30, 40),
+    priceLabels: cleanPreferenceList(mergedPriceLabels, 'formas de preço', 30, 40),
+    priceRules,
   };
   const saved = await prisma.productPreferences.upsert({
     where: { userId: req.user.id },
     create: { userId: req.user.id, ...preferences },
     update: preferences,
   });
-  res.json({ preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels } });
+  res.json({ preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels, priceRules: saved.priceRules } });
 });
 
 // Um mesmo código não pode identificar dois itens, senão o leitor do PDV não saberia qual vender.

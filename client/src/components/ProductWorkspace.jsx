@@ -1,6 +1,7 @@
 import { useMemo, useState } from 'react';
 import { api } from '../api.js';
 import Icon from './Icon.jsx';
+import Modal from './Modal.jsx';
 import { useToast } from './Toast.jsx';
 import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
@@ -160,8 +161,8 @@ function focusProductField(field) {
     const selectors = {
       name: '.pr-details-fields label:nth-child(1) input',
       category: '.pr-details-fields label:nth-child(2) input',
-      barcode: '.pr-details-fields label:nth-child(3) input',
-      price: '.pr-base-price input.input',
+      barcode: '.pr-details-fields label:nth-child(5) input',
+      price: '.pr-details-fields label:nth-child(3) input',
       'price-option': '.pr-price-rule-fields label:nth-child(1) input',
       'price-option-name': '.pr-price-rule-fields label:nth-child(1) input',
       'price-option-min': '.pr-price-rule-fields label:nth-child(3) input',
@@ -183,7 +184,7 @@ async function imageFromFile(file) {
   return { key: newKey(), data: src, url: src, label: '', stockQuantity: '0' };
 }
 
-function blankDraft(image = null, activeFlowIds = []) {
+function blankDraft(image = null, activeFlowIds = [], priceRules = []) {
   return {
     key: newKey(),
     kind: 'produto',
@@ -197,7 +198,15 @@ function blankDraft(image = null, activeFlowIds = []) {
     stockEnabled: false,
     stockQuantity: '0',
     activeFlowIds,
-    priceOptions: [],
+    priceOptions: priceRules.map((rule) => ({
+      key: newKey(),
+      label: rule.label,
+      scope: rule.scope,
+      minQuantity: String(rule.minQuantity || 1),
+      minCartValue: centsToMasked(rule.minCartCents || 0),
+      price: '',
+      onRequest: false,
+    })),
     mainImage: image,
     variations: [],
   };
@@ -393,8 +402,9 @@ export default function ProductWorkspace({ product, products = [], categories, p
   const editing = Boolean(product);
   const toast = useToast();
   const defaultFlowIds = stockFlows.filter((flow) => flow.isDefault).map((flow) => flow.id);
-  const [drafts, setDrafts] = useState(() => product ? [draftFromProduct(product, stockFlows)] : []);
-  const [draftSteps, setDraftSteps] = useState({});
+  const [drafts, setDrafts] = useState(() => product
+    ? [draftFromProduct(product, stockFlows)]
+    : [blankDraft(null, defaultFlowIds, preferences?.priceRules || [])]);
   const [activeDraftIndex, setActiveDraftIndex] = useState(0);
   const categorySuggestions = useMemo(() => uniqueSuggestions([...(categories || []), ...drafts.map((draft) => draft.category)]), [categories, drafts]);
   const variationSuggestions = useMemo(() => collectVariationSuggestions(products, drafts), [products, drafts]);
@@ -403,8 +413,11 @@ export default function ProductWorkspace({ product, products = [], categories, p
   const [busy, setBusy] = useState(false);
   const [uploading, setUploading] = useState(false);
   const pickerId = 'product-batch-photo-picker';
-  const existingDraftCount = drafts.length;
-  const allDraftsReviewed = drafts.length > 0 && drafts.every((draft) => draftSteps[draft.key] === 4);
+  const isUntouchedDraft = (draft) => !draft.name.trim() && !draft.category.trim() && !draft.description.trim()
+    && !draft.barcode.trim() && !draft.price && !draft.onRequest && !draft.mainImage
+    && !draft.variations.length && !draft.stockEnabled && draft.active;
+  const replaceUntouchedDraft = !editing && drafts.length === 1 && isUntouchedDraft(drafts[0]);
+  const existingDraftCount = drafts.length - Number(replaceUntouchedDraft);
 
   function patchDraft(key, changes) {
     setDrafts((current) => current.map((draft) => draft.key === key ? { ...draft, ...changes } : draft));
@@ -422,7 +435,10 @@ export default function ProductWorkspace({ product, products = [], categories, p
     try {
       const prepared = [];
       for (const file of selected) prepared.push(await imageFromFile(file));
-      setDrafts((current) => [...current, ...prepared.map((image) => blankDraft(image, defaultFlowIds))]);
+      setDrafts((current) => [
+        ...(replaceUntouchedDraft ? [] : current),
+        ...prepared.map((image) => blankDraft(image, defaultFlowIds, preferences?.priceRules || [])),
+      ]);
       setActiveDraftIndex(existingDraftCount);
     } catch (e) {
       setError(e.message);
@@ -522,7 +538,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
       } catch (e) {
         const issue = explainProductError(e.message);
         setActiveDraftIndex(index);
-        setDraftSteps((current) => ({ ...current, [drafts[index].key]: issue.step ?? (current[drafts[index].key] || 1) }));
         setError(issue.message);
         focusProductField(issue.field);
         return;
@@ -552,7 +567,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
       const issue = explainProductError(e.message);
       setError(issue.message);
       if (issue.step !== undefined && drafts[activeDraftIndex]) {
-        setDraftSteps((current) => ({ ...current, [drafts[activeDraftIndex].key]: issue.step }));
         focusProductField(issue.field);
       }
       setBusy(false);
@@ -563,49 +577,29 @@ export default function ProductWorkspace({ product, products = [], categories, p
     setActiveDraftIndex(drafts.length);
     setDrafts((current) => {
       if (current.length >= Math.min(available, MAX_BATCH)) return current;
-      return [...current, blankDraft(null, defaultFlowIds)];
+      return [...current, blankDraft(null, defaultFlowIds, preferences?.priceRules || [])];
     });
   }
 
   function removeCurrentDraft(key) {
     setDrafts((current) => current.filter((draft) => draft.key !== key));
-    setDraftSteps((current) => {
-      const next = { ...current };
-      delete next[key];
-      return next;
-    });
     setActiveDraftIndex((current) => Math.max(0, Math.min(current, drafts.length - 2)));
   }
 
   return (
-    <section className="pr-workspace" aria-labelledby="pr-workspace-title">
-      <header className="pr-workspace-head">
-        <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>← Voltar aos produtos</button>
-        <div>
-          <h1 id="pr-workspace-title">{editing ? 'Editar item' : 'Cadastrar produto ou serviço'}</h1>
-          <p className="muted">{editing ? 'Siga as etapas para atualizar as informações e conferir antes de salvar.' : 'Preencha uma etapa por vez. Fotos, variações, preços especiais e estoque podem ser adicionados depois.'}</p>
-        </div>
-        {!editing && <label className={`btn btn-primary pr-photo-picker ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
-          <Icon name="plus" size={18} /> {uploading ? 'Preparando fotos...' : 'Adicionar itens com fotos'}
-          <input id={pickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={uploading || existingDraftCount >= Math.min(available, MAX_BATCH)} onChange={(event) => {
-            const files = Array.from(event.currentTarget.files || []);
-            event.currentTarget.value = '';
-            void addProductsFromPhotos(files);
-          }} />
-        </label>}
-      </header>
-
-      {drafts.length === 0 && <div className="pr-upload-empty rounded-2xl border border-slate-200 bg-white p-8 text-center shadow-sm">
-        <div className="pr-upload-empty-icon mx-auto grid h-16 w-16 place-items-center rounded-2xl bg-slate-100 text-brand-ink"><Icon name="box" size={30} /></div>
-        <h2>Vamos cadastrar seu primeiro item</h2>
-        <p>Você pode começar sem foto e preencher as informações por etapas. Se já tiver fotos, cada foto selecionada inicia um cadastro separado.</p>
-        <div className="pr-upload-empty-actions">
-          <label className={`btn btn-primary ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
-            <Icon name="plus" size={18} /> Começar com fotos
+    <Modal title={editing ? 'Editar produto' : 'Cadastrar produto'} onClose={busy ? () => {} : onClose} wide>
+      <section className="pr-workspace" aria-label={editing ? 'Editar produto' : 'Cadastrar produto'}>
+        {!editing && <div className="pr-workspace-head">
+          <p className="muted">Preencha as informações, adicione variações e configure o estoque em uma única tela.</p>
+          <label className={`btn btn-ghost pr-photo-picker ${uploading || existingDraftCount >= Math.min(available, MAX_BATCH) ? 'is-disabled' : ''}`} htmlFor={pickerId}>
+            <Icon name="plus" size={18} /> {uploading ? 'Preparando fotos...' : 'Adicionar itens com fotos'}
+            <input id={pickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} multiple disabled={uploading || existingDraftCount >= Math.min(available, MAX_BATCH)} onChange={(event) => {
+              const files = Array.from(event.currentTarget.files || []);
+              event.currentTarget.value = '';
+              void addProductsFromPhotos(files);
+            }} />
           </label>
-          <button type="button" className="btn btn-ghost" onClick={() => setDrafts([blankDraft(null, defaultFlowIds)])} disabled={available < 1}>Começar sem foto</button>
-        </div>
-      </div>}
+        </div>}
 
       {drafts.length > 1 && <nav className="pr-draft-navigation" aria-label="Itens deste cadastro">
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveDraftIndex((current) => Math.max(0, current - 1))} disabled={activeDraftIndex === 0}>Anterior</button>
@@ -615,7 +609,7 @@ export default function ProductWorkspace({ product, products = [], categories, p
         <label className="field">
           <span className="pr-draft-count" aria-live="polite">Item {activeDraftIndex + 1} de {drafts.length}</span>
           <select className="input" value={activeDraftIndex} onChange={(event) => setActiveDraftIndex(Number(event.target.value))}>
-            {drafts.map((draft, index) => <option key={draft.key} value={index}>{index + 1}. {draft.name || `${draft.kind === 'servico' ? 'Serviço' : 'Produto'} sem nome`} · {draftSteps[draft.key] === 4 ? 'Revisado' : 'Em andamento'}</option>)}
+            {drafts.map((draft, index) => <option key={draft.key} value={index}>{index + 1}. {draft.name || `${draft.kind === 'servico' ? 'Serviço' : 'Produto'} sem nome`}</option>)}
           </select>
         </label>
         <button type="button" className="btn btn-ghost btn-sm" onClick={() => setActiveDraftIndex((current) => Math.min(drafts.length - 1, current + 1))} disabled={activeDraftIndex >= drafts.length - 1}>Próximo</button>
@@ -627,15 +621,6 @@ export default function ProductWorkspace({ product, products = [], categories, p
           draft={drafts[activeDraftIndex]}
           index={activeDraftIndex}
           count={drafts.length}
-          step={draftSteps[drafts[activeDraftIndex].key] || 0}
-          onStepChange={(step, message = '') => {
-            if (message) {
-              const issue = explainProductError(message);
-              setError(issue.message);
-              focusProductField(issue.field);
-            } else setError('');
-            if (!message) setDraftSteps((current) => ({ ...current, [drafts[activeDraftIndex].key]: step }));
-          }}
           categories={categorySuggestions}
           variationSuggestions={variationSuggestions}
           priceSuggestions={priceSuggestions}
@@ -653,6 +638,15 @@ export default function ProductWorkspace({ product, products = [], categories, p
           onRemove={() => removeCurrentDraft(drafts[activeDraftIndex].key)}
           onRemoveVariation={(variationKey) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.filter((image) => image.key !== variationKey) })}
           onPatchVariation={(variationKey, changes) => patchDraft(drafts[activeDraftIndex].key, { variations: drafts[activeDraftIndex].variations.map((image) => image.key === variationKey ? { ...image, ...changes } : image) })}
+          onMoveVariation={(variationKey, direction) => setDrafts((current) => current.map((draft) => {
+            if (draft.key !== drafts[activeDraftIndex].key) return draft;
+            const index = draft.variations.findIndex((image) => image.key === variationKey);
+            const nextIndex = index + direction;
+            if (index < 0 || nextIndex < 0 || nextIndex >= draft.variations.length) return draft;
+            const variations = [...draft.variations];
+            [variations[index], variations[nextIndex]] = [variations[nextIndex], variations[index]];
+            return { ...draft, variations };
+          }))}
         />}
       </div>
 
@@ -662,17 +656,16 @@ export default function ProductWorkspace({ product, products = [], categories, p
       {error && <p className="form-error" role="alert">{error}</p>}
       <footer className="pr-workspace-footer">
         <button type="button" className="btn btn-ghost" onClick={onClose} disabled={busy}>Cancelar</button>
-        {!allDraftsReviewed && <span className="muted small">Avance até “Revisar” em cada item para salvar.</span>}
-        <button type="button" className="btn btn-primary" onClick={save} disabled={busy || uploading || !allDraftsReviewed}>
+        <button type="button" className="btn btn-primary" onClick={save} disabled={busy || uploading || !drafts.length}>
           {busy ? 'Salvando...' : editing ? 'Salvar alterações' : `Salvar ${plural(drafts.length, 'item', 'itens')}`}
         </button>
       </footer>
-    </section>
+      </section>
+    </Modal>
   );
 }
 
-function ProductDraftCard({ draft, index, count, step, onStepChange, categories, preferences, variationSuggestions, priceSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation }) {
-  const steps = ['Fotos', 'Informações', 'Preço', 'Estoque', 'Revisar'];
+function ProductDraftCard({ draft, index, count, categories, preferences, variationSuggestions, priceSuggestions, stockFlows, editing, uploading, onPatch, onReplaceMain, onReplaceMainUrl, onAddVariations, onAddVariationUrl, onAddBlankVariation, onReplaceVariation, onRemove, onRemoveVariation, onPatchVariation, onMoveVariation }) {
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const variationPickerId = `variation-photo-${draft.key}`;
   const colorListId = `variation-colors-${draft.key}`;
@@ -690,9 +683,14 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
   ]).filter((type) => !['cor', 'tamanho', 'outro'].includes(type.toLocaleLowerCase('pt-BR')));
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const selectPriceLabel = (key, label) => {
+    const template = preferences?.priceRules?.find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(label));
     const suggestion = priceSuggestions?.find((option) => normalizeSuggestion(option.label) === normalizeSuggestion(label));
     const changes = { label };
-    if (suggestion) {
+    if (template) {
+      changes.scope = template.scope;
+      changes.minQuantity = String(template.minQuantity || 1);
+      changes.minCartValue = centsToMasked(template.minCartCents || 0);
+    } else if (suggestion) {
       changes.scope = suggestion.scope;
       changes.minQuantity = suggestion.minQuantity;
       changes.minCartValue = suggestion.minCartValue;
@@ -714,23 +712,6 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
   const addPriceOption = () => onPatch({ priceOptions: [...draft.priceOptions, {
     key: newKey(), label: '', scope: 'same_product', minQuantity: String(draft.priceOptions.length ? Number(draft.priceOptions[draft.priceOptions.length - 1].minQuantity || 1) + 1 : 1), minCartValue: '', price: '', onRequest: false,
   }] });
-  const continueStep = () => {
-    if (step === 0 && draft.variations.some((image) => {
-      const type = image.variationType === 'Outro' ? image.customVariationType : image.variationType;
-      return !image.color?.trim() && !image.size?.trim() && !(type?.trim() && image.variationValue?.trim()) && !(image.customVariationType?.trim() && image.customVariationValue?.trim());
-    })) return onStepChange(step, 'Complete a característica de cada foto de variação ou remova a foto.');
-    if (step === 0 && draft.variations.some(colorNeedsSample)) return onStepChange(step, 'Escolha uma amostra visual para cada cor informada.');
-    if (step === 1 && draft.name.trim().length < 2) return onStepChange(step, 'Informe o nome do produto ou serviço.');
-    if (step === 1 && !draft.category.trim()) return onStepChange(step, 'Informe uma categoria para organizar este item.');
-    if (step === 2 && !draft.onRequest && !draft.price) return onStepChange(step, 'Informe um preço ou marque “Preço sob consulta”.');
-    if (step === 2 && draft.priceOptions.some((option) => !option.label.trim())) return onStepChange(step, 'Dê um nome para cada preço especial ou remova a faixa vazia.');
-    if (step === 2 && draft.priceOptions.some((option) => !option.onRequest && !option.price)) return onStepChange(step, 'Informe o preço de cada faixa especial ou marque “Sob consulta”.');
-    if (step === 2 && draft.priceOptions.some((option) => option.scope === 'cart_value' ? moneyToCents(option.minCartValue) < 1 : !/^\d+$/.test(option.minQuantity) || Number(option.minQuantity) < 1 || Number(option.minQuantity) > 999)) return onStepChange(step, 'Confira a quantidade ou o valor mínimo de cada faixa especial.');
-    if (step === 3 && (!/^\d+$/.test(draft.stockQuantity) || Number(draft.stockQuantity) > 1_000_000)) return onStepChange(step, 'Informe uma quantidade de estoque válida entre 0 e 1.000.000.');
-    if (step === 3 && draft.variations.some((image) => !/^\d+$/.test(image.stockQuantity || '0') || Number(image.stockQuantity || 0) > 1_000_000)) return onStepChange(step, 'Confira as quantidades de estoque das variações.');
-    onStepChange(step + 1);
-  };
-
   return (
     <article className="pr-product-editor-card">
       <header className="pr-product-card-head">
@@ -739,21 +720,8 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
         {!editing && count > 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={onRemove} aria-label={`Remover produto ${index + 1}`}>Remover produto</button>}
       </header>
 
-      <nav className="pr-product-steps" aria-label={`Etapas do item ${index + 1}`}>
-        {steps.map((label, stepIndex) => <span key={label} className={stepIndex === step ? 'is-current' : stepIndex < step ? 'is-done' : ''}>
-          <i>{stepIndex < step ? '✓' : stepIndex + 1}</i><span>{label}</span>
-        </span>)}
-      </nav>
-      <p className="pr-product-step-hint">Etapa {step + 1} de {steps.length}: {[
-        'Adicione uma foto se quiser; variações também são opcionais.',
-        'Conte o básico sobre o item.',
-        'Defina o preço ou deixe para consultar com o cliente.',
-        'Estoque e disponibilidade são opcionais.',
-        'Confira os dados antes de salvar.',
-      ][step]}</p>
-
-      <div className={`pr-product-editor-layout ${step === 0 || step === 4 ? '' : 'is-single'}`}>
-        {(step === 0 || step === 4) && <aside className="pr-product-preview">
+      <div className="pr-product-editor-layout">
+        <aside className="pr-product-preview">
           <label className="pr-main-photo" htmlFor={mainPhotoPickerId} aria-label={draft.mainImage ? 'Trocar foto principal' : 'Adicionar foto principal'}>
             <input id={mainPhotoPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
               const file = event.currentTarget.files?.[0];
@@ -768,11 +736,10 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
             <ProductImageUrl onAdd={onReplaceMainUrl} disabled={uploading} />
             {draft.variations.some((image) => image.url) && <div className="pr-mini-gallery">{draft.variations.filter((image) => image.url).map((image) => <img key={image.key} src={image.url} alt={image.label || 'Foto de variação'} />)}</div>}
         </aside>
-        }
 
         <div className="pr-product-editor-content">
-          {step === 1 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>2</span><div><h3>O que você está cadastrando?</h3><p>Preencha o nome e a categoria para encontrar este item mais facilmente.</p></div></div>
+          <section className="pr-editor-section">
+            <div className="pr-section-title"><span>1</span><div><h3>Informações do produto</h3><p>Preencha o nome, a categoria e o preço principal.</p></div></div>
             <div className="seg" role="radiogroup" aria-label="Tipo do item" style={{ '--n': 2 }}>
               <button type="button" role="radio" aria-checked={draft.kind === 'produto'} className={draft.kind === 'produto' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'produto' })}>Produto</button>
               <button type="button" role="radio" aria-checked={draft.kind === 'servico'} className={draft.kind === 'servico' ? 'is-on' : ''} onClick={() => onPatch({ kind: 'servico' })}>Serviço</button>
@@ -780,13 +747,14 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
             <div className="pr-details-fields">
               <label className="field"><span>Nome *</span><input className="input" value={draft.name} maxLength="120" onChange={(event) => onPatch({ name: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Manutenção' : 'Ex.: Camiseta básica'} /></label>
               <label className="field"><span>Categoria *</span><input className="input" list={`categories-${draft.key}`} value={draft.category} maxLength="60" onChange={(event) => onPatch({ category: event.target.value })} placeholder={draft.kind === 'servico' ? 'Ex.: Serviços' : 'Ex.: Roupas'} /><datalist id={`categories-${draft.key}`}>{categories.map((category) => <option key={category} value={category} />)}</datalist></label>
+              <label className="field"><span>Preço base (R$)</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /><small>{draft.onRequest ? 'O cliente precisa consultar o valor.' : 'Preço normal de uma unidade.'}</small></label>
+              <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
               <label className="field"><span>Código de barras <small>(opcional)</small></span><span className="pr-barcode-row"><input className="input" value={draft.barcode || ''} maxLength={48} onChange={(event) => onPatch({ barcode: event.target.value })} placeholder="Digite ou use um leitor" /><button type="button" className="btn btn-ghost btn-sm" onClick={() => onPatch({ barcode: generateEan13() })}>Gerar</button></span><small>Usado em etiquetas e no PDV.</small></label>
-              <label className="field pr-description"><span>Descrição <small>(opcional)</small></span><textarea className="input" rows="3" maxLength="2000" value={draft.description} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Escreva detalhes que ajudem o cliente a conhecer o item" /></label>
             </div>
-          </section>}
+          </section>
 
-          {step === 0 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>1</span><div><h3>Fotos e variações</h3><p>A foto principal apresenta o item. Se houver opções como cores ou tamanhos, adicione uma foto para cada uma. Se não houver, pode seguir sem preencher nada.</p></div></div>
+          <section className="pr-editor-section">
+            <div className="pr-section-title"><span>2</span><div><h3>Variações</h3><p>Adicione cores, tamanhos ou outros tipos configurados. As fotos de cada variação são opcionais.</p></div></div>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => {
                 const valueListId = `variation-values-${draft.key}-${variationIndex}`;
@@ -839,7 +807,11 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
                       <label className="field"><span>Valor da característica</span><input className="input" list={valueListId} value={image.variationValue || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { variationValue: event.target.value })} placeholder={image.variationType === 'Litros' ? 'Ex.: 2 litros' : 'Ex.: Unidade, 500 ml'} disabled={!image.variationType} /></label>
                       <datalist id={valueListId}>{suggestions.map((value) => <option key={value} value={value} />)}</datalist>
                     </div>
-                    <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
+                    <div className="pr-variation-order">
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onMoveVariation(image.key, -1)} disabled={variationIndex === 0} aria-label={`Mover variação ${variationIndex + 1} para cima`} title="Mover para cima">↑</button>
+                      <button type="button" className="btn btn-ghost btn-sm" onClick={() => onMoveVariation(image.key, 1)} disabled={variationIndex === draft.variations.length - 1} aria-label={`Mover variação ${variationIndex + 1} para baixo`} title="Mover para baixo">↓</button>
+                      <button type="button" className="btn btn-ghost btn-sm pr-remove-variation" onClick={() => onRemoveVariation(image.key)} aria-label={`Remover só a variação ${variationIndex + 1}`}><Icon name="trash" size={15} /> Remover variação</button>
+                    </div>
                   </div>
                 );
               })}
@@ -859,15 +831,10 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
               </label>
               <ProductImageUrl onAdd={onAddVariationUrl} disabled={uploading} label="Criar variação por URL" />
             </>}
-          </section>}
+          </section>
 
-          {step === 2 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>2</span><div><h3>Preço e descontos</h3><p>O preço base é unitário. As faixas definem o preço por peça conforme a quantidade.</p></div></div>
-            <div className="pr-base-price">
-              <div className="pr-current-product-image">{draft.mainImage && <img src={draft.mainImage.url} alt="" />}</div>
-              <label className="field"><span>Preço por unidade</span><input className="input" inputMode="numeric" value={draft.price} disabled={draft.onRequest} onChange={(event) => onPatch({ price: maskMoney(event.target.value) })} placeholder="0,00" /><small>{draft.onRequest ? 'O cliente precisa consultar o valor.' : 'Preço normal de uma unidade.'}</small></label>
-              <label className="check-line"><input type="checkbox" checked={draft.onRequest} onChange={(event) => onPatch({ onRequest: event.target.checked, price: event.target.checked ? '' : draft.price })} /><span>Preço sob consulta</span></label>
-            </div>
+          <section className="pr-editor-section">
+            <div className="pr-section-title"><span>3</span><div><h3>Preços adicionais</h3><p>Informe valores para as condições configuradas. As regras serão aplicadas automaticamente.</p></div></div>
             {draft.priceOptions.map((option, optionIndex) => {
               const priceLabelListId = `price-labels-${draft.key}-${option.key}`;
               return <div className="pr-price-rule" key={option.key}>
@@ -888,10 +855,10 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
             </div>;
             })}
             {draft.priceOptions.length < 12 && <button type="button" className="btn btn-ghost btn-sm" onClick={addPriceOption}><Icon name="plus" size={16} /> Adicionar faixa de preço</button>}
-          </section>}
+          </section>
 
-          {step === 3 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>3</span><div><h3>Estoque</h3><p>Controle o saldo total do produto ou informe quantidades por variação.</p></div></div>
+          <section className="pr-editor-section">
+            <div className="pr-section-title"><span>4</span><div><h3>Estoque</h3><p>Controle o saldo total do produto ou informe quantidades por variação.</p></div></div>
             <label className="check-line pr-active-check"><input type="checkbox" checked={draft.active} onChange={(event) => onPatch({ active: event.target.checked })} /><span>Este item está ativo e pode aparecer nas vendas</span></label>
             <label className="check-line"><input type="checkbox" checked={draft.stockEnabled} onChange={(event) => onPatch({ stockEnabled: event.target.checked })} /><span>Controlar estoque deste produto</span></label>
             {stockFlows.length > 1 && <fieldset className="pr-stock-flow-options">
@@ -918,25 +885,14 @@ function ProductDraftCard({ draft, index, count, step, onStepChange, categories,
                 <input className="input" type="number" min="0" max="1000000" value={draft.stockQuantity} onChange={(event) => onPatch({ stockQuantity: event.target.value })} />
               </div>}
             </div>}
-          </section>}
+          </section>
 
-          {step === 4 && <section className="pr-editor-section">
-            <div className="pr-section-title"><span>4</span><div><h3>Detalhes e conferência</h3><p>Revise a imagem, as variações, os preços e complete as informações do produto.</p></div></div>
-            <div className="pr-review-card">
-              <div className="pr-review-photos">{draft.mainImage && <figure><img src={draft.mainImage.url} alt="Imagem principal" /><figcaption>Imagem principal</figcaption></figure>}{draft.variations.map((image, imageIndex) => <figure key={image.key}>{image.url ? <img src={image.url} alt={`Foto da variação ${imageIndex + 1}`} /> : <span>Sem imagem</span>}<figcaption>{image.label || `Variação ${imageIndex + 1}`}</figcaption></figure>)}{!draft.mainImage && !draft.variations.length && <span>Sem foto</span>}</div>
-              <p><strong>{draft.name || 'Nome do item'}</strong> · {draft.category || 'Categoria'}</p>
-              <p>{draft.kind === 'servico' ? 'Serviço' : 'Produto'} · {draft.variations.length ? `${draft.variations.length} ${plural(draft.variations.length, 'variação', 'variações')}` : 'Sem variações'} · {draft.onRequest ? 'Preço sob consulta' : draft.price ? `Preço: R$ ${draft.price}` : 'Preço não informado'}</p>
-              <p>{draft.stockEnabled ? 'Controle de estoque ativo' : 'Sem controle de estoque'} · {draft.active ? 'Ativo' : 'Inativo'}</p>
-              {draft.description && <p>{draft.description}</p>}
-            </div>
-          </section>}
+          <section className="pr-editor-section">
+            <div className="pr-section-title"><span>5</span><div><h3>Descrição</h3><p>Inclua detalhes que ajudem o cliente a conhecer o item.</p></div></div>
+            <label className="field pr-description"><span>Descrição <small>(opcional)</small></span><textarea className="input" rows="4" maxLength="2000" value={draft.description} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Escreva detalhes do produto ou serviço" /></label>
+          </section>
         </div>
       </div>
-      <footer className="pr-product-step-footer">
-        <button type="button" className="btn btn-ghost" onClick={() => onStepChange(step - 1)} disabled={step === 0}>Voltar</button>
-        {step < steps.length - 1 && <button type="button" className="btn btn-primary" onClick={continueStep}>Próxima etapa</button>}
-        {step === steps.length - 1 && <span className="muted small">Item conferido. Use “Salvar” ao final da página.</span>}
-      </footer>
     </article>
   );
 }

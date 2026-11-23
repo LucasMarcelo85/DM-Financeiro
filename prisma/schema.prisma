@@ -713,6 +713,7 @@ model ProductPreferences {
   categories    String[] @default([])
   variationTypes String[] @default(["Cor", "Tamanho", "Litros"])
   priceLabels   String[] @default(["Varejo", "Atacarejo", "Atacado", "Mensal", "Semestral", "Anual"]) @map("price_labels")
+  priceRules    Json     @default("[]") @map("price_rules")
   updatedAt     DateTime @default(now()) @updatedAt @map("updated_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
