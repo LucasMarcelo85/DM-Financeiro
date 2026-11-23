@@ -137,7 +137,7 @@ export default function Products({ allow = [] }) {
       {data && <div className="pr-toolbar rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
         <label className="pr-view-control"><span>Tamanho dos cards <strong>{cardView.cardWidth}px</strong></span><input type="range" min="160" max="360" step="8" value={cardView.cardWidth} onChange={(e) => setCardView((v) => ({ ...v, cardWidth: Number(e.target.value) }))} aria-label="Largura dos cards de produtos" /></label>
         <label className="pr-view-control"><span>Altura das fotos <strong>{cardView.imageHeight}px</strong></span><input type="range" min="90" max="280" step="10" value={cardView.imageHeight} onChange={(e) => setCardView((v) => ({ ...v, imageHeight: Number(e.target.value) }))} aria-label="Altura das fotos dos produtos" /></label>
-        {!shop && <button type="button" className="btn btn-primary btn-sm" onClick={() => setManagePreferences(true)}>Configurar</button>}
+        {canManageProducts && <button type="button" className="btn btn-primary btn-sm" onClick={() => setManagePreferences(true)}>Configurar</button>}
       </div>}
 
       {blocked && (
