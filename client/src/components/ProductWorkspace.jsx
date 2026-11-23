@@ -111,9 +111,9 @@ function explainProductError(message) {
     [/faixa|forma de pre[cç]o|carrinho/i, { message: 'Confira o nome, o valor mínimo e o preço da faixa especial.', field: 'price-option', step: 2 }],
     [/nome/i, { message: 'O nome do produto precisa ter pelo menos 2 caracteres. Confira o campo Nome.', field: 'name', step: 1 }],
     [/caracter[ií]stica|varia[cç][aã]o|cor informada/i, { message: 'Complete as características da foto de variação ou remova essa foto.', field: 'variation', step: 0 }],
-    [/estoque|quantidade v[aá]lida/i, { message: 'Informe uma quantidade de estoque entre 0 e 1.000.000.', field: 'stock', step: 3 }],
+    [/estoque|quantidade v[aá]lida/i, { message: 'Informe uma quantidade de estoque entre 0 e 1.000.000.', field: 'stock', step: 0 }],
     [/imagem|foto|url https/i, { message: 'A imagem não pôde ser salva. Confira o arquivo ou a URL e tente novamente.', field: 'main-image', step: 0 }],
-    [/fluxo/i, { message: 'A disponibilidade nos fluxos mudou. Confira os fluxos selecionados na etapa Estoque.', field: 'stock-flow', step: 3 }],
+    [/fluxo/i, { message: 'A disponibilidade nos fluxos mudou. Confira os fluxos selecionados na seção Variações e estoque.', field: 'stock-flow', step: 0 }],
   ];
   return rules.find(([pattern]) => pattern.test(value))?.[1]
     || { message: /internal server error|prisma|constraint|payload too large/i.test(value)
@@ -134,7 +134,7 @@ function focusProductField(field) {
       'price-option-min': '.pr-price-rule-fields label:nth-child(3) input',
       'price-option-price': '.pr-price-rule-fields label:nth-child(4) input',
       variation: '.pr-variation-fields input, .pr-variation-fields select',
-      stock: '.pr-stock-list input',
+      stock: '.pr-stock-input input',
       'main-image': '.pr-main-photo',
       'stock-flow': '.pr-stock-flow-options input',
     };
@@ -678,7 +678,24 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
           </section>
 
           <section className="pr-editor-section">
-            <div className="pr-section-title"><span>2</span><div><h3>Variações</h3><p>Adicione cor, tamanho ou ambos. As fotos de cada variação são opcionais.</p></div></div>
+            <div className="pr-section-title"><span>2</span><div><h3>Variações e estoque</h3><p>Adicione cor, tamanho ou ambos e, se controlar estoque, informe a quantidade de cada variação.</p></div></div>
+            <div className="pr-stock-mode" role="radiogroup" aria-label="Controle de estoque">
+              <button type="button" role="radio" aria-checked={draft.stockEnabled} className={draft.stockEnabled ? 'is-on' : ''} onClick={() => onPatch({ stockEnabled: true })}>Controlar estoque</button>
+              <button type="button" role="radio" aria-checked={!draft.stockEnabled} className={!draft.stockEnabled ? 'is-on' : ''} onClick={() => onPatch({ stockEnabled: false })}>Não controlar estoque</button>
+            </div>
+            {stockFlows.length > 1 && <fieldset className="pr-stock-flow-options">
+              <legend>Produto disponível nos fluxos</legend>
+              <p className="muted small">A disponibilidade independe do saldo. Um fluxo desativado não exibe o produto no site nem no PDV desse fluxo.</p>
+              {stockFlows.map((flow) => <label className="check-line" key={flow.id}>
+                <input type="checkbox" checked={draft.activeFlowIds.includes(flow.id)} onChange={(event) => onPatch({
+                  activeFlowIds: event.target.checked
+                    ? [...new Set([...draft.activeFlowIds, flow.id])]
+                    : draft.activeFlowIds.filter((id) => id !== flow.id),
+                })} />
+                <span>{flow.name}{flow.isDefault ? ' (site e fluxo principal)' : ''}</span>
+              </label>)}
+            </fieldset>}
+            {draft.stockEnabled && draft.variations.length === 0 && <label className="field pr-stock-input"><span>Estoque do produto (un.)</span><input className="input" type="number" inputMode="numeric" min="0" max="1000000" value={draft.stockQuantity} onChange={(event) => onPatch({ stockQuantity: event.target.value })} /><small>Sem variações, o saldo é do produto inteiro. Para estoque por tamanho ou cor, adicione variações abaixo.</small></label>}
             <button type="button" className="btn btn-ghost btn-sm pr-sort-variations" onClick={onSortVariations} disabled={draft.variations.length < 2}>A–Z <span>Organizar variações</span></button>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => {
@@ -719,6 +736,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
                         <input id={`variation-size-${image.key}`} className="input" list={sizeListId} value={image.size || ''} maxLength={20} onChange={(event) => onPatchVariation(image.key, { size: event.target.value })} placeholder="Ex.: M, 42" />
                         <SuggestionButtons label={`Tamanhos cadastrados para a variação ${variationIndex + 1}`} options={variationSuggestions?.sizes || []} onSelect={(size) => onPatchVariation(image.key, { size })} />
                       </div>
+                      {draft.stockEnabled && <label className="field pr-stock-input"><span>Estoque (un.)</span><input className="input" type="number" inputMode="numeric" min="0" max="1000000" value={image.stockQuantity || '0'} onChange={(event) => onPatchVariation(image.key, { stockQuantity: event.target.value })} /></label>}
                       <label className="field"><span>Código de barras <small>(opcional)</small></span><input className="input" value={image.barcode || ''} maxLength={48} onChange={(event) => onPatchVariation(image.key, { barcode: event.target.value })} placeholder="Vazio = usa o do produto" /></label>
                     </div>
                     <div className="pr-variation-order">
@@ -734,37 +752,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
           </section>
 
           <section className="pr-editor-section">
-            <div className="pr-section-title"><span>4</span><div><h3>Estoque</h3><p>Controle o saldo total do produto ou informe quantidades por variação.</p></div></div>
-            <label className="check-line pr-active-check"><input type="checkbox" checked={draft.active} onChange={(event) => onPatch({ active: event.target.checked })} /><span>Este item está ativo e pode aparecer nas vendas</span></label>
-            <label className="check-line"><input type="checkbox" checked={draft.stockEnabled} onChange={(event) => onPatch({ stockEnabled: event.target.checked })} /><span>Controlar estoque deste produto</span></label>
-            {stockFlows.length > 1 && <fieldset className="pr-stock-flow-options">
-              <legend>Produto disponível nos fluxos</legend>
-              <p className="muted small">A disponibilidade independe do saldo. Um fluxo desativado não exibe o produto no site nem no PDV desse fluxo.</p>
-              {stockFlows.map((flow) => <label className="check-line" key={flow.id}>
-                <input type="checkbox" checked={draft.activeFlowIds.includes(flow.id)} onChange={(event) => onPatch({
-                  activeFlowIds: event.target.checked
-                    ? [...new Set([...draft.activeFlowIds, flow.id])]
-                    : draft.activeFlowIds.filter((id) => id !== flow.id),
-                })} />
-                <span>{flow.name}{flow.isDefault ? ' (site e fluxo principal)' : ''}</span>
-              </label>)}
-            </fieldset>}
-            {draft.stockEnabled &&             <div className="pr-stock-list">
-              {draft.variations.length > 0 ? draft.variations.map((image, imageIndex) => <label className="field pr-stock-row" key={image.key}>
-                <span className="pr-stock-product">{image.url && <img src={image.url} alt="" />}{image.label || `Variação ${imageIndex + 1}`}</span>
-                <input className="input" type="number" min="0" max="1000000" value={image.stockQuantity || '0'} onChange={(event) => {
-                  const value = event.target.value;
-                  onPatch({ variations: draft.variations.map((row) => row.key === image.key ? { ...row, stockQuantity: value } : row) });
-                }} />
-              </label>) : <div className="pr-stock-row">
-                <div className="pr-stock-product">{draft.mainImage && <img src={draft.mainImage.url} alt="" />}<span>Estoque deste produto</span></div>
-                <input className="input" type="number" min="0" max="1000000" value={draft.stockQuantity} onChange={(event) => onPatch({ stockQuantity: event.target.value })} />
-              </div>}
-            </div>}
-          </section>
-
-          <section className="pr-editor-section">
-            <div className="pr-section-title"><span>5</span><div><h3>Descrição</h3><p>Inclua detalhes que ajudem o cliente a conhecer o item.</p></div></div>
+            <div className="pr-section-title"><span>3</span><div><h3>Descrição</h3><p>Inclua detalhes que ajudem o cliente a conhecer o item.</p></div></div>
             <label className="field pr-description"><span>Descrição <small>(opcional)</small></span><textarea className="input" rows="4" maxLength="2000" value={draft.description} onChange={(event) => onPatch({ description: event.target.value })} placeholder="Escreva detalhes do produto ou serviço" /></label>
           </section>
         </div>

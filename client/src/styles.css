@@ -2602,3 +2602,16 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .pr-workspace-footer .btn-ghost { flex: 0 0 auto; padding-inline: 1.1rem; }
   .pr-workspace-footer .btn-primary { flex: 1; min-width: 0; }
 }
+
+/* ---------- Estoque dentro das variações ---------- */
+.pr-stock-mode { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .5rem; }
+.pr-stock-mode button { min-height: 3rem; padding: .5rem .8rem; border: 1.5px solid var(--amber); border-radius: var(--r-sm); background: #fff; color: var(--ink); font: inherit; font-weight: 700; cursor: pointer; }
+.pr-stock-mode button:hover { background: var(--amber-soft); }
+.pr-stock-mode button.is-on { background: var(--amber); border-color: var(--amber-d); }
+.pr-stock-mode button:focus-visible { outline: 3px solid var(--ink-3); outline-offset: 2px; }
+.pr-stock-input { min-width: 0; }
+.pr-stock-input .input { max-width: 12rem; }
+@media (max-width: 48rem) {
+  .pr-stock-mode button { min-height: 3.2rem; font-size: .95rem; }
+  .pr-stock-input .input { max-width: none; }
+}
