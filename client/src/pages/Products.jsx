@@ -211,8 +211,7 @@ export default function Products({ allow = [] }) {
       {managePreferences && <ProductPreferencesModal preferences={data?.preferences} onClose={() => setManagePreferences(false)} onSaved={(preferences, sync) => {
         setData((current) => current ? { ...current, preferences } : current);
         setManagePreferences(false);
-        if (sync?.failed) toast(`Faixas salvas, mas ${plural(sync.failed, 'produto não foi atualizado', 'produtos não foram atualizados')}. Tente salvar novamente.`, 'error');
-        else toast(sync?.changed ? `Faixas salvas e aplicadas em ${plural(sync.changed, 'produto', 'produtos')}.` : 'Faixas de preço salvas.');
+        toast(sync?.changed ? `Faixas salvas e aplicadas em ${plural(sync.changed, 'produto', 'produtos')}.` : 'Faixas de preço salvas.');
         load();
       }} />}
       {manageInventory && <InventoryManager onClose={() => { setManageInventory(false); load(); }} />}
@@ -515,42 +514,9 @@ function ProductForm({ product, categories, preferences, onClose, onSaved, batch
 
 const normalizeRuleLabel = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
 
-async function syncProductPrices(rules, originalRules) {
-  const kept = new Set(rules.map((rule) => normalizeRuleLabel(rule.origLabel)).filter(Boolean));
-  const removed = new Set(originalRules.map((rule) => normalizeRuleLabel(rule.label)).filter((label) => !kept.has(label)));
-  const all = (await api.get('/products')).products || [];
-  const signature = (list) => JSON.stringify(list.map((o) => [o.id, o.label, o.priceCents, o.minQuantity || 1, o.scope || 'same_product', o.minCartCents || 0]));
-  let changed = 0;
-  let failed = 0;
-  for (const product of all) {
-    const current = product.priceOptions || [];
-    const used = new Set();
-    const next = [];
-    for (const rule of rules) {
-      const match = current.find((o) => !used.has(o.id) && normalizeRuleLabel(o.label) === normalizeRuleLabel(rule.origLabel || rule.label));
-      if (!match) continue;
-      used.add(match.id);
-      next.push({ id: match.id, label: rule.label, priceCents: match.priceCents, minQuantity: rule.minQuantity, scope: rule.scope, minCartCents: rule.minCartCents });
-    }
-    for (const o of current) {
-      if (used.has(o.id) || removed.has(normalizeRuleLabel(o.label))) continue;
-      next.push({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 });
-    }
-    if (signature(current) === signature(next)) continue;
-    try {
-      await api.patch(`/products/${product.id}`, { priceOptions: next });
-      changed += 1;
-    } catch {
-      failed += 1;
-    }
-  }
-  return { changed, failed };
-}
-
 function ProductPreferencesModal({ preferences, onClose, onSaved }) {
   const toast = useToast();
-  const originalRules = preferences?.priceRules || [];
-  const [priceRules, setPriceRules] = useState(() => originalRules.map((rule) => ({
+  const [priceRules, setPriceRules] = useState(() => (preferences?.priceRules || []).map((rule) => ({
     key: `rule-${Math.random()}`,
     origLabel: rule.label,
     label: rule.label,
@@ -587,10 +553,9 @@ function ProductPreferencesModal({ preferences, onClose, onSaved }) {
         categories: preferences?.categories || [],
         variationTypes: preferences?.variationTypes || ['Cor', 'Tamanho', 'Litros'],
         priceLabels: savedPriceLabels,
-        priceRules: rules.map(({ origLabel, ...rule }) => rule),
+        priceRules: rules,
       });
-      const sync = await syncProductPrices(rules, originalRules).catch(() => ({ changed: 0, failed: 1 }));
-      onSaved(result.preferences, sync);
+      onSaved(result.preferences, { changed: result.updatedProducts || 0 });
     } catch (e) {
       toast(e.message, 'error');
       setBusy(false);

@@ -708,6 +708,22 @@ model ProductPriceOption {
   @@map("product_price_options")
 }
 
+// Preferências de produtos de cada loja (faixas de preço, categorias, tipos de variação). A conta principal (sem loja) continua em ProductPreferences.
+model ProductStorePreferences {
+  storeId        Int      @id @map("store_id")
+  userId         Int      @map("user_id")
+  categories     String[] @default([])
+  variationTypes String[] @default(["Cor", "Tamanho", "Litros"]) @map("variation_types")
+  priceLabels    String[] @default(["Varejo", "Atacarejo", "Atacado", "Mensal", "Semestral", "Anual"]) @map("price_labels")
+  priceRules     Json     @default("[]") @map("price_rules")
+  updatedAt      DateTime @default(now()) @updatedAt @map("updated_at")
+
+  store Store @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([userId])
+  @@map("product_store_preferences")
+}
+
 model ProductPreferences {
   userId        Int      @id @map("user_id")
   categories    String[] @default([])
@@ -815,6 +831,7 @@ model Store {
   stockFlows             StockFlow[]
   strategyRecords        OrderStrategyRecord[]
   posSettings            PosSettings[]
+  productPreferences     ProductStorePreferences?
   instances              Instance[]
   createdAt              DateTime  @default(now()) @map("created_at")
 

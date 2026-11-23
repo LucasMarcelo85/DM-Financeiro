@@ -82,6 +82,59 @@ function cleanPriceRules(value) {
   });
 }
 
+const normalizeRuleLabel = (value) => String(value || '').replace(/\s+/g, ' ').trim().toLocaleLowerCase('pt-BR');
+
+// Preferências da loja atual. Cada loja tem a sua; a conta principal usa a linha do usuário.
+// Loja sem configuração própria herda a do dono (só na visão do dono), como era antes.
+async function loadSavedPreferences(req, storeId) {
+  if (storeId === null || storeId === undefined) {
+    return req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null;
+  }
+  const own = await prisma.productStorePreferences.findUnique({ where: { storeId } });
+  if (own) return own;
+  return req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null;
+}
+
+// Aplica as faixas configuradas a todos os produtos da loja: renomear/alterar regra atualiza os produtos
+// (mantendo o valor digitado) e remover uma faixa apaga o valor dela. Faixas antigas sem correspondência ficam como estão.
+async function syncPriceOptions(tx, userId, storeId, rules, originalLabels, previousRules) {
+  const kept = new Set(originalLabels.map(normalizeRuleLabel).filter(Boolean));
+  const removed = new Set(previousRules.map((rule) => normalizeRuleLabel(rule?.label)).filter((label) => label && !kept.has(label)));
+  if (!rules.length && !removed.size) return 0;
+  const options = await tx.productPriceOption.findMany({
+    where: { product: { userId, storeId: storeId ?? null } },
+    orderBy: [{ productId: 'asc' }, { position: 'asc' }],
+  });
+  const byProduct = new Map();
+  for (const option of options) byProduct.set(option.productId, [...(byProduct.get(option.productId) || []), option]);
+  const touched = new Set();
+  const deleteIds = [];
+  const updates = [];
+  for (const [productId, group] of byProduct) {
+    const used = new Set();
+    rules.forEach((rule, index) => {
+      const wanted = normalizeRuleLabel(originalLabels[index] || rule.label);
+      const match = group.find((option) => !used.has(option.id) && normalizeRuleLabel(option.label) === wanted);
+      if (!match) return;
+      used.add(match.id);
+      if (match.label !== rule.label || match.scope !== rule.scope || match.minQuantity !== rule.minQuantity || match.minCartCents !== rule.minCartCents) {
+        updates.push({ id: match.id, data: { label: rule.label, scope: rule.scope, minQuantity: rule.minQuantity, minCartCents: rule.minCartCents } });
+        touched.add(productId);
+      }
+    });
+    for (const option of group) {
+      if (!used.has(option.id) && removed.has(normalizeRuleLabel(option.label))) {
+        deleteIds.push(option.id);
+        touched.add(productId);
+      }
+    }
+  }
+  for (const update of updates) await tx.productPriceOption.update({ where: { id: update.id }, data: update.data });
+  if (deleteIds.length) await tx.productPriceOption.deleteMany({ where: { id: { in: deleteIds } } });
+  if (touched.size) await tx.product.updateMany({ where: { id: { in: [...touched] } }, data: { updatedAt: new Date() } });
+  return touched.size;
+}
+
 async function owned(req) {
   const id = Number(req.params.id);
   const p = Number.isInteger(id) ? await prisma.product.findFirst({ where: { id, userId: req.user.id, storeId: await storeScope(req) }, include: productInclude }) : null;
@@ -153,7 +206,7 @@ router.get('/', async (req, res) => {
     prisma.product.findMany({ where, orderBy: [{ category: 'asc' }, { name: 'asc' }], include: productInclude, take: 500 }),
     prisma.product.count({ where: req.shopUser ? { userId: req.user.id, storeId } : { userId: req.user.id } }),
     prisma.product.findMany({ where: { userId: req.user.id, storeId }, distinct: ['category'], select: { category: true }, orderBy: { category: 'asc' } }),
-    req.forcedStore === undefined ? prisma.productPreferences.findUnique({ where: { userId: req.user.id } }) : null,
+    loadSavedPreferences(req, storeId),
     prisma.stockFlow.findMany({
       where: { userId: req.user.id, storeId, ...(allowedFlowIds ? { id: { in: allowedFlowIds } } : {}) },
       select: { id: true, name: true, isDefault: true },
@@ -252,7 +305,10 @@ router.post('/import', async (req, res) => {
 });
 
 router.put('/preferences', async (req, res) => {
+  const storeId = await storeScope(req);
+  const rawRules = Array.isArray(req.body?.priceRules) ? req.body.priceRules : [];
   const priceRules = cleanPriceRules(req.body?.priceRules ?? []);
+  const originalLabels = rawRules.map((rule) => (typeof rule?.origLabel === 'string' ? rule.origLabel : ''));
   const configuredLabels = priceRules.map((rule) => rule.label);
   const savedPriceLabels = cleanPreferenceList(req.body?.priceLabels, 'formas de preço', 30, 40);
   const mergedPriceLabels = [...new Set([...configuredLabels, ...savedPriceLabels])].slice(0, 30);
@@ -262,12 +318,19 @@ router.put('/preferences', async (req, res) => {
     priceLabels: cleanPreferenceList(mergedPriceLabels, 'formas de preço', 30, 40),
     priceRules,
   };
-  const saved = await prisma.productPreferences.upsert({
-    where: { userId: req.user.id },
-    create: { userId: req.user.id, ...preferences },
-    update: preferences,
+  const previous = await loadSavedPreferences(req, storeId);
+  const previousRules = Array.isArray(previous?.priceRules) ? previous.priceRules : [];
+  const { saved, updatedProducts } = await prisma.$transaction(async (tx) => {
+    const row = storeId === null || storeId === undefined
+      ? await tx.productPreferences.upsert({ where: { userId: req.user.id }, create: { userId: req.user.id, ...preferences }, update: preferences })
+      : await tx.productStorePreferences.upsert({ where: { storeId }, create: { storeId, userId: req.user.id, ...preferences }, update: preferences });
+    const count = await syncPriceOptions(tx, req.user.id, storeId, priceRules, originalLabels, previousRules);
+    return { saved: row, updatedProducts: count };
+  }, { timeout: 30000 });
+  res.json({
+    preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels, priceRules: saved.priceRules },
+    updatedProducts,
   });
-  res.json({ preferences: { categories: saved.categories, variationTypes: saved.variationTypes, priceLabels: saved.priceLabels, priceRules: saved.priceRules } });
 });
 
 // Um mesmo código não pode identificar dois itens, senão o leitor do PDV não saberia qual vender.
