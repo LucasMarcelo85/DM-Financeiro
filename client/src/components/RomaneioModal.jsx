@@ -84,7 +84,7 @@ export default function RomaneioModal({ products, onClose }) {
     patch({ [list]: copy });
   };
 
-  const productMap = useMemo(() => new Map((allProducts || products).map((p) => [p.id, p])), [allProducts, products]);
+  const productMap = useMemo(() => new Map((allProducts || products).map((p) => [String(p.id), p])), [allProducts, products]);
   const order = (orders || []).find((o) => String(o.id) === orderId);
   const rows = useMemo(() => (mode === 'order' ? (order ? rowsFromOrder(order, productMap) : []) : rowsFromProducts(products)), [mode, order, productMap, products]);
   const header = useMemo(() => {

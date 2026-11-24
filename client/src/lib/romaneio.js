@@ -47,11 +47,13 @@ export function deliveryText(o) {
 // Monta as linhas do documento a partir dos itens do pedido e do cadastro de produtos.
 export function rowsFromOrder(order, productMap) {
   return (order.items || []).map((item) => {
-    const product = productMap.get(item.productId);
-    const image = product?.images?.find((i) => i.id === item.imageId);
+    const product = productMap.get(String(item.productId));
+    const imageId = Number(item.imageId);
+    const image = product?.images?.find((i) => Number(i.id) === imageId)
+      || (Number(product?.mainImage?.id) === imageId ? product.mainImage : null);
     const main = product?.mainImage || product?.images?.find((image) => image.url);
     return {
-      photo: (image || main)?.url || '',
+      photo: image?.url || main?.url || (Number.isSafeInteger(imageId) && imageId > 0 ? `/api/public/product-image/${imageId}` : ''),
       code: image?.barcode || product?.barcode || '',
       name: item.name || product?.name || '',
       variation: item.variation || '',
