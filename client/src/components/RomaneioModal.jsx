@@ -61,6 +61,7 @@ export default function RomaneioModal({ products, onClose }) {
   const [config, setConfig] = useState(loadRomaneio);
   const [mode, setMode] = useState('order');
   const [orders, setOrders] = useState(null);
+  const [allProducts, setAllProducts] = useState(null);
   const [orderId, setOrderId] = useState('');
   const [store, setStore] = useState('');
   const [printing, setPrinting] = useState(false);
@@ -68,6 +69,7 @@ export default function RomaneioModal({ products, onClose }) {
   useEffect(() => {
     let alive = true;
     api.get('/catalog/orders?days=90').then((r) => { if (alive) { setOrders(r.orders || []); setOrderId(String(r.orders?.[0]?.id || '')); } }).catch((e) => { if (alive) { setOrders([]); toast(e.message, 'error'); } });
+    api.get('/products').then((r) => alive && setAllProducts(r.products || [])).catch((e) => { if (alive) toast(e.message, 'error'); });
     api.get('/catalog/pos/settings').then((r) => alive && setStore(r.receipt?.storeName || '')).catch(() => {});
     return () => { alive = false; };
   }, [toast]);
@@ -82,7 +84,7 @@ export default function RomaneioModal({ products, onClose }) {
     patch({ [list]: copy });
   };
 
-  const productMap = useMemo(() => new Map(products.map((p) => [p.id, p])), [products]);
+  const productMap = useMemo(() => new Map((allProducts || products).map((p) => [p.id, p])), [allProducts, products]);
   const order = (orders || []).find((o) => String(o.id) === orderId);
   const rows = useMemo(() => (mode === 'order' ? (order ? rowsFromOrder(order, productMap) : []) : rowsFromProducts(products)), [mode, order, productMap, products]);
   const header = useMemo(() => {
