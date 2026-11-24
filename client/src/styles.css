@@ -1900,8 +1900,11 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .shop-sidebar { position: static; height: auto; padding: 0.75rem 1rem; gap: 0; }
   .shop-sidebar-brand { display: none; }
   .shop-sidebar-user { display: none; }
-  .shop-app-nav { padding: 0.35rem 0.35rem calc(0.35rem + env(safe-area-inset-bottom)); }
-  .shop-app-nav .nav-link { width: auto; }
+  .shop-app-nav {
+    display: flex; flex: none; min-height: auto; gap: 0.35rem; overflow-x: auto; overflow-y: hidden;
+    padding: 0.35rem 0.35rem calc(0.35rem + env(safe-area-inset-bottom));
+  }
+  .shop-app-nav .nav-link { flex: none; width: auto; white-space: nowrap; }
   .shop-main-head { position: static; min-height: 3.25rem; padding: 0.5rem 1rem; }
   .shop-app-panel { padding: 0.75rem; padding-bottom: calc(8rem + env(safe-area-inset-bottom)); }
   .ai-site-grid { grid-template-columns: minmax(0, 1fr); }
