@@ -11,9 +11,13 @@ import { useToast } from '../components/Toast.jsx';
 import { useInstances } from '../lib/useInstances.js';
 import { formatStoredPhone, plural } from '../lib/format.js';
 
-const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 7 };
+const EMPTY = { q: '', instanceId: '', labelId: '', unread: false, kind: 'all', days: 7, order: 'recent' };
 const POLL_MS = 4000; // canal de segurança: pergunta ao servidor o que chegou (funciona mesmo se o tempo real for barrado)
 const REFRESH_MS = 30000; // atualiza a lista inteira (nomes, não lidas, ordem) de tempos em tempos
+const sortChats = (chats, order) => [...chats].sort((a, b) => {
+  const direction = order === 'oldest' ? 1 : -1;
+  return direction * (a.lastMessageAt - b.lastMessageAt) || direction * (a.id - b.id);
+});
 
 // Auditoria: acompanha ao vivo as conversas dos números conectados. Só leitura (responder é do plano Ouro).
 // Três caminhos levam a mensagem até a tela: tempo real (SSE), consulta rápida a cada 4 s e busca automática do servidor.
@@ -31,7 +35,7 @@ export default function Audit({ canReply = false }) {
   const [labels, setLabels] = useState([]);
   const [filters, setFilters] = useState(EMPTY);
   const [chats, setChats] = useState([]);
-  const [nextBefore, setNextBefore] = useState(null);
+  const [nextCursor, setNextCursor] = useState(null);
   const [loading, setLoading] = useState(true);
   const [stats, setStats] = useState({ unreadTotal: 0, unreadChats: 0, totalChats: 0 });
   const [selectedId, setSelectedId] = useState(null);
@@ -101,7 +105,7 @@ export default function Audit({ canReply = false }) {
       const merged = cur
         ? { ...cur, ...dto, labelIds: dto.labelIds ?? cur.labelIds, instanceLabel: dto.instanceLabel ?? cur.instanceLabel, match: cur.match }
         : { ...dto, labelIds: dto.labelIds ?? [], instanceLabel: dto.instanceLabel ?? (label?.label || label?.metaPhoneDisplay || null) };
-      return [merged, ...prev.filter((c) => c.id !== dto.id)].sort((a, b) => b.lastMessageAt - a.lastMessageAt || b.id - a.id);
+      return sortChats([merged, ...prev.filter((c) => c.id !== dto.id)], filtersRef.current.order);
     });
     // Mantém a referência em dia para várias mensagens chegando no mesmo instante.
     chatsRef.current = old ? chatsRef.current.map((c) => (c.id === dto.id ? { ...c, unread: dto.unread } : c)) : chatsRef.current;
@@ -115,19 +119,26 @@ export default function Audit({ canReply = false }) {
     if (f.labelId) params.set('labelId', f.labelId);
     if (f.unread) params.set('unread', '1');
     if (f.kind !== 'all') params.set('kind', f.kind);
+    if (f.order === 'oldest') params.set('order', f.order);
     params.set('days', f.days);
     for (const [k, v] of Object.entries(extra)) if (v != null) params.set(k, v);
     return params;
   };
 
-  const loadChats = useCallback(async ({ more = false, before = null } = {}) => {
+  const loadChats = useCallback(async ({ more = false, cursor: pageCursor = null } = {}) => {
     const mine = ++seq.current;
     setLoading(true);
     try {
-      const r = await api.get(`/audit/chats?${queryString(filtersRef.current, more ? { before } : {})}`);
+      const f = filtersRef.current;
+      const cursorParams = more && pageCursor
+        ? f.order === 'oldest'
+          ? { after: pageCursor.at, afterId: pageCursor.id }
+          : { before: pageCursor.at, beforeId: pageCursor.id }
+        : {};
+      const r = await api.get(`/audit/chats?${queryString(f, cursorParams)}`);
       if (mine !== seq.current) return; // chegou uma busca mais nova
       setChats((prev) => (more ? [...prev, ...r.chats.filter((c) => !prev.some((p) => p.id === c.id))] : r.chats));
-      setNextBefore(r.nextBefore);
+      setNextCursor(r.nextCursor);
       setStats({ unreadTotal: r.unreadTotal, unreadChats: r.unreadChats, totalChats: r.totalChats });
       if (cursor.current === null) cursor.current = r.cursor;
     } catch (e) {
@@ -152,7 +163,7 @@ export default function Audit({ canReply = false }) {
       setChats((prev) => {
         const byId = new Map(prev.map((c) => [c.id, c]));
         for (const c of r.chats) byId.set(c.id, { ...byId.get(c.id), ...c });
-        return [...byId.values()].sort((a, b) => b.lastMessageAt - a.lastMessageAt || b.id - a.id);
+        return sortChats([...byId.values()], filtersRef.current.order);
       });
     } catch { /* tenta de novo no próximo ciclo */ }
   }, [scope]);
@@ -242,7 +253,7 @@ export default function Audit({ canReply = false }) {
     setLabels([]);
     setSelectedId(null);
     setDetail(null);
-    setNextBefore(null);
+    setNextCursor(null);
     setStats({ unreadTotal: 0, unreadChats: 0, totalChats: 0 });
     cursor.current = null;
     seen.current.clear();
@@ -367,8 +378,8 @@ export default function Audit({ canReply = false }) {
 
       {hasInstances && (
         <div className={`au-app ${selectedId ? 'is-open' : ''} ${side ? 'is-side' : ''}`} style={{ '--au-list-width': `${listWidth}px`, '--au-side-width': `${sideWidth}px` }}>
-          <ChatList chats={chats} selectedId={selectedId} onSelect={select} filters={filters} setFilters={setFilters} instances={instances} labels={labels}
-            loading={loading} hasMore={Boolean(nextBefore)} onMore={() => loadChats({ more: true, before: nextBefore })} stats={stats} />
+          <ChatList chats={sortChats(chats, filters.order)} selectedId={selectedId} onSelect={select} filters={filters} setFilters={setFilters} instances={instances} labels={labels}
+            loading={loading} hasMore={Boolean(nextCursor)} onMore={() => loadChats({ more: true, cursor: nextCursor })} stats={stats} />
           {view ? (
             <>
               <ChatView key={`${view.id}-${filters.days}`} days={filters.days} chat={view} canSend={canSend} liveItems={liveItems} liveStatus={liveStatus} liveEdit={liveEdit} liveMedia={liveMedia}

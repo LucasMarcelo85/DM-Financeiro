@@ -7,7 +7,7 @@ import { IMAGE_ACCEPT } from '../lib/contract/image.js';
 import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js';
 import { generateEan13 } from '../lib/barcode.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
-import { colorHexForName, colorNameForHex } from '../lib/productColors.js';
+import { colorHexForName, colorNameForHex, normalizeProductColorName, PRODUCT_COLOR_SUGGESTIONS, PRODUCT_COLOR_VARIATION_SUGGESTIONS } from '../lib/productColors.js';
 
 const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
@@ -27,6 +27,17 @@ function uniqueSuggestions(values) {
   return [...distinct.values()].sort((a, b) => a.localeCompare(b, 'pt-BR'));
 }
 
+function uniqueColorSuggestions(values, sort = true) {
+  const distinct = new Map();
+  for (const value of values) {
+    const label = typeof value === 'string' ? value.trim() : '';
+    const key = normalizeProductColorName(label);
+    if (label && !distinct.has(key)) distinct.set(key, label);
+  }
+  const result = [...distinct.values()];
+  return sort ? result.sort((a, b) => a.localeCompare(b, 'pt-BR')) : result;
+}
+
 function collectVariationSuggestions(products, drafts) {
   const colors = [];
   const sizes = [];
@@ -38,7 +49,7 @@ function collectVariationSuggestions(products, drafts) {
     if (!label) return;
     colors.push(label);
     const colorHex = /^#[0-9a-f]{6}$/i.test(hex || '') ? hex.toLowerCase() : colorHexForName(label);
-    if (colorHex) colorHexByName.set(normalizeSuggestion(label), colorHex);
+    if (colorHex) colorHexByName.set(normalizeProductColorName(label), colorHex);
   };
   const addAttribute = (type, value, hex = '') => {
     const label = String(type || '').trim();
@@ -71,8 +82,14 @@ function collectVariationSuggestions(products, drafts) {
     }
   }
 
+  const featuredColors = PRODUCT_COLOR_SUGGESTIONS.slice(0, 6);
   return {
-    colors: uniqueSuggestions(colors),
+    colorOptions: uniqueColorSuggestions([
+      ...featuredColors,
+      ...PRODUCT_COLOR_VARIATION_SUGGESTIONS,
+      ...PRODUCT_COLOR_SUGGESTIONS.slice(featuredColors.length),
+      ...colors,
+    ], false),
     sizes: uniqueSuggestions(sizes),
     types: uniqueSuggestions(types),
     colorHexByName: Object.fromEntries(colorHexByName),
@@ -80,12 +97,12 @@ function collectVariationSuggestions(products, drafts) {
   };
 }
 
-function SuggestionButtons({ label, options = [], onSelect, swatchFor }) {
+function SuggestionButtons({ label, options = [], onSelect, swatchFor, caption = 'Usados antes:', limit = 8 }) {
   if (!options.length) return null;
   return (
     <div className="pr-suggestions" role="group" aria-label={label}>
-      <small>Usados antes:</small>
-      {options.slice(0, 8).map((option) => {
+      <small>{caption}</small>
+      {options.slice(0, limit).map((option) => {
         const value = typeof option === 'string' ? option : option.label;
         const swatch = swatchFor?.(value);
         return (
@@ -243,10 +260,6 @@ function variationFields(image) {
   };
 }
 
-function colorNeedsSample(image) {
-  return Boolean(image.color?.trim() && !image.colorHex && !colorHexForName(image.color));
-}
-
 function draftFromProduct(product, stockFlows, priceRules = []) {
   const rows = product.images || [];
   const variation = (image) => ({
@@ -315,7 +328,6 @@ function productBody(draft) {
   })) {
     throw new Error('Informe pelo menos uma característica para cada foto de variação.');
   }
-  if (draft.variations.some(colorNeedsSample)) throw new Error('Escolha uma amostra visual para cada cor informada.');
   if (!/^\d+$/.test(draft.stockQuantity) || Number(draft.stockQuantity) > 1_000_000) throw new Error('Informe um estoque válido entre 0 e 1.000.000.');
   if ([draft.mainImage, ...draft.variations].filter(Boolean).some((image) => !/^\d+$/.test(image.stockQuantity || '0') || Number(image.stockQuantity || 0) > 1_000_000)) throw new Error('Informe uma quantidade válida no estoque de cada imagem.');
 
@@ -606,8 +618,8 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
   const sizeListId = `variation-sizes-${draft.key}`;
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const setColorName = (image, name) => {
-    const mappedHex = variationSuggestions?.colorHexByName?.[normalizeSuggestion(name)] || colorHexForName(name);
-    const sameName = normalizeSuggestion(image.color) === normalizeSuggestion(name);
+    const mappedHex = variationSuggestions?.colorHexByName?.[normalizeProductColorName(name)] || colorHexForName(name);
+    const sameName = normalizeProductColorName(image.color) === normalizeProductColorName(name);
     onPatchVariation(image.key, {
       color: name,
       colorHex: mappedHex || (!image.color?.trim() || sameName ? image.colorHex || '' : ''),
@@ -704,15 +716,17 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
                       <div className="field pr-suggestion-field">
                         <label htmlFor={`variation-color-name-${image.key}`}>Cor <small>(opcional)</small></label>
                         <div className="pr-variation-color">
-                          <input type="color" value={image.colorHex || variationSuggestions?.colorHexByName?.[normalizeSuggestion(image.color)] || colorHexForName(image.color) || '#cccccc'} onChange={(event) => setColorSample(image, event.target.value)} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
+                          <input type="color" value={image.colorHex || variationSuggestions?.colorHexByName?.[normalizeProductColorName(image.color)] || colorHexForName(image.color) || '#cccccc'} onChange={(event) => setColorSample(image, event.target.value)} aria-label={`Escolher a cor da variação ${variationIndex + 1}`} />
                           <input id={`variation-color-name-${image.key}`} className="input" list={colorListId} value={image.color || ''} maxLength={20} onChange={(event) => setColorName(image, event.target.value)} placeholder="Ex.: Azul-marinho" />
                         </div>
-                        <small>Escolha uma cor visualmente ou use uma já cadastrada.</small>
+                        <small>A amostra visual é opcional; você pode informar apenas o nome da cor.</small>
                         <SuggestionButtons
                           label={`Cores cadastradas para a variação ${variationIndex + 1}`}
-                          options={variationSuggestions?.colors || []}
+                          options={variationSuggestions?.colorOptions || []}
                           onSelect={(color) => setColorName(image, color)}
-                          swatchFor={(color) => variationSuggestions?.colorHexByName?.[normalizeSuggestion(color)] || colorHexForName(color) || '#cbd5e1'}
+                          swatchFor={(color) => variationSuggestions?.colorHexByName?.[normalizeProductColorName(color)] || colorHexForName(color) || '#cbd5e1'}
+                          caption="Cores e variações comuns:"
+                          limit={12}
                         />
                       </div>
                       <div className="field pr-suggestion-field">
@@ -730,7 +744,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
                 );
               })}
             </div>
-            <datalist id={colorListId}>{(variationSuggestions?.colors || []).map((color) => <option key={color} value={color} />)}</datalist>
+            <datalist id={colorListId}>{(variationSuggestions?.colorOptions || []).map((color) => <option key={color} value={color} />)}</datalist>
             <datalist id={sizeListId}>{(variationSuggestions?.sizes || []).map((size) => <option key={size} value={size} />)}</datalist>
             {draft.variations.length < MAX_IMAGES - 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>}
           </section>

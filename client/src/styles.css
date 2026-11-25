@@ -41,6 +41,10 @@ p { margin: 0; }
 a { color: var(--blue); }
 img { max-width: 100%; display: block; }
 button, input, select, textarea { font: inherit; color: inherit; }
+@media (max-width: 48rem) {
+  input:not([type="checkbox"]):not([type="radio"]):not([type="range"]):not([type="color"]),
+  select, textarea { font-size: 16px; }
+}
 :focus-visible { outline: 3px solid var(--blue); outline-offset: 2px; }
 .muted { color: var(--muted); }
 .small { font-size: 0.875rem; }
@@ -701,6 +705,7 @@ button.fat-card:hover { border-color: #b9c4d2; }
 .au-search { padding: 0.7rem 0.7rem 0.4rem; }
 .au-filters { display: flex; flex-wrap: wrap; align-items: center; gap: 0.4rem; padding: 0 0.7rem 0.6rem; border-bottom: 1px solid var(--line); }
 .au-filters .input-sm { flex: 1; min-width: 7rem; }
+.au-filters .au-sort { flex: 1 1 100%; }
 .au-check { display: inline-flex; align-items: center; gap: 0.35rem; font-size: 0.85rem; color: var(--muted); white-space: nowrap; }
 .au-chats { list-style: none; margin: 0; padding: 0; overflow-y: auto; flex: 1; }
 .au-chat { display: flex; gap: 0.7rem; width: 100%; padding: 0.7rem 0.8rem; background: transparent; border: 0; border-bottom: 1px solid #eef1f5; text-align: left; cursor: pointer; font: inherit; color: var(--text); }
@@ -2224,8 +2229,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-inbox { display: grid; grid-template-columns: minmax(16rem, 0.8fr) minmax(20rem, 1.5fr); min-height: 34rem; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
 .ai-conversation-list { max-height: 70vh; overflow-y: auto; border-right: 1px solid var(--line); }
 .ai-conversation-filter { padding: .8rem; border-bottom: 1px solid var(--line); }
+.ai-conversation-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .6rem; }
 .ai-conversation-filter .field { gap: .25rem; }
-.ai-conversation-filter .field > span { font-size: .8rem; }
+.ai-conversation-filter .field > span { font-size: .85rem; }
 .ai-conversation-item { display: grid; grid-template-columns: 2.5rem minmax(0, 1fr) auto; align-items: center; gap: .65rem; width: 100%; padding: .8rem; border: 0; border-bottom: 1px solid #edf0f3; background: white; text-align: left; cursor: pointer; }
 .ai-conversation-item:hover, .ai-conversation-item.is-selected { background: #f3f6f9; }
 .ai-avatar { display: grid; place-items: center; width: 2.4rem; height: 2.4rem; border-radius: 50%; background: var(--amber-soft); color: var(--ink); font-weight: 700; }

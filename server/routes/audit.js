@@ -79,25 +79,37 @@ router.get('/chats', async (req, res) => {
   const auditScope = assertScopeAccess(req);
   const limit = clamp(int(req.query.limit) || 40, 1, 100);
   const since = sinceOf(req.query.days);
+  const direction = req.query.order === 'oldest' ? 'asc' : 'desc';
   const where = { userId, instance: { auditScope }, lastMessageAt: { gte: since } };
   if (int(req.query.instanceId)) where.instanceId = int(req.query.instanceId);
   if (int(req.query.labelId)) where.labels = { some: { labelId: int(req.query.labelId) } };
   if (req.query.unread === '1') where.unread = { gt: 0 };
   if (req.query.kind === 'groups') where.isGroup = true;
   if (req.query.kind === 'direct') where.isGroup = false;
-  if (int(req.query.before)) where.lastMessageAt = { gte: since, lt: new Date(int(req.query.before)) };
+  const cursorValue = int(direction === 'asc' ? req.query.after : req.query.before);
+  if (cursorValue) {
+    const cursorAt = new Date(cursorValue);
+    const cursorId = int(direction === 'asc' ? req.query.afterId : req.query.beforeId);
+    const comparison = direction === 'asc' ? 'gt' : 'lt';
+    where.AND = [{
+      OR: [
+        { lastMessageAt: { [comparison]: cursorAt } },
+        ...(cursorId ? [{ lastMessageAt: cursorAt, id: { [comparison]: cursorId } }] : []),
+      ],
+    }];
+  }
 
   // Busca: cada palavra precisa aparecer no nome, no número ou em alguma mensagem da conversa (sem acento, sem maiúscula).
   const terms = searchTerms(req.query.q);
   if (terms.length) {
-    where.AND = terms.map((t) => {
+    where.AND = [...(where.AND || []), ...terms.map((t) => {
       const digits = onlyDigits(t);
       return { OR: [{ nameSearch: { contains: t } }, ...(digits.length >= 3 ? [{ phone: { contains: digits } }] : []), { messages: { some: { search: { contains: t }, ts: { gte: since } } } }] };
-    });
+    })];
   }
 
   const rows = await prisma.auditChat.findMany({
-    where, orderBy: [{ lastMessageAt: 'desc' }, { id: 'desc' }], take: limit + 1,
+    where, orderBy: [{ lastMessageAt: direction }, { id: direction }], take: limit + 1,
     include: { labels: { select: { labelId: true } }, instance: INST_SELECT },
   });
   const more = rows.length > limit;
@@ -121,6 +133,7 @@ router.get('/chats', async (req, res) => {
   res.json({
     chats: page.map((c) => listDTO(c, snippets.has(c.id) ? { match: snippets.get(c.id) } : {})),
     nextBefore: more ? page.at(-1).lastMessageAt.getTime() : null,
+    nextCursor: more ? { at: page.at(-1).lastMessageAt.getTime(), id: page.at(-1).id } : null,
     unreadTotal: unread._sum.unread || 0, unreadChats, totalChats: unread._count._all,
     cursor: newest._max.id || 0, // ponto de partida do canal de atualização de segurança (/updates)
   });

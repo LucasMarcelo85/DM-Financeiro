@@ -28,6 +28,10 @@ export default function ChatList({ chats, selectedId, onSelect, filters, setFilt
         ))}
       </div>
       <div className="au-filters">
+        <select className="input input-sm au-sort" value={filters.order} onChange={set('order')} aria-label="Ordenar conversas">
+          <option value="recent">Mais recentes primeiro</option>
+          <option value="oldest">Mais antigas primeiro</option>
+        </select>
         {instances.length > 1 && (
           <select className="input input-sm" value={filters.instanceId} onChange={set('instanceId')} aria-label="Filtrar por número">
             <option value="">Todos os números</option>

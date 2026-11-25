@@ -383,6 +383,7 @@ export default function AiService() {
   const [selectedConversation, setSelectedConversation] = useState(null);
   const [conversations, setConversations] = useState([]);
   const [conversationAgent, setConversationAgent] = useState('');
+  const [conversationOrder, setConversationOrder] = useState('recent');
   const [campaignAgent, setCampaignAgent] = useState(null);
   const [testing, setTesting] = useState(null);
   const [actionsAgent, setActionsAgent] = useState(null);
@@ -400,14 +401,18 @@ export default function AiService() {
   }, []);
   const loadConversations = useCallback(async () => {
     try {
-      const result = await api.get(`/ai/conversations${conversationAgent ? `?agentId=${conversationAgent}` : ''}`);
+      const params = new URLSearchParams();
+      if (conversationAgent) params.set('agentId', conversationAgent);
+      if (conversationOrder === 'oldest') params.set('order', conversationOrder);
+      const query = params.toString();
+      const result = await api.get(`/ai/conversations${query ? `?${query}` : ''}`);
       setConversations(result.conversations);
       if (selectedConversation) {
         const fresh = result.conversations.find((item) => item.id === selectedConversation.id);
         if (fresh) setSelectedConversation(fresh);
       }
     } catch (err) { setError(err.message); }
-  }, [conversationAgent, selectedConversation?.id]);
+  }, [conversationAgent, conversationOrder, selectedConversation?.id]);
 
   useEffect(() => { load(); }, [load]);
   useEffect(() => {
@@ -451,6 +456,12 @@ export default function AiService() {
     } catch (err) { toast(err.message, 'error'); }
   }
   const selectedInstance = (instanceId) => data?.instances.find((instance) => instance.id === instanceId);
+  const orderedConversations = [...conversations].sort((a, b) => {
+    const direction = conversationOrder === 'oldest' ? 1 : -1;
+    const activityA = a.lastMessage?.createdAt ?? a.updatedAt;
+    const activityB = b.lastMessage?.createdAt ?? b.updatedAt;
+    return direction * (activityA - activityB) || direction * (a.id - b.id);
+  });
 
   return (
     <>
@@ -521,14 +532,17 @@ export default function AiService() {
         <div className={`ai-inbox ${selectedConversation ? 'has-chat' : ''}`}>
           <aside className="ai-conversation-list">
             <div className="ai-conversation-filter">
-              <label className="field"><span>Filtrar por agente</span><select className="input" value={conversationAgent} onChange={(event) => setConversationAgent(event.target.value)}><option value="">Todos os agentes</option>{data.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}<option value="deleted">Agentes excluídos</option></select></label>
+              <div className="ai-conversation-filters">
+                <label className="field"><span>Filtrar por agente</span><select className="input" value={conversationAgent} onChange={(event) => setConversationAgent(event.target.value)}><option value="">Todos os agentes</option>{data.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}<option value="deleted">Agentes excluídos</option></select></label>
+                <label className="field"><span>Ordenar conversas</span><select className="input" value={conversationOrder} onChange={(event) => setConversationOrder(event.target.value)}><option value="recent">Mais recentes primeiro</option><option value="oldest">Mais antigas primeiro</option></select></label>
+              </div>
               {conversationAgent === 'deleted' && conversations.length > 0 && <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" onClick={clearOrphans}><Icon name="trash" size={16} /> Apagar todas</button>}
             </div>
-            {conversations.map((conversation) => (
+            {orderedConversations.map((conversation) => (
               <button type="button" className={`ai-conversation-item ${selectedConversation?.id === conversation.id ? 'is-selected' : ''}`} key={conversation.id} onClick={() => setSelectedConversation(conversation)}>
                 <span className="ai-avatar">{(conversation.name || conversation.phone).slice(0, 1).toUpperCase()}</span>
                 <span className="ai-conversation-summary"><strong>{conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
-                <time>{fmtDate(conversation.updatedAt)}</time>
+                <time>{fmtDate(conversation.lastMessage?.createdAt ?? conversation.updatedAt)}</time>
               </button>
             ))}
             {!conversations.length && <p className="ai-no-conversations">As conversas recebidas pelos agentes de atendimento aparecerão aqui.</p>}

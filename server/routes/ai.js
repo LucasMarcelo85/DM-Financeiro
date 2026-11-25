@@ -1287,12 +1287,13 @@ router.get('/conversations', async (req, res) => {
   const scopedStoreId = await agentStoreId(req);
   const deletedOnly = req.query.agentId === 'deleted';
   const agentId = !deletedOnly && req.query.agentId ? Number(req.query.agentId) : undefined;
+  const direction = req.query.order === 'oldest' ? 'asc' : 'desc';
   if (agentId && !(await prisma.aiAgent.findFirst({ where: { id: agentId, userId: req.user.id, storeId: scopedStoreId }, select: { id: true } }))) {
     throw new AppError(404, 'Agente não encontrado.');
   }
   const rows = await prisma.aiConversation.findMany({
     where: { userId: req.user.id, storeId: scopedStoreId, phone: { not: '__teste__' }, ...(deletedOnly ? { agentId: null } : agentId ? { agentId } : {}) },
-    orderBy: { updatedAt: 'desc' }, take: 200,
+    orderBy: [{ updatedAt: direction }, { id: direction }], take: 200,
     include: { messages: { where: { createdAt: { gte: aiCutoff() } }, orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   res.json({ conversations: rows.map((row) => ({
