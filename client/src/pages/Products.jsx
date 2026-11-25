@@ -25,7 +25,7 @@ const PRODUCT_CSV_COLUMNS = [
   { key: 'kind', type: 'string' }, { key: 'name', type: 'string' }, { key: 'category', type: 'string' },
   { key: 'description', type: 'string' }, { key: 'barcode', type: 'string' }, { key: 'priceCents', type: 'number' },
   { key: 'stockEnabled', type: 'boolean' }, { key: 'stockQuantity', type: 'number' },
-  { key: 'active', type: 'boolean' }, { key: 'mainImage', type: 'json' },
+  { key: 'active', type: 'boolean' }, { key: 'mainImage', type: 'json' }, { key: 'mainImageUrl', type: 'string', optional: true },
   { key: 'images', type: 'json' }, { key: 'priceOptions', type: 'json' },
   { key: 'sourceId', type: 'number' }, { key: 'sourceUserId', type: 'number' },
   { key: 'sourceStoreId', type: 'number' },
@@ -121,6 +121,7 @@ export default function Products({ allow = [] }) {
             resource="products" title="produtos" filename="produtos.csv" exportUrl="/products/export"
             columns={PRODUCT_CSV_COLUMNS}
             description="Exporte produtos e serviços com descrições, preços, estoque, faixas de preço, variações e imagens."
+            templateDescription="Para importar com foto principal, preencha mainImageUrl com uma URL HTTPS. O campo images continua aceitando imagens das variações."
             onImport={async (products) => {
               const result = await importCsvBatches(products, (batch) => api.post('/products/import', { products: batch }), 500, 25 * 1024 * 1024);
               load();

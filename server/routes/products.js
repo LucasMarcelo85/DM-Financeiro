@@ -253,11 +253,12 @@ router.get('/export', async (req, res) => {
       ...(image.externalUrl ? { url: image.externalUrl } : image.data ? { data: `data:${image.mime};base64,${Buffer.from(image.data).toString('base64')}` } : {}),
       label: image.label, size: image.size, color: image.color, colorHex: image.colorHex, barcode: image.barcode,
     }));
+    const mainImage = images.find((_image, index) => product.images[index].isPrimary) || null;
     return {
       kind: product.kind, name: product.name, category: product.category, description: product.description, barcode: product.barcode,
       priceCents: product.priceCents, stockEnabled: product.stockEnabled, stockQuantity: product.stockQuantity,
       active: product.active,
-      mainImage: images.find((_image, index) => product.images[index].isPrimary) || null,
+      mainImage, mainImageUrl: mainImage?.url || '',
       images: images.filter((_image, index) => !product.images[index].isPrimary),
       priceOptions: product.priceOptions.map(({ label, priceCents, minQuantity, scope, minCartCents }) => ({ label, priceCents, minQuantity, scope, minCartCents })),
       sourceId: product.id, sourceUserId: req.user.id, sourceStoreId: storeId,

@@ -74,14 +74,17 @@ export function parseCsv(text) {
 
 export function parseCsvRows(text, columns, format) {
   const rows = parseCsv(text);
-  const expectedHeaders = ['_dm_format', ...columns.map(({ key }) => key)];
-  if (!rows.length || rows[0].length !== expectedHeaders.length || expectedHeaders.some((key, index) => rows[0][index] !== key)) {
+  const headers = rows[0] || [];
+  const includedColumns = columns.filter(({ key }) => headers.includes(key));
+  const expectedHeaders = ['_dm_format', ...includedColumns.map(({ key }) => key)];
+  const missingRequiredColumn = columns.some(({ key, optional }) => !optional && !headers.includes(key));
+  if (!rows.length || headers[0] !== '_dm_format' || missingRequiredColumn || headers.length !== expectedHeaders.length || expectedHeaders.some((key, index) => headers[index] !== key)) {
     throw new Error('As colunas deste CSV não correspondem ao formato de exportação desta área.');
   }
   return rows.slice(1).map((cells, index) => {
     if (cells.length !== expectedHeaders.length) throw new Error(`A linha ${index + 2} tem uma quantidade diferente de colunas.`);
     if (cells[0] !== format) throw new Error(`A linha ${index + 2} não pertence a este formato de CSV.`);
-    return Object.fromEntries(columns.map(({ key, type }, columnIndex) => {
+    return Object.fromEntries(includedColumns.map(({ key, type }, columnIndex) => {
       let value = cells[columnIndex + 1];
       if (type === 'json') {
         try { value = value ? JSON.parse(value) : null; } catch { throw new Error(`O campo "${key}" da linha ${index + 2} não contém JSON válido.`); }

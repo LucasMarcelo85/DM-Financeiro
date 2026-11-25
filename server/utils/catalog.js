@@ -86,7 +86,9 @@ export function cleanProduct(b = {}, { existingImages = [] } = {}) {
   });
   const explicitMainImage = Object.hasOwn(b, 'mainImage');
   const rawImages = Array.isArray(b.images) ? b.images : [];
-  const rawMainImage = explicitMainImage ? b.mainImage : rawImages[0] || null;
+  const rawMainImage = typeof b.mainImageUrl === 'string' && b.mainImageUrl.trim()
+    ? { url: b.mainImageUrl.trim() }
+    : explicitMainImage ? b.mainImage : rawImages[0] || null;
   const rawVariations = explicitMainImage ? rawImages : rawImages.slice(1);
   if (rawVariations.length > MAX_PRODUCT_VARIATIONS) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_VARIATIONS} variações no produto.`);
   const existingImageById = new Map(existingImages.map((image) => [image.id, image]));

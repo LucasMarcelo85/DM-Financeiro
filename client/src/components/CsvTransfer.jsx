@@ -24,7 +24,7 @@ function download(filename, contents) {
   URL.revokeObjectURL(url);
 }
 
-export default function CsvTransfer({ resource, title, filename, exportUrl, columns, description, dateDescription = 'criação', importDestination, onImport }) {
+export default function CsvTransfer({ resource, title, filename, exportUrl, columns, description, dateDescription = 'criação', importDestination, templateDescription, onImport }) {
   const toast = useToast();
   const [open, setOpen] = useState(false);
   const [tab, setTab] = useState('export');
@@ -147,7 +147,7 @@ export default function CsvTransfer({ resource, title, filename, exportUrl, colu
             </div>
           ) : (
             <div className="csv-transfer-body">
-              <p className="muted">{description} Escolha um CSV exportado nesta área. A importação não apaga registros.</p>
+              <p className="muted">{description} Escolha um CSV compatível com esta área. A importação não apaga registros.</p>
               {importDestination && (
                 <>
                   <label className="field">
@@ -163,6 +163,14 @@ export default function CsvTransfer({ resource, title, filename, exportUrl, colu
                     </button>
                   )}
                 </>
+              )}
+              {templateDescription && (
+                <div>
+                  <button type="button" className="btn btn-ghost btn-sm" onClick={() => download(filename.replace(/\.csv$/i, '-modelo.csv'), stringifyCsv(columns, [], format))} disabled={busy}>
+                    <Icon name="download" size={16} /> Baixar modelo CSV
+                  </button>
+                  <p className="muted small">{templateDescription}</p>
+                </div>
               )}
               <label className="field">
                 <span>Arquivo CSV</span>

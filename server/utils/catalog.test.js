@@ -33,6 +33,19 @@ test('allows a new variation with attributes but no photo', () => {
   assert.equal(product.images[1].label, 'Azul · M');
 });
 
+test('accepts a main image URL during product import', () => {
+  const product = cleanProduct({
+    name: 'Camiseta',
+    category: 'Roupas',
+    priceCents: 3000,
+    mainImageUrl: 'https://example.com/camiseta.jpg',
+  });
+
+  assert.equal(product.images.length, 1);
+  assert.equal(product.images[0].externalUrl, 'https://example.com/camiseta.jpg');
+  assert.equal(product.images[0].isPrimary, true);
+});
+
 test('still rejects a new variation with neither a photo nor a characteristic', () => {
   assert.throws(() => cleanProduct({
     name: 'Camiseta',
