@@ -1,0 +1,2 @@
+export const MAX_PRODUCT_IMAGES = 12;
+export const MAX_PRODUCT_VARIATIONS = 100;

@@ -1,9 +1,10 @@
 import { AppError, normalizePhone, onlyDigits } from './helpers.js';
+import { MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS } from '../../shared/product-limits.js';
 
 // Validação (lista branca) de produtos, configuração do catálogo e pedidos. Nada além do que está aqui chega ao banco.
 
 export const PRODUCT_KINDS = new Set(['produto', 'servico']);
-export const MAX_PRODUCT_IMAGES = 12;
+export { MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS };
 export const MAX_PRODUCT_PRICE_OPTIONS = 12;
 export const MAX_PRODUCT_IMAGE_BYTES = 900 * 1024;
 const MAX_PRICE = 10_000_000; // R$ 100.000,00
@@ -55,7 +56,7 @@ export function cleanBarcode(value) {
 
 // ---------- Produto / serviço ----------
 // `images`: [{ id }], [{ data: 'data:image/...' }] ou [{ url: 'https://...' }], com `label` (variação).
-export function cleanProduct(b = {}) {
+export function cleanProduct(b = {}, { existingImages = [] } = {}) {
   const kind = PRODUCT_KINDS.has(b.kind) ? b.kind : 'produto';
   const name = line(b.name, 120);
   if (name.length < 2) throw new AppError(400, 'Informe o nome.');
@@ -87,7 +88,17 @@ export function cleanProduct(b = {}) {
   const rawImages = Array.isArray(b.images) ? b.images : [];
   const rawMainImage = explicitMainImage ? b.mainImage : rawImages[0] || null;
   const rawVariations = explicitMainImage ? rawImages : rawImages.slice(1);
-  if (rawVariations.length + Number(Boolean(rawMainImage)) > MAX_PRODUCT_IMAGES) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens no produto.`);
+  if (rawVariations.length > MAX_PRODUCT_VARIATIONS) throw new AppError(400, `Use no máximo ${MAX_PRODUCT_VARIATIONS} variações no produto.`);
+  const existingImageById = new Map(existingImages.map((image) => [image.id, image]));
+  const hasPhoto = (image) => {
+    if (!image || typeof image !== 'object' || image.removeImage === true) return false;
+    if (image.data || image.url || image.externalUrl) return true;
+    const existing = Number.isInteger(image.id) ? existingImageById.get(image.id) : null;
+    return Boolean(existing?.mime || existing?.externalUrl);
+  };
+  if ([rawMainImage, ...rawVariations].filter(hasPhoto).length > MAX_PRODUCT_IMAGES) {
+    throw new AppError(400, `Use no máximo ${MAX_PRODUCT_IMAGES} imagens no produto.`);
+  }
   const images = [];
   const cleanImage = (im, i, isPrimary) => {
     if (im === null || typeof im !== 'object') throw new AppError(400, 'Imagem inválida.');

@@ -411,7 +411,7 @@ router.patch('/:id', async (req, res) => {
     publishProduct(req.user.id, p, 'product.updated');
     return res.json({ product: dto(p) });
   }
-  const { images, priceOptions, ...data } = cleanProduct(body);
+  const { images, priceOptions, ...data } = cleanProduct(body, { existingImages: current.images });
   await assertBarcodesFree(req.user.id, current.storeId, [data.barcode, ...images.map((image) => image.barcode)], current.id);
   const have = new Set(current.images.map((i) => i.id));
   if (images.some((i) => i.id !== undefined && !have.has(i.id))) throw new AppError(400, 'Uma das imagens não pertence a este produto.');

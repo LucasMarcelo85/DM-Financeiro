@@ -8,10 +8,13 @@ import { centsToMasked, maskMoney, moneyToCents, plural } from '../lib/format.js
 import { generateEan13 } from '../lib/barcode.js';
 import { prepareProductImage } from '../lib/portfolio/imageTools.js';
 import { colorHexForName, colorNameForHex, normalizeProductColorName, PRODUCT_COLOR_SUGGESTIONS, PRODUCT_COLOR_VARIATION_SUGGESTIONS } from '../lib/productColors.js';
+import { buildVariationCombinations } from '../lib/product-variations.js';
+import { MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS } from '../../../shared/product-limits.js';
 
-const MAX_IMAGES = 12;
 const MAX_BATCH = 30;
 const newKey = () => `draft-${Date.now()}-${Math.random()}`;
+const hasPhoto = (image) => Boolean(image?.data || image?.url || image?.externalUrl);
+const photoCount = (draft) => Number(hasPhoto(draft.mainImage)) + draft.variations.filter(hasPhoto).length;
 
 function normalizeSuggestion(value) {
   return String(value || '').trim().normalize('NFD').replace(/[\u0300-\u036f]/g, '').toLocaleLowerCase('pt-BR');
@@ -433,6 +436,12 @@ export default function ProductWorkspace({ product, products = [], categories, p
 
   async function replaceMainPhoto(key, file) {
     if (!file) return;
+    const draft = drafts.find((item) => item.key === key);
+    if (!draft) return;
+    if (!hasPhoto(draft.mainImage) && photoCount(draft) >= MAX_PRODUCT_IMAGES) {
+      setError(`Este produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos.`);
+      return;
+    }
     setUploading(true);
     setError('');
     try {
@@ -449,6 +458,12 @@ export default function ProductWorkspace({ product, products = [], categories, p
   }
 
   function replaceMainPhotoWithUrl(key, url) {
+    const draft = drafts.find((item) => item.key === key);
+    if (!draft) return;
+    if (!hasPhoto(draft.mainImage) && photoCount(draft) >= MAX_PRODUCT_IMAGES) {
+      setError(`Este produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos.`);
+      return;
+    }
     setDrafts((current) => current.map((draft) => draft.key === key ? {
       ...draft,
       mainImage: { key: newKey(), url, externalUrl: url, stockQuantity: draft.mainImage?.stockQuantity || '0' },
@@ -457,7 +472,7 @@ export default function ProductWorkspace({ product, products = [], categories, p
 
   function addBlankVariation(key) {
     const draft = drafts.find((item) => item.key === key);
-    if (!draft || draft.variations.length >= MAX_IMAGES - 1) return;
+    if (!draft || draft.variations.length >= MAX_PRODUCT_VARIATIONS) return;
     setDrafts((current) => current.map((item) => item.key === key ? {
       ...item,
       variations: [...item.variations, { key: newKey(), url: null, label: '', stockQuantity: '0', variationType: '', variationValue: '', customVariationType: '', customVariationValue: '' }],
@@ -466,6 +481,13 @@ export default function ProductWorkspace({ product, products = [], categories, p
 
   async function replaceVariation(key, variationKey, file) {
     if (!file) return;
+    const draft = drafts.find((item) => item.key === key);
+    const variation = draft?.variations.find((image) => image.key === variationKey);
+    if (!draft || !variation) return;
+    if (!hasPhoto(variation) && photoCount(draft) >= MAX_PRODUCT_IMAGES) {
+      setError(`Este produto pode ter no máximo ${MAX_PRODUCT_IMAGES} fotos.`);
+      return;
+    }
     setUploading(true);
     setError('');
     try {
@@ -616,6 +638,10 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
   const mainPhotoPickerId = `main-photo-${draft.key}`;
   const colorListId = `variation-colors-${draft.key}`;
   const sizeListId = `variation-sizes-${draft.key}`;
+  const [combinationColors, setCombinationColors] = useState('');
+  const [combinationSizes, setCombinationSizes] = useState('');
+  const [combinationMessage, setCombinationMessage] = useState(null);
+  const currentPhotoCount = photoCount(draft);
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const setColorName = (image, name) => {
     const mappedHex = variationSuggestions?.colorHexByName?.[normalizeProductColorName(name)] || colorHexForName(name);
@@ -629,6 +655,40 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
     const colorName = colorNameForHex(hex);
     onPatchVariation(image.key, { colorHex: hex, ...(colorName ? { color: colorName } : {}) });
   };
+  function generateCombinations() {
+    try {
+      const { combinations, skipped } = buildVariationCombinations(
+        combinationColors,
+        combinationSizes,
+        draft.variations,
+        MAX_PRODUCT_VARIATIONS,
+      );
+      onPatch({
+        variations: [
+          ...draft.variations,
+          ...combinations.map(({ color, size }) => ({
+            key: newKey(),
+            url: null,
+            label: '',
+            color,
+            colorHex: colorHexForName(color) || '',
+            size,
+            stockQuantity: '0',
+            variationType: '',
+            variationValue: '',
+            customVariationType: '',
+            customVariationValue: '',
+          })),
+        ],
+      });
+      setCombinationMessage({
+        kind: 'success',
+        text: `${plural(combinations.length, 'variação adicionada', 'variações adicionadas')}${skipped ? `; ${skipped} combinação(ões) já existente(s) ignorada(s).` : '.'}`,
+      });
+    } catch (error) {
+      setCombinationMessage({ kind: 'error', text: error.message });
+    }
+  }
   return (
     <article className="pr-product-editor-card">
       <header className="pr-product-card-head">
@@ -640,7 +700,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
       <div className="pr-product-editor-layout">
         <aside className="pr-product-preview">
           <label className="pr-main-photo" htmlFor={mainPhotoPickerId} aria-label={draft.mainImage ? 'Trocar foto principal' : 'Adicionar foto principal'}>
-            <input id={mainPhotoPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
+            <input id={mainPhotoPickerId} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading || (!hasPhoto(draft.mainImage) && currentPhotoCount >= MAX_PRODUCT_IMAGES)} onChange={(event) => {
               const file = event.currentTarget.files?.[0];
               event.currentTarget.value = '';
               void onReplaceMain(file);
@@ -650,7 +710,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
           </label>
           <strong>Foto principal</strong>
           <small className="muted">Esta é a imagem de referência para os dados abaixo.</small>
-            <ProductImageUrl onAdd={onReplaceMainUrl} disabled={uploading} />
+            <ProductImageUrl onAdd={onReplaceMainUrl} disabled={uploading || (!hasPhoto(draft.mainImage) && currentPhotoCount >= MAX_PRODUCT_IMAGES)} />
             {draft.variations.some((image) => image.url) && <div className="pr-mini-gallery">{draft.variations.filter((image) => image.url).map((image) => <img key={image.key} src={image.url} alt={image.label || 'Foto de variação'} />)}</div>}
         </aside>
 
@@ -693,6 +753,19 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
             </fieldset>}
             {draft.stockEnabled && draft.variations.length === 0 && <label className="field pr-stock-input"><span>Estoque do produto (un.)</span><input className="input" type="number" inputMode="numeric" min="0" max="1000000" value={draft.stockQuantity} onChange={(event) => onPatch({ stockQuantity: event.target.value })} /><small>Sem variações, o saldo é do produto inteiro. Para estoque por tamanho ou cor, adicione variações abaixo.</small></label>}
             <button type="button" className="btn btn-ghost btn-sm pr-sort-variations" onClick={onSortVariations} disabled={draft.variations.length < 2}>A–Z <span>Organizar variações</span></button>
+            <details className="pr-variation-builder">
+              <summary>Gerar combinações de cores e tamanhos</summary>
+              <p className="muted small">Separe os valores por vírgula. Serão criadas todas as combinações; as que já existem serão ignoradas.</p>
+              <div className="pr-variation-builder-fields">
+                <label className="field"><span>Cores</span><textarea className="input" rows={2} maxLength={500} value={combinationColors} onChange={(event) => setCombinationColors(event.target.value)} placeholder="Azul-marinho, Preto, Café" /></label>
+                <label className="field"><span>Tamanhos</span><textarea className="input" rows={2} maxLength={500} value={combinationSizes} onChange={(event) => setCombinationSizes(event.target.value)} placeholder="P, M, G" /></label>
+              </div>
+              <div className="pr-variation-builder-actions">
+                <small className="muted">{draft.variations.length}/{MAX_PRODUCT_VARIATIONS} variações · {currentPhotoCount}/{MAX_PRODUCT_IMAGES} fotos</small>
+                <button type="button" className="btn btn-ghost btn-sm" onClick={generateCombinations} disabled={uploading || draft.variations.length >= MAX_PRODUCT_VARIATIONS}>Gerar variações</button>
+              </div>
+              {combinationMessage && <p className={combinationMessage.kind === 'error' ? 'form-error' : 'muted small'} role={combinationMessage.kind === 'error' ? 'alert' : 'status'}>{combinationMessage.text}</p>}
+            </details>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => {
                 return (
@@ -702,10 +775,10 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
                         <span>Imagem da variação <small>(opcional)</small></span>
                         <div className="pr-variation-photo-control">
                           {image.url && <img src={image.url} alt={`Imagem da variação ${variationIndex + 1}`} />}
-                          <label className={`btn btn-ghost btn-sm ${uploading ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
+                          <label className={`btn btn-ghost btn-sm ${uploading || (!hasPhoto(image) && currentPhotoCount >= MAX_PRODUCT_IMAGES) ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
                             <Icon name={image.url ? 'edit' : 'plus'} size={15} /> {image.url ? 'Trocar imagem' : 'Adicionar imagem'}
                           </label>
-                          <input id={`variation-image-${image.key}`} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading} onChange={(event) => {
+                          <input id={`variation-image-${image.key}`} className="pr-picker-input" type="file" accept={IMAGE_ACCEPT} disabled={uploading || (!hasPhoto(image) && currentPhotoCount >= MAX_PRODUCT_IMAGES)} onChange={(event) => {
                             const file = event.currentTarget.files?.[0];
                             event.currentTarget.value = '';
                             void onReplaceVariation(image.key, file);
@@ -746,7 +819,7 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
             </div>
             <datalist id={colorListId}>{(variationSuggestions?.colorOptions || []).map((color) => <option key={color} value={color} />)}</datalist>
             <datalist id={sizeListId}>{(variationSuggestions?.sizes || []).map((size) => <option key={size} value={size} />)}</datalist>
-            {draft.variations.length < MAX_IMAGES - 1 && <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>}
+            {draft.variations.length < MAX_PRODUCT_VARIATIONS && <button type="button" className="btn btn-ghost btn-sm" onClick={onAddBlankVariation}><Icon name="plus" size={16} /> Adicionar variação</button>}
           </section>
 
           <section className="pr-editor-section">

@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanProduct } from './catalog.js';
+import { cleanProduct, MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS } from './catalog.js';
 
 test('preserves an existing primary image when editing a product', () => {
   const product = cleanProduct({
@@ -41,4 +41,60 @@ test('still rejects a new variation with neither a photo nor a characteristic', 
     mainImage: { id: 12 },
     images: [{}],
   }), /característica para a variação/);
+});
+
+test('allows many photo-free variations while keeping a separate image limit', () => {
+  const variations = Array.from({ length: 24 }, (_, index) => ({
+    color: `Cor ${index}`,
+    size: index % 2 ? 'M' : 'G',
+  }));
+  const product = cleanProduct({
+    name: 'Camiseta',
+    category: 'Roupas',
+    priceCents: 3000,
+    mainImage: null,
+    images: variations,
+  });
+
+  assert.equal(product.images.length, variations.length);
+  assert.throws(() => cleanProduct({
+    name: 'Camiseta',
+    category: 'Roupas',
+    priceCents: 3000,
+    mainImage: null,
+    images: Array.from({ length: MAX_PRODUCT_IMAGES + 1 }, (_, index) => ({
+      url: `https://example.com/${index}.jpg`,
+      color: `Cor ${index}`,
+    })),
+  }), /imagens no produto/);
+});
+
+test('limits product variations to a safe maximum', () => {
+  assert.throws(() => cleanProduct({
+    name: 'Camiseta',
+    category: 'Roupas',
+    priceCents: 3000,
+    mainImage: null,
+    images: Array.from({ length: MAX_PRODUCT_VARIATIONS + 1 }, (_, index) => ({
+      color: `Cor ${index}`,
+    })),
+  }), /variações no produto/);
+});
+
+test('does not count existing photo-free variations against the photo limit', () => {
+  const variations = Array.from({ length: 24 }, (_, index) => ({
+    id: index + 1,
+    color: `Cor ${index}`,
+  }));
+  const product = cleanProduct({
+    name: 'Camiseta',
+    category: 'Roupas',
+    priceCents: 3000,
+    mainImage: null,
+    images: variations,
+  }, {
+    existingImages: variations.map(({ id }) => ({ id, mime: null, externalUrl: null })),
+  });
+
+  assert.equal(product.images.length, variations.length);
 });

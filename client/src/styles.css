@@ -1536,6 +1536,11 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-section-title h3 { font-size: 1rem; }
 .pr-section-title p { margin-top: .2rem; color: var(--muted); font-size: .82rem; }
 .pr-variation-list { display: grid; gap: .55rem; }
+.pr-variation-builder { display: grid; gap: .65rem; padding: .75rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #f7f9fc; }
+.pr-variation-builder > summary { cursor: pointer; font-weight: 700; color: var(--ink); }
+.pr-variation-builder-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; }
+.pr-variation-builder-fields textarea { min-height: 4rem; resize: vertical; }
+.pr-variation-builder-actions { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: .6rem; }
 .pr-variation-row { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: .65rem; min-width: 0; padding: .65rem; border: 1px solid var(--line); border-radius: var(--r-md); background: #fbfcfe; }
 .pr-variation-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .65rem; min-width: 0; }
 .pr-variation-photo { grid-column: 1 / -1; }
@@ -2597,6 +2602,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .pr-variation-row { padding: .8rem; gap: .85rem; }
   .pr-variation-fields { grid-template-columns: minmax(0, 1fr); gap: .85rem; }
   .pr-variation-fields > .field { grid-column: 1; }
+  .pr-variation-builder-fields { grid-template-columns: minmax(0, 1fr); }
   .pr-variation-color input[type='color'] { width: 3rem; height: 3rem; }
   .pr-variation-photo-control > .btn { flex: 1 1 auto; }
   .pr-remove-variation { width: 100%; justify-self: stretch; }
