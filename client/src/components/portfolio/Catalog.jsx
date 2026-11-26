@@ -142,7 +142,7 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
                 <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
-                  {i.url || p.mainImage?.url ? <img src={i.url || p.mainImage.url} alt="" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
+                  {i.url || p.mainImage?.url ? <img src={i.url || p.mainImage.url} alt="" loading="lazy" decoding="async" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
                 </button>
               ))}
             </div>
@@ -220,8 +220,9 @@ export function CatSearchView({ el, mode }) {
 export function CatGridView({ el, device, mode }) {
   const ctx = useContext(CatCtx);
   const [open, setOpen] = useState(null);
-  if (!ctx) return null;
-  const { catalog: cfg, theme, products, shop, q, cat } = ctx;
+  const [visibleCount, setVisibleCount] = useState(24);
+  const loadMoreRef = useRef(null);
+  const { catalog: cfg = {}, theme, products = [], shop, q = '', cat = '' } = ctx || {};
   const edit = mode === 'edit';
   const m = catgridMetrics(el, device, products, cfg);
   const only = cfg.display === 'only' && cfg.onlyCategory ? cfg.onlyCategory : '';
@@ -231,6 +232,29 @@ export function CatGridView({ el, device, mode }) {
   const groups = cfg.display !== 'category'
     ? [{ title: '', list: [...shown].sort((a, b) => sortBR(a.name, b.name)) }]
     : [...shown.reduce((map, p) => map.set(p.category, [...(map.get(p.category) || []), p]), new Map()).entries()].sort((a, b) => sortBR(a[0], b[0])).map(([title, list]) => ({ title, list }));
+  const selectedKey = selected ? [...selected].sort((a, b) => a - b).join(',') : '';
+  useEffect(() => {
+    setVisibleCount(24);
+  }, [products, q, cat, cfg.display, only, selectedKey]);
+  const shownCount = edit ? shown.length : Math.min(visibleCount, shown.length);
+  let remaining = shownCount;
+  const visibleGroups = groups.map((group) => {
+    const list = group.list.slice(0, remaining);
+    remaining -= list.length;
+    return { ...group, list };
+  }).filter((group) => group.list.length);
+  useEffect(() => {
+    const button = loadMoreRef.current;
+    if (edit || shownCount >= shown.length || !button || typeof IntersectionObserver === 'undefined') return undefined;
+    const observer = new IntersectionObserver((entries) => {
+      if (entries.some((entry) => entry.isIntersecting)) {
+        setVisibleCount((count) => Math.min(shown.length, count + 24));
+      }
+    }, { rootMargin: '700px 0px' });
+    observer.observe(button);
+    return () => observer.disconnect();
+  }, [edit, shown.length, shownCount]);
+  if (!ctx) return null;
   const pixelOn = Boolean(shop?.pixelOn);
   const add = (p, img, qty) => {
     shop?.cart?.add(p.id, img?.id || null, null, qty);
@@ -243,7 +267,7 @@ export function CatGridView({ el, device, mode }) {
   const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
   return (
     <div className="cg-groups" style={{ gap: m.groupGap, pointerEvents: edit ? 'none' : undefined }}>
-      {!shown.length ? <p className="cat-empty">{products.length ? 'Nenhum produto encontrado.' : edit ? 'Cadastre produtos na aba Produtos/Serviços para vê-los aqui.' : 'Em breve novidades por aqui.'}</p> : groups.map((g) => (
+      {!shown.length ? <p className="cat-empty">{products.length ? 'Nenhum produto encontrado.' : edit ? 'Cadastre produtos na aba Produtos/Serviços para vê-los aqui.' : 'Em breve novidades por aqui.'}</p> : visibleGroups.map((g) => (
         <div key={g.title || 'all'}>
           {g.title && <h2 className="cg-title" style={{ height: m.titleH, lineHeight: `${m.titleH}px` }}>{g.title}</h2>}
           <div className="cg-grid" style={{ gridTemplateColumns: `repeat(${m.cols}, minmax(0, 1fr))`, gridAutoRows: m.cardH, gap: m.gap }}>
@@ -260,6 +284,10 @@ export function CatGridView({ el, device, mode }) {
           </div>
         </div>
       ))}
+      {!edit && shownCount < shown.length && <div className="cg-load-more">
+        <small>Exibindo {shownCount} de {shown.length} produtos</small>
+        <button ref={loadMoreRef} type="button" className="cat-btn" onClick={() => setVisibleCount((count) => Math.min(shown.length, count + 24))}>Carregar mais produtos</button>
+      </div>}
       {open && !edit && <ProductModal
         p={open}
         addLabel={cfg.addLabel}

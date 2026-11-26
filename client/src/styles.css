@@ -1237,6 +1237,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 @media (min-width: 1025px) { .cat-grid { grid-template-columns: repeat(var(--cd, 4), minmax(0, 1fr)); } }
 .cg-tools { display: grid; gap: 0.7rem; overflow: hidden; color: var(--tx); font-family: var(--bf); }
 .cg-groups { display: flex; flex-direction: column; color: var(--tx); font-family: var(--bf); }
+.cg-load-more { display: grid; justify-items: center; gap: .5rem; padding: .75rem; }
+.cg-load-more small { color: var(--muted); }
 .cg-title { font-family: var(--hf); margin: 0; font-size: 1.4rem; overflow: hidden; }
 .cg-grid { display: grid; }
 .cg-grid .cat-card { height: 100%; min-height: 0; overflow: hidden; }
