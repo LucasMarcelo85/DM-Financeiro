@@ -571,7 +571,7 @@ function cleanDocV2(raw, kindHint) {
           bg: optColor(k.bg), text: optColor(k.text), accent: optColor(k.accent),
           showImage: bool(k.showImage, true), showCategory: bool(k.showCategory, true), showName: bool(k.showName, true),
           showDescription: bool(k.showDescription, false), showPrice: bool(k.showPrice, true), showTiers: bool(k.showTiers, false),
-          showVariations: bool(k.showVariations, true), showButton: bool(k.showButton, true),
+          showVariations: bool(k.showVariations, true), showColorSwatches: bool(k.showColorSwatches, false), showButton: bool(k.showButton, true),
           shadow: pick(k.shadow, new Set(['none', 'soft', 'strong']), 'soft'),
           border: bool(k.border, false),
           padding: pick(k.padding, new Set(['compact', 'normal', 'roomy']), 'normal'),
