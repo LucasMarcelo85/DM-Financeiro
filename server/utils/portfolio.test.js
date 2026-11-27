@@ -2,13 +2,14 @@ import assert from 'node:assert/strict';
 import test from 'node:test';
 import { cleanPortfolioDoc } from './portfolio.js';
 
-test('preserves the catalog card color-swatch setting when saving the page', () => {
+test('preserves catalog card color-swatch and price-option settings when saving the page', () => {
   const doc = cleanPortfolioDoc({
     v: 2,
     kind: 'catalog',
-    catalog: { card: { showColorSwatches: true } },
+    catalog: { card: { showColorSwatches: true, showTiers: true } },
     elements: [],
   }, 'catalog');
 
   assert.equal(doc.catalog.card.showColorSwatches, true);
+  assert.equal(doc.catalog.card.showTiers, true);
 });

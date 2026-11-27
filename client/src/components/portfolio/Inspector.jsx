@@ -678,7 +678,6 @@ function CardDesigner({ doc, api }) {
       <Check label="Nome" checked={k.showName} onChange={set('showName')} />
       <Check label="Descrição" checked={k.showDescription} onChange={set('showDescription')} />
       <Check label="Preço" checked={k.showPrice} onChange={set('showPrice')} />
-      <Check label="Preços por quantidade" checked={k.showTiers} onChange={set('showTiers')} />
       <Check label="Variações" checked={k.showVariations} onChange={set('showVariations')} />
       <Check label="Bolinhas das cores" checked={k.showColorSwatches} onChange={set('showColorSwatches')} />
       <Check label="Botão" checked={k.showButton} onChange={set('showButton')} />

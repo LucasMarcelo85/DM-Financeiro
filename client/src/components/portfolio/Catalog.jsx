@@ -287,7 +287,7 @@ export function CatGridView({ el, device, mode }) {
               <div key={p.id} className="cat-card" onClick={(event) => {
                 if (!edit && !event.target.closest('button')) view(p);
               }}>
-                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} zoomImage={!edit} onColorSelect={!edit ? (variationId) => view(p, variationId) : undefined}
+                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} zoomImage={!edit} showAllPriceOptions onColorSelect={!edit ? (variationId) => view(p, variationId) : undefined}
                   action={edit
                     ? <span className="pv-card-btn">{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</span>
                     : <button type="button" className="pv-card-btn" onClick={() => view(p)}>{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</button>} />

@@ -29,6 +29,22 @@ test('shares the first exact-color variation image without replacing an explicit
   assert.equal(product.images[3].url, null);
 });
 
+test('includes configured positive price options in the public product', () => {
+  const product = publicProduct({
+    id: 2,
+    images: [],
+    priceOptions: [
+      { id: 21, position: 0, label: 'Atacado', priceCents: 2500, minQuantity: 3, scope: 'same_product', minCartCents: 0 },
+      { id: 22, position: 1, label: 'Sem preço', priceCents: 0, minQuantity: 1, scope: 'same_product', minCartCents: 0 },
+    ],
+  });
+
+  assert.deepEqual(product.priceOptions.map(({ label, priceCents }) => [label, priceCents]), [
+    ['Atacado', 2500],
+    ['Sem preço', 0],
+  ]);
+});
+
 test('preserves an existing primary image when editing a product', () => {
   const product = cleanProduct({
     name: 'Camiseta',
