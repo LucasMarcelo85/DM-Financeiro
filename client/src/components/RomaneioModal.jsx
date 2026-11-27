@@ -68,7 +68,7 @@ export default function RomaneioModal({ products, onClose, allowProducts = true 
 
   useEffect(() => {
     let alive = true;
-    api.get('/catalog/orders?days=90').then((r) => { if (alive) { setOrders(r.orders || []); setOrderId(String(r.orders?.[0]?.id || '')); } }).catch((e) => { if (alive) { setOrders([]); toast(e.message, 'error'); } });
+    api.get('/catalog/orders?days=90&includeProductImages=true').then((r) => { if (alive) { setOrders(r.orders || []); setOrderId(String(r.orders?.[0]?.id || '')); } }).catch((e) => { if (alive) { setOrders([]); toast(e.message, 'error'); } });
     if (allowProducts) api.get('/products').then((r) => alive && setAllProducts(r.products || [])).catch((e) => { if (alive) toast(e.message, 'error'); });
     api.get('/catalog/pos/settings').then((r) => alive && setStore(r.receipt?.storeName || '')).catch(() => {});
     return () => { alive = false; };

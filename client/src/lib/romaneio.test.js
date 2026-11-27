@@ -17,3 +17,9 @@ test('builds the public image URL when an order has an image ID but no matching 
 
   assert.equal(row.photo, '/api/public/product-image/7');
 });
+
+test('uses the resolved order image when the product list is unavailable', () => {
+  const [row] = rowsFromOrder({ items: [{ productId: '5', imageId: '7', photoUrl: 'https://cdn.example.com/variation.jpg' }] }, new Map());
+
+  assert.equal(row.photo, 'https://cdn.example.com/variation.jpg');
+});

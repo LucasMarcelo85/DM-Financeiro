@@ -2,7 +2,7 @@
 import crypto from 'node:crypto';
 import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
-import { cleanCatalogConfig, defaultCatalogConfig } from '../utils/catalog.js';
+import { cleanCatalogConfig, defaultCatalogConfig, publicProduct } from '../utils/catalog.js';
 import { cleanPortfolioDoc } from '../utils/portfolio.js';
 import { config } from '../config.js';
 import { decrypt } from '../utils/secret.js';
@@ -462,7 +462,36 @@ router.get('/orders', async (req, res) => {
     prisma.order.aggregate({ where: { ...statsWhere, paymentStatus: 'paid' }, _sum: { totalCents: true }, _avg: { totalCents: true }, _count: { _all: true } }),
     prisma.orderCustomerProfile.count({ where: { userId: req.user.id, scopeKey: customerScopeKey(storeId) } }),
   ]);
-  res.json({ orders: rows.map(orderDTO), total, fresh, archived: archivedCount, customerCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays, archivedRetentionDays: config.archivedOrderRetentionDays });
+  let orders = rows.map(orderDTO);
+  if (req.query.includeProductImages === 'true') {
+    const productIds = [...new Set(rows.flatMap((order) => (order.items || []).map((item) => Number(item.productId)).filter((id) => Number.isSafeInteger(id) && id > 0)))];
+    if (productIds.length) {
+      const products = await prisma.product.findMany({
+        where: { id: { in: productIds }, userId: req.user.id, storeId },
+        select: {
+          id: true,
+          images: {
+            select: { id: true, position: true, isPrimary: true, label: true, size: true, color: true, colorHex: true, barcode: true, priceCents: true, stockQuantity: true, mime: true, externalUrl: true },
+            orderBy: { position: 'asc' },
+          },
+        },
+      });
+      const productsById = new Map(products.map((product) => [String(product.id), publicProduct(product)]));
+      orders = orders.map((order) => ({
+        ...order,
+        items: (order.items || []).map((item) => {
+          const product = productsById.get(String(item.productId));
+          if (!product) return item;
+          const imageId = Number(item.imageId);
+          const image = product.images.find((candidate) => Number(candidate.id) === imageId)
+            || (Number(product.mainImage?.id) === imageId ? product.mainImage : null);
+          const main = product.mainImage || product.images.find((candidate) => candidate.url);
+          return { ...item, photoUrl: image?.url || main?.url || '' };
+        }),
+      }));
+    }
+  }
+  res.json({ orders, total, fresh, archived: archivedCount, customerCount, stats: { totalCents: stats._sum.totalCents || 0, averageCents: Math.round(stats._avg.totalCents || 0), count: stats._count._all }, retentionDays: config.orderRetentionDays, archivedRetentionDays: config.archivedOrderRetentionDays });
 });
 
 router.get('/orders/export', async (req, res) => {

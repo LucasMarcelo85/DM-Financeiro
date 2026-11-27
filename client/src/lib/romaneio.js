@@ -53,7 +53,7 @@ export function rowsFromOrder(order, productMap) {
       || (Number(product?.mainImage?.id) === imageId ? product.mainImage : null);
     const main = product?.mainImage || product?.images?.find((image) => image.url);
     return {
-      photo: image?.url || main?.url || (Number.isSafeInteger(imageId) && imageId > 0 ? `/api/public/product-image/${imageId}` : ''),
+      photo: item.photoUrl || image?.url || main?.url || (Number.isSafeInteger(imageId) && imageId > 0 ? `/api/public/product-image/${imageId}` : ''),
       code: image?.barcode || product?.barcode || '',
       name: item.name || product?.name || '',
       variation: item.variation || '',
