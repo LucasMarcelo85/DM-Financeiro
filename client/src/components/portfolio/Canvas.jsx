@@ -389,7 +389,7 @@ function VideoView({ el, mode }) {
   );
 }
 
-export function ProductCard({ p, cardStyle = 'soft', price = true, action, card, zoomImage = false }) {
+export function ProductCard({ p, cardStyle = 'soft', price = true, action, card, zoomImage = false, onColorSelect }) {
   const lightbox = useImageLightbox();
   const k = card || { layout: 'vertical', ratio: 'square', fit: 'cover', align: 'left', radius: 14, showImage: true, showCategory: true, showName: true, showDescription: false, showPrice: true, showTiers: false, showVariations: true, showButton: true };
   const img = p.mainImage || p.images.find((image) => image.url) || null;
@@ -397,21 +397,25 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card,
     .filter((image) => image.color || image.colorHex)
     .map((image) => {
       const hex = image.colorHex || colorHexForName(image.color) || '#cccccc';
-      const key = image.colorHex || colorHexForName(image.color) || image.color.trim().toLocaleLowerCase('pt-BR');
-      return [key, { hex, label: image.color || 'Cor da variação' }];
+      const label = image.color?.trim() || 'Cor da variação';
+      const key = label === 'Cor da variação' ? hex : label.toLocaleLowerCase('pt-BR');
+      return [key, { hex, label, variationId: image.id }];
     })).values()];
-  const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents !== null);
+  const tiers = [...(p.priceOptions || [])].filter((option) => option.priceCents === null || option.priceCents > 0);
   const tierThreshold = (option) => option.scope === 'cart_value'
     ? `a partir de ${brl(option.minCartCents || 0)} no carrinho`
     : `a partir de ${option.minQuantity || 1} ${option.scope === 'cart_quantity' ? 'peças no carrinho' : 'un.'}`;
-  const imagePrice = (p.images || []).filter((image) => image.priceCents !== null).sort((a, b) => a.priceCents - b.priceCents)[0];
-  const displayedPrice = p.priceCents > 0
-    ? { cents: p.priceCents, label: '' }
-    : imagePrice
-      ? { cents: imagePrice.priceCents, label: k.priceFrom === false ? '' : 'a partir de ' }
-      : tiers.length
-        ? { cents: Math.min(...tiers.map((option) => option.priceCents)), label: k.priceFrom === false ? '' : 'a partir de ' }
-        : null;
+  const imagePrice = (p.images || []).filter((image) => image.priceCents > 0).sort((a, b) => a.priceCents - b.priceCents)[0];
+  const positivePrices = [
+    ...(p.priceCents > 0 ? [p.priceCents] : []),
+    ...(imagePrice ? [imagePrice.priceCents] : []),
+    ...tiers.filter((option) => option.priceCents > 0).map((option) => option.priceCents),
+  ];
+  const lowestPrice = positivePrices.length ? Math.min(...positivePrices) : null;
+  const displayedPrice = lowestPrice === null ? null : {
+    cents: lowestPrice,
+    label: lowestPrice !== p.priceCents && k.priceFrom !== false ? 'a partir de ' : '',
+  };
   const style = {
     '--card-r': `${k.radius}px`,
     ...(k.bg ? { background: k.bg } : {}), ...(k.text ? { color: k.text } : {}), ...(k.accent ? { '--p': k.accent } : {}),
@@ -445,12 +449,14 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card,
       <div className="pv-card-body">
         {k.showCategory && <span className="pv-card-cat">{p.category}</span>}
         {k.showName && <span className="pv-card-name">{iconAt('name')}{p.name}</span>}
-        {k.showColorSwatches && colorSwatches.length > 0 && <span className="pv-card-colors" aria-label="Cores disponíveis">
-          {colorSwatches.map((color) => <i key={color.hex + color.label} title={color.label} aria-label={color.label} style={{ backgroundColor: color.hex }} />)}
+        {k.showColorSwatches && colorSwatches.length > 0 && <span className="pv-card-colors" role={onColorSelect ? 'group' : undefined} aria-label={onColorSelect ? 'Escolher cor' : 'Cores disponíveis'}>
+          {colorSwatches.map((color) => onColorSelect
+            ? <button key={color.label + color.hex} type="button" title={`Ver ${color.label}`} aria-label={`Ver variações na cor ${color.label}`} onClick={(event) => { event.stopPropagation(); onColorSelect(color.variationId); }} style={{ backgroundColor: color.hex }} />
+            : <i key={color.label + color.hex} title={color.label} aria-label={color.label} style={{ backgroundColor: color.hex }} />)}
         </span>}
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
-        {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} {tierThreshold(t)}</small>)}</span>}
+        {k.showTiers && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {t.priceCents === null ? 'Sob consulta' : brl(t.priceCents)} {tierThreshold(t)}</small>)}</span>}
         {k.showVariations && p.images.length > 0 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
         {k.showButton && actionNode}
       </div>
@@ -461,8 +467,8 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card,
 export const minPrice = (p) => {
   const values = [
     ...(p.priceCents > 0 ? [p.priceCents] : []),
-    ...(p.images || []).filter((i) => i.priceCents !== null).map((i) => i.priceCents),
-    ...(p.priceOptions || []).filter((option) => option.priceCents !== null).map((option) => option.priceCents),
+    ...(p.images || []).filter((i) => i.priceCents > 0).map((i) => i.priceCents),
+    ...(p.priceOptions || []).filter((option) => option.priceCents > 0).map((option) => option.priceCents),
   ];
   return values.length ? Math.min(...values) : 0;
 };

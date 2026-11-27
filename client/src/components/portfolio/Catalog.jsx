@@ -8,7 +8,7 @@ import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
-import { selectPriceOption, upcomingPriceTiers } from '../../../../shared/price-tiers.js';
+import { selectDiscountPriceOption, upcomingPriceTiers } from '../../../../shared/price-tiers.js';
 
 
 // ---------------------------------------------------------------- carrinho (guardado no aparelho do cliente)
@@ -47,8 +47,8 @@ const tierReached = (option, productQty, cartQty, cartCents) => option.scope ===
   : option.scope === 'cart_value'
     ? (option.minCartCents || 0) <= cartCents
     : (option.minQuantity || 1) <= productQty;
-export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0) =>
-  selectPriceOption(options, (option) => tierReached(option, productQty, cartQty, cartCents));
+export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0, basePriceCents = 0) =>
+  selectDiscountPriceOption(options, (option) => tierReached(option, productQty, cartQty, cartCents), basePriceCents);
 // Junta o carrinho com os dados atuais dos produtos (preço e imagem sempre vêm do cadastro).
 export function priced(items, products) {
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -67,13 +67,14 @@ export function priced(items, products) {
     const img = p.images.find((i) => i.id === it.imageId) || null;
     const legacyMainImage = Boolean(it.imageId && p.mainImage?.id === it.imageId);
     const staleSelection = Boolean((it.imageId && !img && !legacyMainImage) || (p.images.length > 0 && !img));
-    const priceOption = pickTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
-    const upcoming = upcomingPriceTiers(p.priceOptions, {
+    const baseUnit = img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    const priceOption = pickTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents, baseUnit);
+    const upcoming = baseUnit > 0 ? upcomingPriceTiers(p.priceOptions, {
       productQuantity: qtyByProduct.get(p.id) || it.qty,
       cartQuantity: cartQty,
       cartSubtotalCents: cartBaseCents,
-    });
-    const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    }) : [];
+    const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : baseUnit;
     const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
     const reservedInCart = items.filter((item) => item.productId === p.id && (item.imageId === (img?.id || null) || (!img && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
     const stockAvailable = p.stockEnabled ? Math.max(0, stockQuantity - reservedInCart) : 99;
@@ -91,8 +92,10 @@ const Qty = ({ value, onChange, label, max = 99 }) => (
 );
 
 // ---------------------------------------------------------------- início: busca, categorias e produtos
-function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder }) {
-  const [idx, setIdx] = useState(0);
+function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = [], theme, directOrder = false, storeWhatsapp = '', onDirectOrder, initialVariationId }) {
+  const initialIndex = p.images.findIndex((image) => image.id === initialVariationId);
+  const [idx, setIdx] = useState(initialIndex >= 0 ? initialIndex : 0);
+  useEffect(() => { setIdx(initialIndex >= 0 ? initialIndex : 0); }, [p.id, initialVariationId]);
   const [qty, setQty] = useState(1);
   const selectedVariation = idx >= 0 ? p.images[idx] : null;
   const img = selectedVariation?.url ? selectedVariation : p.mainImage || p.images.find((image) => image.url) || selectedVariation || null;
@@ -104,13 +107,21 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
     const image = product?.images.find((row) => row.id === item.imageId);
     return sum + (product ? item.qty * (image?.priceCents ?? product.priceCents) : 0);
   }, 0) + qty * (img?.priceCents ?? p.priceCents);
-  const priceOption = pickTier(p.priceOptions, productQty, cartQty, cartBaseCents);
-  const unit = priceOption ? priceOption.priceCents : selectedVariation && selectedVariation.priceCents !== null ? selectedVariation.priceCents : p.priceCents;
+  const baseUnit = selectedVariation && selectedVariation.priceCents !== null ? selectedVariation.priceCents : p.priceCents;
+  const priceOption = pickTier(p.priceOptions, productQty, cartQty, cartBaseCents, baseUnit);
+  const unit = priceOption ? priceOption.priceCents : baseUnit;
   const stockQuantity = selectedVariation ? selectedVariation.stockQuantity : p.images.length ? 99 : p.stockQuantity;
   const inCart = cartItems.filter((item) => item.productId === p.id && (item.imageId === (selectedVariation?.id || null) || (!selectedVariation && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
   const maxQty = p.stockEnabled ? Math.max(0, stockQuantity - inCart) : 99;
   const phone = String(storeWhatsapp || '').replace(/\D/g, '');
   const whatsapp = phone.length === 10 || phone.length === 11 ? `55${phone}` : phone;
+  const variationLabel = (image) => {
+    const attributes = [image.color?.trim(), image.size?.trim()].filter(Boolean);
+    const otherAttributes = (image.label || '').split(' · ')
+      .map((part) => part.trim().replace(/^(?:Cor|Tamanho):\s*/i, ''))
+      .filter((part) => part && !attributes.includes(part));
+    return [...attributes, ...otherAttributes].join(' · ') || 'Variação';
+  };
   const directMessage = [
     `Olá! Tenho interesse em: ${p.name}`,
     selectedVariation?.label ? `Variação: ${selectedVariation.label}` : '',
@@ -142,14 +153,14 @@ function ProductModal({ p, addLabel, onAdd, onClose, cartItems = [], products = 
             <div className="cat-vars" role="radiogroup" aria-label="Variação">
               {p.images.map((i, n) => (
                 <button key={i.id} type="button" role="radio" aria-checked={n === idx} className={`cat-var${n === idx ? ' is-on' : ''}`} onClick={() => setIdx(n)}>
-                  {i.url || p.mainImage?.url ? <img src={i.url || p.mainImage.url} alt="" loading="lazy" decoding="async" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{i.label}</span>
+                  {i.url || p.mainImage?.url ? <img src={i.url || p.mainImage.url} alt="" loading="lazy" decoding="async" /> : <span className="cat-var-no-image" aria-hidden="true">—</span>}<span>{variationLabel(i)}</span>
                 </button>
               ))}
             </div>
           )}
-          {p.priceOptions.length > 0 && <div className="cat-price-options" aria-label="Valores por quantidade">
+          {p.priceOptions.some((option) => option.priceCents !== 0) && <div className="cat-price-options" aria-label="Valores por quantidade">
             <strong>Descontos por quantidade</strong>
-            {p.priceOptions.map((option) => <span key={option.id}>{option.label} {option.scope === 'cart_value' ? `a partir de ${brl(option.minCartCents || 0)} no carrinho` : `a partir de ${option.minQuantity || 1} ${option.scope === 'cart_quantity' ? 'peças no carrinho' : 'peças deste produto'}`} — {option.priceCents === null ? 'Sob consulta' : `${brl(option.priceCents)} cada`}</span>)}
+            {p.priceOptions.filter((option) => option.priceCents !== 0).map((option) => <span key={option.id}>{option.label} {option.scope === 'cart_value' ? `a partir de ${brl(option.minCartCents || 0)} no carrinho` : `a partir de ${option.minQuantity || 1} ${option.scope === 'cart_quantity' ? 'peças no carrinho' : 'peças deste produto'}`} — {option.priceCents === null ? 'Sob consulta' : `${brl(option.priceCents)} cada`}</span>)}
             <small>As faixas por valor consideram o subtotal dos itens antes da aplicação dessa faixa.</small>
           </div>}
           {p.description && <p className="cat-desc">{p.description}</p>}
@@ -258,13 +269,14 @@ export function CatGridView({ el, device, mode }) {
   const pixelOn = Boolean(shop?.pixelOn);
   const add = (p, img, qty) => {
     shop?.cart?.add(p.id, img?.id || null, null, qty);
-    const tier = pickTier(p.priceOptions, qty);
-    const unit = tier ? tier.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    const baseUnit = img && img.priceCents !== null ? img.priceCents : p.priceCents;
+    const tier = pickTier(p.priceOptions, qty, qty, 0, baseUnit);
+    const unit = tier ? tier.priceCents : baseUnit;
     if (pixelOn) track('AddToCart', { value: (unit * qty) / 100, name: p.name, id: p.id });
   };
   const directOrder = cfg.orderMode === 'direct';
   const trackDirectOrder = () => { if (pixelOn) track('Contact'); };
-  const view = (p) => { setOpen(p); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
+  const view = (p, variationId) => { setOpen({ product: p, variationId }); if (pixelOn) track('ViewContent', { value: minPrice(p) / 100, name: p.name, id: p.id }); };
   return (
     <div className="cg-groups" style={{ gap: m.groupGap, pointerEvents: edit ? 'none' : undefined }}>
       {!shown.length ? <p className="cat-empty">{products.length ? 'Nenhum produto encontrado.' : edit ? 'Cadastre produtos na aba Produtos/Serviços para vê-los aqui.' : 'Em breve novidades por aqui.'}</p> : visibleGroups.map((g) => (
@@ -275,7 +287,7 @@ export function CatGridView({ el, device, mode }) {
               <div key={p.id} className="cat-card" onClick={(event) => {
                 if (!edit && !event.target.closest('button')) view(p);
               }}>
-                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} zoomImage={!edit}
+                <ProductCard p={p} cardStyle={cfg.cardStyle} card={cfg.card} zoomImage={!edit} onColorSelect={!edit ? (variationId) => view(p, variationId) : undefined}
                   action={edit
                     ? <span className="pv-card-btn">{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</span>
                     : <button type="button" className="pv-card-btn" onClick={() => view(p)}>{directOrder ? 'Pedir pelo WhatsApp' : cfg.addLabel}</button>} />
@@ -289,7 +301,8 @@ export function CatGridView({ el, device, mode }) {
         <button ref={loadMoreRef} type="button" className="cat-btn" onClick={() => setVisibleCount((count) => Math.min(shown.length, count + 24))}>Carregar mais produtos</button>
       </div>}
       {open && !edit && <ProductModal
-        p={open}
+        p={open.product}
+        initialVariationId={open.variationId}
         addLabel={cfg.addLabel}
         onAdd={add}
         onClose={() => setOpen(null)}

@@ -232,6 +232,8 @@
 .pv-card-price { font-weight: 800; color: var(--p, #137a52); }
 .pv-card-colors { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
 .pv-card-colors i { width: .9rem; height: .9rem; border: 1px solid rgba(0, 0, 0, .24); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .35); }
+.pv-card-colors button { width: 1.15rem; height: 1.15rem; padding: 0; border: 1px solid rgba(0, 0, 0, .35); border-radius: 50%; box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .55); cursor: pointer; }
+.pv-card-colors button:hover, .pv-card-colors button:focus-visible { outline: 2px solid var(--p, #137a52); outline-offset: 2px; }
 .pv-card { border-radius: var(--card-r, 14px); }
 .pv-card.al-center { text-align: center; } .pv-card.al-center .pv-card-body { justify-items: center; }
 .pv-card.ratio-portrait .pv-card-img { aspect-ratio: 3 / 4; } .pv-card.ratio-landscape .pv-card-img { aspect-ratio: 4 / 3; }

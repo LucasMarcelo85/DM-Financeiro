@@ -1,6 +1,6 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { selectPriceOption, upcomingPriceTiers } from './price-tiers.js';
+import { selectDiscountPriceOption, selectPriceOption, upcomingPriceTiers } from './price-tiers.js';
 
 test('keeps the base price available below a wholesale quantity threshold', () => {
   const wholesale = { scope: 'same_product', minQuantity: 8, priceCents: 2000 };
@@ -35,6 +35,7 @@ test('returns every future product and cart tier with the remaining amount', () 
     { id: 4, scope: 'same_product', minQuantity: 5, priceCents: 600 },
     { id: 5, scope: 'cart_value', minCartCents: 2000, priceCents: 500 },
     { id: 6, scope: 'same_product', minQuantity: 2, priceCents: null },
+    { id: 7, scope: 'same_product', minQuantity: 2, priceCents: 0 },
   ], { productQuantity: 1, cartQuantity: 2, cartSubtotalCents: 2500 });
 
   assert.deepEqual(tiers.map(({ id, remaining }) => [id, remaining]), [
@@ -43,4 +44,15 @@ test('returns every future product and cart tier with the remaining amount', () 
     [3, 2500],
     [4, 4],
   ]);
+});
+
+test('does not apply a discount to a zero-priced product or a zero-priced tier', () => {
+  const tiers = [
+    { scope: 'same_product', minQuantity: 2, priceCents: 0 },
+    { scope: 'same_product', minQuantity: 2, priceCents: 900 },
+  ];
+  const eligible = () => true;
+
+  assert.equal(selectDiscountPriceOption(tiers, eligible, 0), null);
+  assert.equal(selectDiscountPriceOption(tiers, eligible, 1500)?.priceCents, 900);
 });
