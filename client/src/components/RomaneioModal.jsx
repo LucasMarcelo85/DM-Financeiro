@@ -56,7 +56,7 @@ function RomaneioDoc({ config, rows, header, store }) {
   );
 }
 
-export default function RomaneioModal({ products, onClose }) {
+export default function RomaneioModal({ products, onClose, allowProducts = true }) {
   const toast = useToast();
   const [config, setConfig] = useState(loadRomaneio);
   const [mode, setMode] = useState('order');
@@ -69,10 +69,10 @@ export default function RomaneioModal({ products, onClose }) {
   useEffect(() => {
     let alive = true;
     api.get('/catalog/orders?days=90').then((r) => { if (alive) { setOrders(r.orders || []); setOrderId(String(r.orders?.[0]?.id || '')); } }).catch((e) => { if (alive) { setOrders([]); toast(e.message, 'error'); } });
-    api.get('/products').then((r) => alive && setAllProducts(r.products || [])).catch((e) => { if (alive) toast(e.message, 'error'); });
+    if (allowProducts) api.get('/products').then((r) => alive && setAllProducts(r.products || [])).catch((e) => { if (alive) toast(e.message, 'error'); });
     api.get('/catalog/pos/settings').then((r) => alive && setStore(r.receipt?.storeName || '')).catch(() => {});
     return () => { alive = false; };
-  }, [toast]);
+  }, [allowProducts, toast]);
 
   const patch = (p) => setConfig((c) => { const next = { ...c, ...p }; saveRomaneio(next); return next; });
   const patchItem = (list, key, p) => patch({ [list]: config[list].map((item) => (item.key === key ? { ...item, ...p } : item)) });
@@ -112,10 +112,10 @@ export default function RomaneioModal({ products, onClose }) {
       footer={<><button className="btn btn-ghost" onClick={() => { const d = defaultRomaneio(); saveRomaneio(d); setConfig(d); }}>Restaurar modelo</button><button className="btn btn-ghost" onClick={onClose}>Fechar</button><button className="btn btn-primary" onClick={() => (rows.length ? setPrinting(true) : toast('Nada para imprimir.', 'error'))}><Icon name="printer" size={16} /> Imprimir</button></>}>
       <div className="rom-layout">
         <section className="rom-config">
-          <div className="lbl-presets">
+          {allowProducts && <div className="lbl-presets">
             <button type="button" className={`btn btn-sm ${mode === 'order' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setMode('order')}>De um pedido</button>
             <button type="button" className={`btn btn-sm ${mode === 'products' ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setMode('products')}>Lista de produtos</button>
-          </div>
+          </div>}
           {mode === 'order' && <label className="field"><span>Pedido (últimos 90 dias)</span>
             <select className="input" value={orderId} onChange={(e) => setOrderId(e.target.value)} disabled={!orders?.length}>
               {!orders?.length && <option value="">{orders ? 'Nenhum pedido' : 'Carregando...'}</option>}

@@ -8,7 +8,7 @@ import { catgridMetrics } from '../../lib/portfolio/doc.js';
 import { themeVars } from '../../lib/portfolio/model.js';
 import { brl, maskPhone } from '../../lib/format.js';
 import { track } from '../../lib/portfolio/pixel.js';
-import { selectPriceOption } from '../../../../shared/price-tiers.js';
+import { selectPriceOption, upcomingPriceTiers } from '../../../../shared/price-tiers.js';
 
 
 // ---------------------------------------------------------------- carrinho (guardado no aparelho do cliente)
@@ -49,10 +49,6 @@ const tierReached = (option, productQty, cartQty, cartCents) => option.scope ===
     : (option.minQuantity || 1) <= productQty;
 export const pickTier = (options, productQty, cartQty = productQty, cartCents = 0) =>
   selectPriceOption(options, (option) => tierReached(option, productQty, cartQty, cartCents));
-export const nextTier = (options, productQty, cartQty = productQty, cartCents = 0) => [...(options || [])]
-  .filter((option) => option.priceCents !== null && !tierReached(option, productQty, cartQty, cartCents))
-  .sort((a, b) => (a.scope === 'cart_value' ? a.minCartCents : a.minQuantity) - (b.scope === 'cart_value' ? b.minCartCents : b.minQuantity))[0] || null;
-
 // Junta o carrinho com os dados atuais dos produtos (preço e imagem sempre vêm do cadastro).
 export function priced(items, products) {
   const byId = new Map(products.map((p) => [p.id, p]));
@@ -72,7 +68,11 @@ export function priced(items, products) {
     const legacyMainImage = Boolean(it.imageId && p.mainImage?.id === it.imageId);
     const staleSelection = Boolean((it.imageId && !img && !legacyMainImage) || (p.images.length > 0 && !img));
     const priceOption = pickTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
-    const upcoming = nextTier(p.priceOptions, qtyByProduct.get(p.id) || it.qty, cartQty, cartBaseCents);
+    const upcoming = upcomingPriceTiers(p.priceOptions, {
+      productQuantity: qtyByProduct.get(p.id) || it.qty,
+      cartQuantity: cartQty,
+      cartSubtotalCents: cartBaseCents,
+    });
     const unit = staleSelection ? 0 : priceOption ? priceOption.priceCents : img && img.priceCents !== null ? img.priceCents : p.priceCents;
     const stockQuantity = img ? img.stockQuantity : p.stockQuantity;
     const reservedInCart = items.filter((item) => item.productId === p.id && (item.imageId === (img?.id || null) || (!img && item.imageId === p.mainImage?.id))).reduce((sum, item) => sum + item.qty, 0);
@@ -328,6 +328,7 @@ const loadCustomer = (slug) => {
 export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) {
   const cfg = doc.catalog;
   const { lines, subtotal } = priced(cart.items, products);
+  const excursionShipping = Number(store.excursion?.fixedCents) > 0 ? Number(store.excursion.fixedCents) : null;
   const enabled = TYPES.filter(([key]) => (key === 'excursao' ? store.excursion : key === 'retirada' ? store.pickup : store[key])?.enabled);
   const [saved] = useState(() => loadCustomer(slug));
   const skipNextSave = useRef(false);
@@ -380,7 +381,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   }, [slug, name, phone, type, exc, addr, customerRevision]);
   useEffect(() => { if (pixelOn && lines.length && !tracked.current) { tracked.current = true; track('InitiateCheckout', { value: subtotal / 100 }); } }, [pixelOn, lines.length, subtotal]);
   useEffect(() => { setQuote(null); setQuoteErr(''); setServiceId(''); }, [type, addr.zip, addr.street, addr.city, addr.number, subtotal]);
-  useEffect(() => { if (type === 'excursao') setPaymentMethod('whatsapp'); }, [type]);
+  useEffect(() => { if (type === 'excursao' && excursionShipping === null) setPaymentMethod('whatsapp'); }, [type, excursionShipping]);
   useEffect(() => {
     if (!paymentReturn?.code) return undefined;
     let active = true;
@@ -425,7 +426,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
   }
 
   const option = quote?.options.find((o) => o.id === serviceId) || null;
-  const shipping = type === 'excursao' ? 0 : option?.priceCents ?? null;
+  const shipping = type === 'excursao' ? excursionShipping : option?.priceCents ?? null;
   const total = subtotal + (shipping || 0);
   const needsQuote = type === 'motoboy' || type === 'correios';
   const zipOk = addr.zip.replace(/\D/g, '').length === 8;
@@ -445,7 +446,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
     if (type === 'correios' && !zipOk) return setError('Correios: informe o CEP de destino.');
     if (type === 'correios' && !String(addr.number || '').trim()) return setError('Correios: informe o número do endereço de entrega.');
     if (needsQuote && !option) return setError('Calcule o frete antes de finalizar.');
-    if (paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return setError('Escolha uma forma de pagamento online disponível para esta entrega.');
+    if (paymentMethod === 'online' && ((type === 'excursao' && excursionShipping === null) || !store.paymentMethods?.includes(paymentProvider))) return setError('Escolha uma forma de pagamento online disponível para esta entrega.');
     setBusy(true);
     try {
       const delivery = type === 'retirada' ? { type }
@@ -472,7 +473,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
       <section className="cat-cart cat-done">
         <div className="cat-doneicon"><IconSvg name="check-circle" size={56} color="var(--p)" /></div>
         <h1>{done.paymentError ? 'Pedido registrado, pagamento pendente' : 'Pedido enviado!'}</h1>
-        <p>Seu pedido <strong>#{done.order.code}</strong> foi registrado. Total: <strong>{brl(done.order.totalCents)}</strong>{done.order.deliveryType === 'excursao' ? ' + frete a combinar' : ''}.</p>
+        <p>Seu pedido <strong>#{done.order.code}</strong> foi registrado. Total: <strong>{brl(done.order.totalCents)}</strong>{done.order.deliveryType === 'excursao' && !done.order.shippingCents ? ' + frete a combinar' : ''}.</p>
         {done.paymentError && <p className="cat-error">{done.paymentError} O pedido ainda não está pago; tente novamente ou fale com a loja.</p>}
         <p className="cat-muted">A loja vai entrar em contato pelo telefone informado.</p>
         {done.whatsappUrl && <a className="cat-btn" href={done.whatsappUrl} target="_blank" rel="noopener noreferrer" onClick={() => pixelOn && track('Contact')}>Enviar o pedido pelo WhatsApp</a>}
@@ -516,7 +517,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
       if (type === 'correios' && !String(addr.number || '').trim()) return 'Correios: informe o número do endereço de entrega.';
       if (needsQuote && !option) return 'Calcule o frete e escolha uma opção para continuar.';
     }
-    if (n === 3 && paymentMethod === 'online' && (type === 'excursao' || !store.paymentMethods?.includes(paymentProvider))) return 'Escolha um provedor de pagamento online conectado para esta entrega.';
+    if (n === 3 && paymentMethod === 'online' && ((type === 'excursao' && excursionShipping === null) || !store.paymentMethods?.includes(paymentProvider))) return 'Escolha um provedor de pagamento online conectado para esta entrega.';
     return '';
   };
   const goTo = (n) => { setStep(n); setError(''); window.scrollTo({ top: 0, behavior: 'smooth' }); };
@@ -551,7 +552,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             {lines.map((l) => (
               <li key={l.id}>
                 <span className="cat-line-img">{(l.img?.url || l.p.mainImage?.url || l.p.images.find((image) => image.url)?.url) && <img src={l.img?.url || l.p.mainImage?.url || l.p.images.find((image) => image.url).url} alt="" />}</span>
-                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming && <small className="cat-tier-hint">{l.upcoming.scope === 'cart_value' ? `Carrinho a partir de ${brl(l.upcoming.minCartCents)}` : `Leve ${l.upcoming.minQuantity} ${l.upcoming.scope === 'cart_quantity' ? 'itens no carrinho' : 'deste produto'}`} para pagar {brl(l.upcoming.priceCents)} cada ({l.upcoming.label})</small>}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
+                <span className="cat-line-info"><strong>{l.p.name}</strong>{l.img?.label && <small>{l.img.label}</small>}{l.priceOption && <small>{l.priceOption.label} · {l.priceOption.scope === 'cart_value' ? `carrinho a partir de ${brl(l.priceOption.minCartCents)}` : `a partir de ${l.priceOption.minQuantity || 1} ${l.priceOption.scope === 'cart_quantity' ? 'itens no carrinho' : 'un. deste produto'}`}</small>}{l.upcoming.map((tier) => <small key={tier.id} className="cat-tier-hint">{tier.scope === 'cart_value' ? `Faltam ${brl(tier.remaining)} no carrinho` : `Faltam ${tier.remaining} ${tier.scope === 'cart_quantity' ? (tier.remaining === 1 ? 'item no carrinho' : 'itens no carrinho') : (tier.remaining === 1 ? 'unidade deste produto' : 'unidades deste produto')}`} para o desconto {tier.label} ({brl(tier.priceCents)} cada)</small>)}{l.p.stockEnabled && <small>{l.stockExceeded ? 'Quantidade acima do estoque disponível.' : `${l.img ? l.img.stockQuantity : l.p.stockQuantity} em estoque`}</small>}{l.staleSelection ? <small className="cat-error">Esta opção mudou. Remova e adicione o item novamente.</small> : <small>{l.unit > 0 ? `${brl(l.unit)} cada` : 'Sob consulta'}</small>}</span>
                 <Qty value={l.qty} onChange={(n) => cart.setQty(l.id, n)} max={l.p.stockEnabled ? (l.img ? l.img.stockQuantity : l.p.stockQuantity) : 99} label={`Quantidade de ${l.p.name}`} />
                 <strong className="cat-line-total">{brl(l.total)}</strong>
                 <button type="button" className="cat-line-x" onClick={() => cart.remove(l.id)} aria-label={`Remover ${l.p.name}`}>×</button>
@@ -651,7 +652,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
               <input type="radio" name="payment-method" checked={paymentMethod === 'whatsapp'} onChange={() => setPaymentMethod('whatsapp')} />
               <strong>Enviar pedido pelo WhatsApp</strong><small>O pedido é registrado como não pago e enviado para a loja conversar com você.</small>
             </label>
-            {(type === 'excursao' ? [] : store.paymentMethods || []).map((provider) => (
+            {(type === 'excursao' && excursionShipping === null ? [] : store.paymentMethods || []).map((provider) => (
               <label key={provider} className={`cat-type${paymentMethod === 'online' && paymentProvider === provider ? ' is-on' : ''}`}>
                 <input type="radio" name="payment-method" checked={paymentMethod === 'online' && paymentProvider === provider} onChange={() => { setPaymentMethod('online'); setPaymentProvider(provider); }} />
                 <span className="cat-payment-label"><strong>Pagar online ·</strong> <InfinitePayMark /></span>
@@ -660,7 +661,7 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
             ))}
           </div>
           {!store.paymentMethods?.length && <p className="cat-muted">Esta loja ainda não oferece pagamento online.</p>}
-          {type === 'excursao' && store.paymentMethods?.length > 0 && <p className="cat-muted">Como o frete da excursão é combinado depois, pagamento online não está disponível para esta entrega.</p>}
+          {type === 'excursao' && excursionShipping === null && store.paymentMethods?.length > 0 && <p className="cat-muted">Como o frete da excursão é combinado depois, pagamento online não está disponível para esta entrega.</p>}
           </>}
 
           {step === 4 && <>
@@ -677,8 +678,8 @@ export function CartPage({ doc, products, store, slug, cart, onBack, pixelOn }) 
 
           <div className="cat-totals">
             <span>Subtotal <strong>{brl(subtotal)}</strong></span>
-            {step >= 2 && type && <span>Frete <strong>{type === 'excursao' ? 'a combinar' : type === 'retirada' ? 'grátis' : shipping === null ? '—' : brl(shipping)}</strong></span>}
-            {step >= 2 && <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' ? ' + frete' : ''}</strong></span>}
+            {step >= 2 && type && <span>Frete <strong>{type === 'retirada' ? 'grátis' : shipping === null ? 'a combinar' : brl(shipping)}</strong></span>}
+            {step >= 2 && <span className="cat-grand">Total <strong>{brl(total)}{type === 'excursao' && shipping === null ? ' + frete' : ''}</strong></span>}
           </div>
           {error && <p className="cat-error" role="alert">{error}</p>}
           <div className="cat-nav">

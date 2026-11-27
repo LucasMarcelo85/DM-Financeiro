@@ -1,6 +1,33 @@
 import assert from 'node:assert/strict';
 import test from 'node:test';
-import { cleanProduct, MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS } from './catalog.js';
+import { cleanCatalogConfig, cleanProduct, MAX_PRODUCT_IMAGES, MAX_PRODUCT_VARIATIONS, publicCatalogConfig, publicProduct } from './catalog.js';
+
+test('defaults the excursion shipping fee to zero for existing configurations', () => {
+  const config = cleanCatalogConfig({ excursion: { enabled: true } });
+  assert.equal(config.excursion.fixedCents, 0);
+  assert.equal(publicCatalogConfig(config).excursion.fixedCents, 0);
+});
+
+test('shares the first exact-color variation image without replacing an explicit image', () => {
+  const product = publicProduct({
+    id: 1,
+    images: [
+      { id: 1, position: 0, isPrimary: true, externalUrl: 'https://example.com/main.jpg' },
+      { id: 2, position: 1, isPrimary: false, color: 'Azul', externalUrl: 'https://example.com/blue.jpg' },
+      { id: 3, position: 2, isPrimary: false, color: 'Azul' },
+      { id: 4, position: 3, isPrimary: false, color: 'Azul', externalUrl: 'https://example.com/blue-variant.jpg' },
+      { id: 5, position: 4, isPrimary: false, color: 'azul' },
+    ],
+  });
+
+  assert.equal(product.images[0].url, 'https://example.com/blue.jpg');
+  assert.equal(product.images[0].sharedImage, undefined);
+  assert.equal(product.images[1].url, 'https://example.com/blue.jpg');
+  assert.equal(product.images[1].sharedImage, true);
+  assert.equal(product.images[2].url, 'https://example.com/blue-variant.jpg');
+  assert.equal(product.images[2].sharedImage, undefined);
+  assert.equal(product.images[3].url, null);
+});
 
 test('preserves an existing primary image when editing a product', () => {
   const product = cleanProduct({

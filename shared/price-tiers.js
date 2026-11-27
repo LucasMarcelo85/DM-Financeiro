@@ -12,3 +12,16 @@ export function selectPriceOption(options, isEligible) {
   }
   return [...bestByScope.values()].sort((a, b) => a.position - b.position).at(-1)?.option || null;
 }
+
+export function upcomingPriceTiers(options, { productQuantity = 0, cartQuantity = 0, cartSubtotalCents = 0 } = {}) {
+  return (options || []).flatMap((option) => {
+    if (option.priceCents === null || option.priceCents === undefined) return [];
+    if (option.scope === 'cart_value') {
+      const remaining = Math.max(0, (option.minCartCents || 0) - cartSubtotalCents);
+      return remaining ? [{ ...option, remaining }] : [];
+    }
+    const quantity = option.scope === 'cart_quantity' ? cartQuantity : productQuantity;
+    const remaining = Math.max(0, (option.minQuantity || 1) - quantity);
+    return remaining ? [{ ...option, remaining }] : [];
+  });
+}

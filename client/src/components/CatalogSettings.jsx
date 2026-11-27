@@ -22,7 +22,7 @@ const toForm = (c) => ({
   },
   checkout: { minItems: String(c.checkout?.minItems || 1), minSubtotal: centsToMasked(c.checkout?.minSubtotalCents || 0) },
   pickup: { ...c.pickup },
-  excursion: { ...c.excursion },
+  excursion: { ...c.excursion, fixed: centsToMasked(c.excursion?.fixedCents || 0) },
   motoboy: { ...c.motoboy, fixed: centsToMasked(c.motoboy.fixedCents), perKm: centsToMasked(c.motoboy.perKmCents), min: centsToMasked(c.motoboy.minCents), maxKm: num(c.motoboy.maxKm), originZip: cepMask(c.motoboy.originZip) },
   correios: { ...c.correios, originZip: cepMask(c.correios.originZip), heightCm: num(c.correios.heightCm), widthCm: num(c.correios.widthCm), lengthCm: num(c.correios.lengthCm), weightG: num(c.correios.weightG) },
 });
@@ -37,7 +37,7 @@ const toConfig = (f) => ({
   },
   checkout: { minItems: Number(f.checkout.minItems) || 1, minSubtotalCents: moneyToCents(f.checkout.minSubtotal) },
   pickup: f.pickup,
-  excursion: { enabled: f.excursion.enabled },
+  excursion: { enabled: f.excursion.enabled, fixedCents: moneyToCents(f.excursion.fixed) },
   motoboy: {
     enabled: f.motoboy.enabled, mode: f.motoboy.mode, fixedCents: moneyToCents(f.motoboy.fixed), perKmCents: moneyToCents(f.motoboy.perKm), minCents: moneyToCents(f.motoboy.min),
     maxKm: Number(f.motoboy.maxKm) || 0, originZip: f.motoboy.originZip, originStreet: f.motoboy.originStreet, originNumber: f.motoboy.originNumber,
@@ -324,8 +324,9 @@ export default function CatalogSettings({ onClose, onSaved, storeId: configuredS
         </fieldset>
 
         <fieldset className="cs-box">
-          <Check label="Excursão" checked={f.excursion.enabled} onChange={(v) => setF((x) => ({ ...x, excursion: { enabled: v } }))} />
-          <p className="muted small">O cliente informa o <strong>nome do galpão</strong>, a <strong>cidade</strong> e o <strong>endereço do galpão</strong>. O frete fica a combinar com você.</p>
+          <Check label="Excursão" checked={f.excursion.enabled} onChange={(v) => setF((x) => ({ ...x, excursion: { ...x.excursion, enabled: v } }))} />
+          {f.excursion.enabled && <TextField label="Valor fixo do frete da excursão (R$)" value={f.excursion.fixed} onChange={(v) => setF((x) => ({ ...x, excursion: { ...x.excursion, fixed: maskMoney(v) } }))} id="cs-excursion-fixed" hint="Deixe vazio ou informe R$ 0,00 para mostrar o frete como a combinar." />}
+          <p className="muted small">O cliente informa o <strong>nome do galpão</strong>, a <strong>cidade</strong> e o <strong>endereço do galpão</strong>. Se não definir um valor fixo, o frete fica a combinar.</p>
         </fieldset>
 
         <fieldset className="cs-box">

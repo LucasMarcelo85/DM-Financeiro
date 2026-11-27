@@ -5,10 +5,10 @@ import { lookupCep } from '../services/geo.js';
 import { createOrder, loadCatalogOwner, quoteShipping } from '../services/orders.js';
 import { createOnlineCheckout, verifyOrderPayment } from '../services/catalog-payments.js';
 import { notifyCatalogOrder } from '../services/catalog-notifications.js';
+import { formatCatalogCustomerWhatsApp } from '../services/catalog-order-messages.js';
 
 // Catálogo digital: partes públicas (sem login) — imagem do produto, CEP, simulação de frete — e o webhook que recebe os pedidos.
 const router = Router();
-const brl = (c) => (c / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
 
 // Imagem do produto (o endereço nunca muda: cada troca de imagem cria uma nova linha, então pode ficar em cache por 1 ano).
 router.get('/product-image/:id', async (req, res) => {
@@ -40,8 +40,7 @@ export const ordersWebhook = Router();
 ordersWebhook.post('/:slug', async (req, res) => {
   const { order, cfg, paymentMethod } = await createOrder(req.params.slug, req.body);
   notifyCatalogOrder(order, 'new').catch((e) => console.error(`[catálogo] falha na notificação do novo pedido ${order.id}: ${e.message}`));
-  const lines = order.items.map((i) => `• ${i.qty}x ${i.name}${i.variation ? ` (${i.variation})` : ''} — ${brl(i.totalCents)}`);
-  const text = [`Olá! Fiz o pedido ${order.code}:`, ...lines, `Subtotal: ${brl(order.subtotalCents)}`, order.deliveryType === 'excursao' ? 'Frete: a combinar (excursão)' : `Frete: ${brl(order.shippingCents)}`, `Total: ${brl(order.totalCents)}`].join('\n');
+  const text = formatCatalogCustomerWhatsApp(order);
   let checkoutUrl = '';
   let paymentError = '';
   if (paymentMethod === 'online') {

@@ -140,7 +140,7 @@ export const defaultCatalogConfig = () => ({
   orderNotifications: { enabled: false, instanceId: null, fallbackEnabled: false, fallbackInstanceId: null },
   checkout: { minItems: 1, minSubtotalCents: 0 },
   pickup: { enabled: false, name: '', address: '' },
-  excursion: { enabled: false },
+  excursion: { enabled: false, fixedCents: 0 },
   motoboy: { enabled: false, mode: 'fixed', fixedCents: 0, perKmCents: 0, minCents: 0, maxKm: 0, originZip: '', originStreet: '', originNumber: '', originDistrict: '', originCity: '', originState: '' },
   correios: { enabled: false, originZip: '', heightCm: 0, widthCm: 0, lengthCm: 0, weightG: 0, sandbox: false },
 });
@@ -180,7 +180,9 @@ export function cleanCatalogConfig(raw, { hasToken = false } = {}) {
       minSubtotalCents: intIn(checkout.minSubtotalCents ?? d.checkout.minSubtotalCents, 0, MAX_PRICE, 'Valor mínimo do pedido'),
     },
     pickup: { enabled: Boolean(pickup.enabled), name: line(pickup.name, 80), address: line(pickup.address, 240) },
-    excursion: { enabled: Boolean(ex.enabled) }, motoboy: { ...d.motoboy }, correios: { ...d.correios },
+    excursion: { enabled: Boolean(ex.enabled), fixedCents: ex.fixedCents === '' || ex.fixedCents === null || ex.fixedCents === undefined
+      ? d.excursion.fixedCents
+      : intIn(ex.fixedCents, 0, MAX_PRICE, 'Valor fixo do frete da excursão') }, motoboy: { ...d.motoboy }, correios: { ...d.correios },
   };
   if (cfg.pickup.enabled && cfg.pickup.address.length < 3) throw new AppError(400, 'Retirada: informe o endereço ou ponto de retirada.');
 
@@ -232,7 +234,7 @@ export function publicCatalogConfig(cfg) {
     storeName: c.storeName, whatsapp: c.whatsapp,
     checkout: { minItems: c.checkout?.minItems || 1, minSubtotalCents: c.checkout?.minSubtotalCents || 0 },
     pickup: { enabled: Boolean(c.pickup?.enabled), name: line(c.pickup?.name, 80), address: line(c.pickup?.address, 240) },
-    excursion: { enabled: Boolean(c.excursion?.enabled) },
+    excursion: { enabled: Boolean(c.excursion?.enabled), fixedCents: c.excursion?.fixedCents || 0 },
     motoboy: { enabled: Boolean(c.motoboy?.enabled), mode: c.motoboy?.mode === 'km' ? 'km' : 'fixed', fixedCents: c.motoboy?.fixedCents || 0, perKmCents: c.motoboy?.perKmCents || 0, minCents: c.motoboy?.minCents || 0, maxKm: c.motoboy?.maxKm || 0 },
     correios: { enabled: Boolean(c.correios?.enabled) },
   };
@@ -241,6 +243,13 @@ export function publicCatalogConfig(cfg) {
 export const publicProduct = (p) => {
   const images = [...(p.images || [])].sort((a, b) => a.position - b.position);
   const mainImage = images.find((image) => image.isPrimary);
+  const variations = images.filter((image) => !image.isPrimary);
+  const firstColorImage = new Map();
+  const imageUrl = (image) => image.externalUrl || (image.mime || image.data ? `/api/public/product-image/${image.id}` : null);
+  for (const image of variations) {
+    const color = image.color?.trim();
+    if (color && !firstColorImage.has(color)) firstColorImage.set(color, imageUrl(image));
+  }
   const imageDto = (image) => ({
     id: image.id,
     label: image.label,
@@ -250,13 +259,18 @@ export const publicProduct = (p) => {
     barcode: image.barcode || '',
     priceCents: image.priceCents,
     stockQuantity: image.stockQuantity ?? 0,
-    url: image.externalUrl || (image.mime || image.data ? `/api/public/product-image/${image.id}` : null),
+    url: imageUrl(image),
+  });
+  const variationDto = variations.map((image) => {
+    const row = imageDto(image);
+    const sharedUrl = image.color ? firstColorImage.get(image.color.trim()) : null;
+    return !row.url && sharedUrl ? { ...row, url: sharedUrl, sharedImage: true } : row;
   });
   return {
     id: p.id, kind: p.kind, name: p.name, category: p.category, description: p.description, barcode: p.barcode || '', priceCents: p.priceCents,
     stockEnabled: Boolean(p.stockEnabled), stockQuantity: p.stockQuantity ?? 0,
     mainImage: mainImage && (mainImage.externalUrl || mainImage.mime || mainImage.data) ? { id: mainImage.id, url: mainImage.externalUrl || `/api/public/product-image/${mainImage.id}` } : null,
-    images: images.filter((image) => !image.isPrimary).map(imageDto),
+    images: variationDto,
     priceOptions: [...(p.priceOptions || [])].sort((a, b) => a.position - b.position).map((o) => ({ id: o.id, label: o.label, priceCents: o.priceCents, minQuantity: o.minQuantity || 1, scope: o.scope || 'same_product', minCartCents: o.minCartCents || 0 })),
   };
 };

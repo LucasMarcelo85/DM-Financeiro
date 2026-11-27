@@ -268,7 +268,7 @@ function draftFromProduct(product, stockFlows, priceRules = []) {
   const variation = (image) => ({
     key: `image-${image.id}`,
     id: image.id,
-    url: image.url || null,
+    url: image.sharedImage ? null : image.url || null,
     label: image.label || '',
     color: image.color || '',
     colorHex: image.colorHex || '',
@@ -642,6 +642,11 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
   const [combinationSizes, setCombinationSizes] = useState('');
   const [combinationMessage, setCombinationMessage] = useState(null);
   const currentPhotoCount = photoCount(draft);
+  const firstColorImage = new Map();
+  for (const variation of draft.variations) {
+    const color = variation.color?.trim();
+    if (color && !firstColorImage.has(color)) firstColorImage.set(color, hasPhoto(variation) ? variation : null);
+  }
   const updateOption = (key, changes) => onPatch({ priceOptions: draft.priceOptions.map((option) => option.key === key ? { ...option, ...changes } : option) });
   const setColorName = (image, name) => {
     const mappedHex = variationSuggestions?.colorHexByName?.[normalizeProductColorName(name)] || colorHexForName(name);
@@ -768,13 +773,15 @@ function ProductDraftCard({ draft, index, count, categories, variationSuggestion
             </details>
             <div className="pr-variation-list">
               {draft.variations.map((image, variationIndex) => {
+                const colorImage = firstColorImage.get(image.color?.trim());
+                const previewUrl = image.url || image.data || image.externalUrl || colorImage?.url || colorImage?.data || colorImage?.externalUrl;
                 return (
                   <div className="pr-variation-row" key={image.key}>
                     <div className="pr-variation-fields">
                       <div className="field pr-variation-photo">
                         <span>Imagem da variação <small>(opcional)</small></span>
                         <div className="pr-variation-photo-control">
-                          {image.url && <img src={image.url} alt={`Imagem da variação ${variationIndex + 1}`} />}
+                          {previewUrl && <img src={previewUrl} alt={`Imagem da variação ${variationIndex + 1}`} />}
                           <label className={`btn btn-ghost btn-sm ${uploading || (!hasPhoto(image) && currentPhotoCount >= MAX_PRODUCT_IMAGES) ? 'is-disabled' : ''}`} htmlFor={`variation-image-${image.key}`}>
                             <Icon name={image.url ? 'edit' : 'plus'} size={15} /> {image.url ? 'Trocar imagem' : 'Adicionar imagem'}
                           </label>

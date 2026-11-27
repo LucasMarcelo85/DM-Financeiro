@@ -7,6 +7,7 @@ import StoreBar from '../components/StoreBar.jsx';
 import CsvTransfer from '../components/CsvTransfer.jsx';
 import Modal from '../components/Modal.jsx';
 import PointOfSale from '../components/PointOfSale.jsx';
+import RomaneioModal from '../components/RomaneioModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { brl, dateTimeBR, formatStoredPhone, plural } from '../lib/format.js';
 import { importCsvBatches } from '../lib/csv.js';
@@ -235,6 +236,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
   const [sel, setSel] = useState(new Set());
   const [confirm, setConfirm] = useState(null);
   const [settings, setSettings] = useState(false);
+  const [showRomaneio, setShowRomaneio] = useState(false);
   const alive = useRef(true);
   useEffect(() => { alive.current = true; return () => { alive.current = false; }; }, []);
 
@@ -350,6 +352,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
             />
           )}
           {!isShopMode() && <button className="btn btn-ghost" onClick={() => setSettings(true)}><Icon name="gear" size={18} /> Entregas e frete</button>}
+          {tab === 'orders' && can('pedidos') && <button className="btn btn-ghost" onClick={() => setShowRomaneio(true)}><Icon name="printer" size={18} /> Romaneio</button>}
           {!isShopMode() && can('pdv') && <button className="btn btn-primary" onClick={() => setTab('pos')}>Abrir frente de caixa</button>}
           {tab === 'customers' && can('clientes') && <button className="btn btn-primary" onClick={() => setCustomerForm(true)}>Novo cliente</button>}
         </div>
@@ -478,6 +481,7 @@ export default function Orders({ allow, initialTab, onClosePOS }) {
       )}
 
       {settings && <CatalogSettings onClose={() => setSettings(false)} />}
+      {showRomaneio && <RomaneioModal products={[]} allowProducts={false} onClose={() => setShowRomaneio(false)} />}
       {customer && <CustomerModal value={customer} onClose={() => setCustomer(null)} onSave={saveCustomer} onDelete={(phone) => setCustomerDelete({ phone, pin: '', pinRequired: customer.pinRequired })} />}
       {customerForm && <CustomerCreateModal onClose={() => setCustomerForm(false)} onSave={createCustomer} />}
       {customerDelete && <Modal title="Excluir cadastro do cliente?" onClose={() => setCustomerDelete(null)}

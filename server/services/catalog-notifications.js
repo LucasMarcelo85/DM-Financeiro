@@ -3,8 +3,7 @@ import { defaultCatalogConfig } from '../utils/catalog.js';
 import { normalizePhone } from '../utils/helpers.js';
 import * as whatsapp from './whatsapp.js';
 import { workspaceEmailFor } from './workspace.js';
-
-const brl = (cents) => (cents / 100).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL' });
+import { formatCatalogOrderNotification } from './catalog-order-messages.js';
 
 async function catalogConfig(userId, storeId) {
   if (storeId) {
@@ -40,11 +39,7 @@ export async function notifyCatalogOrder(order, event) {
     },
   }) : null;
 
-  const lines = (Array.isArray(order.items) ? order.items : [])
-    .map((item) => `• ${item.qty}x ${item.name}${item.variation ? ` (${item.variation})` : ''} — ${brl(item.totalCents)}`);
-  const text = event === 'paid'
-    ? [`✅ *Pedido pago pela InfinitePay*`, `Pedido: *#${order.code}*`, `Cliente: ${order.customerName}`, `Total: *${brl(order.totalCents)}*`, order.paymentId ? `ID do pagamento: ${order.paymentId}` : ''].filter(Boolean).join('\n')
-    : [`🛍️ *Novo pedido recebido*`, `Pedido: *#${order.code}*`, `Cliente: ${order.customerName} · ${order.customerPhone}`, ...lines, `Total: *${brl(order.totalCents)}*`, order.paymentStatus === 'pending' ? 'Pagamento online pendente.' : ''].filter(Boolean).join('\n');
+  const text = formatCatalogOrderNotification(order, event);
 
   let primaryError;
   try {

@@ -67,10 +67,20 @@ export default function ShopApp() {
   const [perms, setPerms] = useState(null);
   const [isPrimary, setIsPrimary] = useState(false);
   const [tab, setTab] = useState('');
+  const [menuOpen, setMenuOpen] = useState(false);
   const [auditCanSend, setAuditCanSend] = useState(false);
   const [catalogSettingsOpen, setCatalogSettingsOpen] = useState(false);
   const [form, setForm] = useState({ login: '', password: '' });
   const [busy, setBusy] = useState(false);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+    const closeOnEscape = (event) => {
+      if (event.key === 'Escape') setMenuOpen(false);
+    };
+    window.addEventListener('keydown', closeOnEscape);
+    return () => window.removeEventListener('keydown', closeOnEscape);
+  }, [menuOpen]);
   const [loginError, setLoginError] = useState('');
   const [showLoginPassword, setShowLoginPassword] = useState(false);
   const [showNewPassword, setShowNewPassword] = useState(false);
@@ -327,14 +337,15 @@ export default function ShopApp() {
 
   return (
     <div className="shop-shell shell">
-      <aside className="sidebar shop-sidebar">
+      <aside className={`sidebar shop-sidebar${menuOpen ? ' is-mobile-open' : ''}`}>
         <div className="sidebar-top shop-sidebar-brand">
+            <button type="button" className="icon-btn shop-menu-close" onClick={() => setMenuOpen(false)} aria-label="Fechar menu">Fechar</button>
             <strong title={info.name}>{info.name}</strong>
         </div>
         <nav role="tablist" aria-label="Menu principal" className="nav shop-app-nav">
             {tabs.map(([key, label]) => (
               <button key={key} type="button" role="tab" aria-selected={tab === key} aria-controls="shop-app-panel"
-                className={`nav-link ${tab === key ? 'is-active' : ''}`} onClick={() => setTab(key)}>
+                className={`nav-link ${tab === key ? 'is-active' : ''}`} onClick={() => { setTab(key); setMenuOpen(false); }}>
                 <Icon name={TAB_ICONS[key] || 'list'} size={19} /><span>{label}</span>
               </button>
           ))}
@@ -352,12 +363,18 @@ export default function ShopApp() {
             </button>
         </div>
       </aside>
+      {menuOpen && <button type="button" className="shop-menu-backdrop" onClick={() => setMenuOpen(false)} aria-label="Fechar menu" />}
       <main className="main shop-main">
         <header className="shop-main-head">
-            <strong className="shop-main-title">{info.name}</strong>
+            <div className="shop-main-heading">
+              <button type="button" className="icon-btn shop-menu-toggle" onClick={() => setMenuOpen((open) => !open)} aria-label={menuOpen ? 'Fechar menu' : 'Abrir menu'} aria-expanded={menuOpen}>
+                <span className="hamburger-icon" aria-hidden="true"><i /><i /><i /></span>
+              </button>
+              <strong className="shop-main-title">{info.name}</strong>
+            </div>
             <div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={() => setAccountOpen(true)}><Icon name="gear" size={16} /> Usuário</button>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={logout}><Icon name="logout" size={16} /> Sair</button>
+              <button type="button" className="btn btn-ghost btn-sm shop-account-button" onClick={() => setAccountOpen(true)} aria-label="Configurações do usuário"><Icon name="gear" size={16} /><span>Usuário</span></button>
+              <button type="button" className="btn btn-ghost btn-sm shop-logout-button" onClick={logout} aria-label="Sair"><Icon name="logout" size={16} /><span>Sair</span></button>
             </div>
         </header>
         <section id="shop-app-panel" role="tabpanel" aria-label={tabs.find(([key]) => key === tab)?.[1] || 'Área do aplicativo'} className={`shop-app-panel ${['pdv', 'pedidos', 'auditoria'].includes(tab) ? 'shop-panel-wide' : ''}`}>

@@ -71,7 +71,7 @@ export async function createOrder(userSlug, body = {}) {
   const paymentMethod = body.paymentMethod === 'online' ? 'online' : 'whatsapp';
   const paymentProvider = paymentMethod === 'online' ? String(body.paymentProvider || '') : null;
   if (paymentMethod === 'online' && !ctx.paymentMethods.includes(paymentProvider)) throw new AppError(400, 'O pagamento online escolhido não está disponível nesta loja.');
-  if (paymentMethod === 'online' && body.delivery?.type === 'excursao') throw new AppError(400, 'Como o frete da excursão é combinado depois, finalize este pedido pelo WhatsApp.');
+  if (paymentMethod === 'online' && body.delivery?.type === 'excursao' && !(cfg.excursion.fixedCents > 0)) throw new AppError(400, 'Como o frete da excursão é combinado depois, finalize este pedido pelo WhatsApp.');
 
   // 1) Cliente: nome e telefone são obrigatórios para todos.
   const c = body.customer || {};
@@ -152,7 +152,8 @@ export async function createOrder(userSlug, body = {}) {
     if (warehouse.length < 2) throw new AppError(400, 'Excursão: informe o nome do galpão.');
     if (city.length < 2) throw new AppError(400, 'Excursão: informe a cidade do galpão.');
     if (address.length < 3) throw new AppError(400, 'Excursão: informe o endereço do galpão.');
-    delivery = { type, warehouse, city, address, state: line(d.state, 2).toUpperCase(), note: 'Frete a combinar com a loja.' };
+    shippingCents = cfg.excursion.fixedCents > 0 ? cfg.excursion.fixedCents : 0;
+    delivery = { type, warehouse, city, address, state: line(d.state, 2).toUpperCase(), note: shippingCents > 0 ? '' : 'Frete a combinar com a loja.' };
   } else if (type === 'motoboy' || type === 'correios') {
     if (type === 'correios' && !line(d.number, 20)) throw new AppError(400, 'Correios: informe o número do endereço de entrega.');
     const q = await quoteShipping(ctx, type, d, subtotalCents);
