@@ -451,7 +451,12 @@ export function ProductCard({ p, cardStyle = 'soft', price = true, action, card,
         </span>}
         {k.showDescription && p.description && <span className="pv-card-desc">{p.description}</span>}
         {price && k.showPrice && displayedPrice && <span className="pv-card-price">{displayedPrice.label}{brl(displayedPrice.cents)}</span>}
-        {(k.showTiers || showAllPriceOptions) && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => <small key={t.id}>{t.label}: {brl(t.priceCents)} · {tierThreshold(t)}</small>)}</span>}
+        {(k.showTiers || showAllPriceOptions) && tiers.length > 0 && <span className="pv-card-tiers">{tiers.map((t) => (
+          <span className="pv-card-tier" key={t.id}>
+            <span className="pv-card-price">{t.label}: {brl(t.priceCents)}</span>
+            <small>{tierThreshold(t)}</small>
+          </span>
+        ))}</span>}
         {k.showVariations && p.images.length > 0 && <span className="pv-card-vars">{p.images.map((i) => <small key={i.id}>{i.label}</small>)}</span>}
         {k.showButton && actionNode}
       </div>

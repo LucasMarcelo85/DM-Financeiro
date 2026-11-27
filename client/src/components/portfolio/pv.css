@@ -243,7 +243,9 @@
 .pv-card.is-horizontal .pv-card-body { flex: 1; align-content: center; min-width: 0; }
 .pv-card-desc { font-size: .82rem; opacity: .75; display: -webkit-box; -webkit-line-clamp: 3; -webkit-box-orient: vertical; overflow: hidden; }
 .pv-card-tiers, .pv-card-vars { display: flex; flex-wrap: wrap; gap: .25rem; }
-.pv-card-tiers { flex-direction: column; gap: .1rem; } .pv-card-tiers small { font-size: .74rem; opacity: .8; }
+.pv-card-tiers { flex-direction: column; gap: .45rem; }
+.pv-card-tier { display: grid; gap: .1rem; }
+.pv-card-tier small { font-size: .74rem; opacity: .8; }
 .pv-card-vars small { padding: .1rem .45rem; border-radius: 99px; font-size: .7rem; border: 1px solid color-mix(in srgb, currentColor 25%, transparent); }
 .pv-card-btn { margin-top: .35rem; display: inline-flex; justify-content: center; align-items: center; gap: .4rem; padding: .55rem .7rem; border-radius: 10px; border: 0; background: var(--p, #f2a33a); color: var(--on-p, #14202e); font: 700 .9rem/1 var(--bf, system-ui); cursor: pointer; text-decoration: none; }
 .pv-dots { position: absolute; left: 8px; bottom: 8px; display: flex; gap: 4px; }

@@ -254,7 +254,7 @@ export function catgridMetrics(el, device, products = CAT.products, cfg = CAT.ca
   const tierLines = Math.max(0, ...products.map((p) => (p.priceOptions || []).filter((o) => o.priceCents > 0).length));
   const parts = [
     k.showCategory && 16, k.showName && Math.ceil(CARD_TEXT[k.textSize] * 1.25 * (k.nameLines || 2)), k.showDescription && 42,
-    k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), tierLines > 0 && tierLines * 28, k.showVariations && hasVars && 22, k.showColorSwatches && hasColors && 22, k.showButton && 44,
+    k.showPrice && Math.ceil((CARD_PRICE[k.priceSize] || 20) * 1.3), tierLines > 0 && tierLines * 44, k.showVariations && hasVars && 22, k.showColorSwatches && hasColors && 22, k.showButton && 44,
   ].filter(Boolean);
   const body = (CARD_PAD[k.padding] || 22) + parts.reduce((s, n) => s + n, 0) + Math.max(0, parts.length - 1) * 4;
   const ratio = CARD_RATIO[k.ratio] || 1;

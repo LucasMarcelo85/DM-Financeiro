@@ -190,7 +190,14 @@ export default function Products({ allow = [] }) {
                 <strong title={p.name}>{p.name}</strong>
                 {p.barcode && <small className="muted pr-code"><Icon name="barcode" size={12} /> {p.barcode}</small>}
                 <span className="pr-price">{productPriceLabel(p)}</span>
-                {p.priceOptions.length > 0 && <small className="muted">{p.priceOptions.length} formas de preço</small>}
+                {p.priceOptions.filter((option) => option.priceCents > 0).map((option) => (
+                  <div className="pr-price-option" key={option.id}>
+                    <span className="pr-price-option-main"><span>{option.label}</span><span>{brl(option.priceCents)}</span></span>
+                    <small>{option.scope === 'cart_value'
+                      ? `A partir de ${brl(option.minCartCents)} no carrinho`
+                      : `A partir de ${option.minQuantity || 1} ${plural(option.minQuantity || 1, 'peça', 'peças')} ${option.scope === 'cart_quantity' ? 'no carrinho' : 'deste produto'}`}</small>
+                  </div>
+                ))}
                 {p.stockEnabled && <small className="muted">Estoque: {p.images.length ? p.images.reduce((sum, image) => sum + image.stockQuantity, 0) : p.stockQuantity}</small>}
               </div>
               <div className="pr-actions">
