@@ -9,6 +9,7 @@ import NoAiMarketingModal from '../components/ai/NoAiMarketingModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
 import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
+import Modal from '../components/Modal.jsx';
 import StoreBar from '../components/StoreBar.jsx';
 import WhatsAppManagerModal from '../components/WhatsAppManagerModal.jsx';
 import { useToast } from '../components/Toast.jsx';
@@ -460,6 +461,7 @@ export default function AiService() {
   const [actionsAgent, setActionsAgent] = useState(null);
   const [noAiMarketingOpen, setNoAiMarketingOpen] = useState(false);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [instagramOpen, setInstagramOpen] = useState(false);
   const [instagramBusy, setInstagramBusy] = useState(false);
   const [instagramDisconnecting, setInstagramDisconnecting] = useState(null);
   const [instagramConnectedNotice, setInstagramConnectedNotice] = useState(false);
@@ -534,6 +536,7 @@ export default function AiService() {
     setSearchParams(params, { replace: true });
     if (status === 'connected') {
       setInstagramConnectedNotice(true);
+      setInstagramOpen(true);
       load();
     }
   }, [returnQuery, setSearchParams, toast, load]);
@@ -640,6 +643,7 @@ export default function AiService() {
         <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
           <button type="button" className="btn btn-ghost" onClick={() => setWhatsappOpen(true)}><Icon name="chat" size={17} /> WhatsApp</button>
+          <button type="button" className="btn btn-ghost" onClick={() => setInstagramOpen(true)}><FaInstagram size={17} /> Instagram</button>
           {tab === 'agentes' && (
             <>
               <button type="button" className="btn btn-ghost" onClick={() => setNoAiMarketingOpen(true)}><Icon name="send" size={17} /> Marketing sem IA</button>
@@ -698,20 +702,6 @@ export default function AiService() {
                 ))}
               </div>
             </>}
-          </section>
-          <section className="card ai-instagram-settings">
-            <div className="ai-credit-dashboard-head">
-              <div><h2>Instagram</h2><p className="muted small">Conecte a conta profissional da loja. Você será direcionado ao Instagram para verificar e autorizar o acesso.</p></div>
-              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : 'Conectar Instagram'}</button>
-            </div>
-            {instagramConnectedNotice && <div className="ai-instagram-success" role="status"><span>Instagram conectado com sucesso. Agora selecione esta conta ao configurar um agente de atendimento.</span><button type="button" className="link-btn" onClick={() => setInstagramConnectedNotice(false)}>Fechar</button></div>}
-            {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está disponível. Tente novamente mais tarde ou fale com o suporte.</p>}
-            {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
-              <div key={account.id} className="ai-credit-history-row">
-                <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · ativação das mensagens pendente' : ''}</small></span>
-                <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" disabled={instagramDisconnecting === account.id} onClick={() => disconnectInstagram(account)}>{instagramDisconnecting === account.id ? 'Desconectando...' : 'Desconectar'}</button>
-              </div>
-            )) : <p className="muted small">Nenhuma conta conectada. Clique em “Conectar Instagram” para autorizar uma conta profissional.</p>}
           </section>
           {!data.agents.length ? (
             <div className="ai-empty"><Icon name="sparkles" size={28} /><h2>Crie seu primeiro agente</h2><p className="muted">Conecte o WhatsApp ou uma conta profissional do Instagram e configure o atendimento da Dm Soluções.</p><button className="btn btn-primary" onClick={() => setEditor({})}>Criar agente</button></div>
@@ -785,6 +775,24 @@ export default function AiService() {
       {actionsAgent && <ActionsModal agent={actionsAgent} onClose={() => setActionsAgent(null)} />}
       {campaignAgent && <CampaignModal agent={campaignAgent} onClose={() => setCampaignAgent(null)} />}
       {noAiMarketingOpen && data && <NoAiMarketingModal data={data} onClose={() => setNoAiMarketingOpen(false)} />}
+      {instagramOpen && data && (
+        <Modal title="Instagram" wide onClose={() => setInstagramOpen(false)}>
+          <div className="ai-instagram-manager">
+            <div className="ai-instagram-manager-head">
+              <p className="muted small">Conecte a conta profissional desta loja. O Instagram solicitará autorização e a conexão ficará vinculada a esta loja.</p>
+              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : data.instagramAccounts.length ? 'Conectar outra conta' : 'Conectar Instagram'}</button>
+            </div>
+            {instagramConnectedNotice && <div className="ai-instagram-success" role="status"><span>Instagram conectado com sucesso. Agora selecione esta conta ao configurar um agente de atendimento.</span><button type="button" className="link-btn" onClick={() => setInstagramConnectedNotice(false)}>Fechar</button></div>}
+            {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está disponível. Tente novamente mais tarde ou fale com o suporte.</p>}
+            {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
+              <div key={account.id} className="ai-credit-history-row">
+                <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · ativação das mensagens pendente' : ''}</small></span>
+                <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" disabled={instagramDisconnecting === account.id} onClick={() => disconnectInstagram(account)}>{instagramDisconnecting === account.id ? 'Desconectando...' : 'Desconectar'}</button>
+              </div>
+            )) : <p className="muted small">Nenhuma conta conectada. Clique no botão acima para começar.</p>}
+          </div>
+        </Modal>
+      )}
       {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} onConnectInstagram={connectInstagram} instagramConnecting={instagramBusy} />}
       {whatsappOpen && <WhatsAppManagerModal onClose={() => { setWhatsappOpen(false); load(); }} />}
     </>

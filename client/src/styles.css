@@ -2253,7 +2253,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-credit-dashboard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
 .ai-credit-dashboard-head h2, .ai-credit-history h3 { margin: 0; font-size: 1.05rem; }
 .ai-credit-dashboard-head p { margin: .25rem 0 0; }
-.ai-instagram-settings { display: grid; gap: .85rem; }
+.ai-instagram-manager { display: grid; gap: .85rem; }
+.ai-instagram-manager-head { display: flex; justify-content: space-between; align-items: flex-start; gap: .75rem; }
+.ai-instagram-manager-head p { max-width: 28rem; }
 .ai-instagram-notice { margin: 0; padding: .8rem 1rem; border: 1px solid #f0d7a9; border-radius: var(--r-sm); background: #fff8e9; color: #704b10; font-size: .88rem; line-height: 1.5; }
 .ai-instagram-notice code { font-size: .82em; }
 .ai-instagram-success { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border: 1px solid #b7e2ca; border-radius: var(--r-sm); background: #effaf3; color: #17613c; font-size: .9rem; }
@@ -2578,8 +2580,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
   .ai-credit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ai-credit-recharge { display: grid; grid-template-columns: minmax(0, 1fr); }
   .ai-credit-recharge .field, .ai-credit-recharge > .btn { width: 100%; }
-  .ai-instagram-settings .ai-credit-dashboard-head { align-items: stretch; flex-direction: column; }
-  .ai-instagram-settings .ai-credit-dashboard-head > .btn { width: 100%; }
+  .ai-instagram-manager-head { align-items: stretch; flex-direction: column; }
+  .ai-instagram-manager-head > .btn { width: 100%; }
   .ai-provider-links { flex-direction: column; }
   .ai-agent-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .ai-agent-actions .btn { justify-content: center; min-width: 0; padding-inline: .35rem; }
