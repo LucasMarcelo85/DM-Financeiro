@@ -407,6 +407,7 @@ export default function AiService() {
   const [conversations, setConversations] = useState([]);
   const [conversationAgent, setConversationAgent] = useState('');
   const [conversationOrder, setConversationOrder] = useState('recent');
+  const [conversationSearch, setConversationSearch] = useState('');
   const [campaignAgent, setCampaignAgent] = useState(null);
   const [testing, setTesting] = useState(null);
   const [actionsAgent, setActionsAgent] = useState(null);
@@ -564,6 +565,21 @@ export default function AiService() {
     const activityB = b.lastMessage?.createdAt ?? b.updatedAt;
     return direction * (activityA - activityB) || direction * (a.id - b.id);
   });
+  const searchTerm = conversationSearch.trim().toLocaleLowerCase('pt-BR');
+  const searchDigits = conversationSearch.replace(/\D/g, '');
+  const filteredConversations = orderedConversations.filter((conversation) => {
+    if (!searchTerm) return true;
+    const searchable = [
+      conversation.name,
+      conversation.phone,
+      formatStoredPhone(conversation.phone),
+      conversation.agentName,
+      conversation.lastMessage?.content,
+      ...(conversation.labels || []),
+    ].join(' ').toLocaleLowerCase('pt-BR');
+    return searchable.includes(searchTerm)
+      || (searchDigits.length >= 4 && String(conversation.phone || '').replace(/\D/g, '').includes(searchDigits));
+  });
 
   return (
     <>
@@ -572,7 +588,6 @@ export default function AiService() {
         <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
           <button type="button" className="btn btn-ghost" onClick={() => setWhatsappOpen(true)}><Icon name="chat" size={17} /> WhatsApp</button>
-          <button type="button" className="btn btn-ghost" onClick={refreshUsage}><Icon name="refresh" size={17} /> Atualizar uso</button>
           {tab === 'agentes' && (
             <>
               <button type="button" className="btn btn-ghost" onClick={() => setNoAiMarketingOpen(true)}><Icon name="send" size={17} /> Marketing sem IA</button>
@@ -592,12 +607,12 @@ export default function AiService() {
         <div className="ai-content">
           <div className="ai-credit-note">
             <Icon name="sparkles" size={20} />
-            <p><strong>Dm Soluções</strong><br />Seu atendimento usa créditos pré-pagos. O consumo considera tokens de entrada e saída e, quando houver áudio, o tempo de transcrição, com cobrança de 2× o custo operacional.</p>
+            <p><strong>Dm Soluções</strong><br />Seu atendimento usa créditos pré-pagos. O consumo considera tokens de entrada e saída.</p>
           </div>
           <section className="ai-credit-dashboard" aria-label="Saldo e consumo da Dm Soluções">
             <div className="ai-credit-dashboard-head">
               <div><h2>Créditos Dm Soluções</h2><p className="muted small">O consumo é calculado pelos tokens usados em cada resposta.</p></div>
-              <button type="button" className="btn btn-ghost btn-sm" onClick={loadCredits}><Icon name="refresh" size={15} /> Atualizar</button>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={refreshUsage}><Icon name="refresh" size={15} /> Atualizar</button>
             </div>
             {creditError && <p className="form-error" role="alert">{creditError}</p>}
             {credits && <>
@@ -632,11 +647,12 @@ export default function AiService() {
               </div>
             </>}
           </section>
-          <section className="card" style={{ display: 'grid', gap: 12 }}>
+          <section className="card ai-instagram-settings">
             <div className="ai-credit-dashboard-head">
               <div><h2>Instagram</h2><p className="muted small">Conecte uma conta profissional para responder Direct e comentários pela Dm Soluções.</p></div>
-              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy}>{instagramBusy ? 'Conectando...' : 'Conectar Instagram'}</button>
+              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : 'Conectar conta'}</button>
             </div>
+            {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está configurada no servidor. O administrador precisa cadastrar <code>INSTAGRAM_APP_ID</code> e <code>INSTAGRAM_APP_SECRET</code> do app Meta. Depois, cada loja conecta sua própria conta por este botão.</p>}
             {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
               <div key={account.id} className="ai-credit-history-row">
                 <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · webhook pendente' : ''}</small></span>
@@ -689,20 +705,30 @@ export default function AiService() {
         <div className={`ai-inbox ${selectedConversation ? 'has-chat' : ''}`}>
           <aside className="ai-conversation-list">
             <div className="ai-conversation-filter">
+              <div className="ai-conversation-list-head">
+                <h2>Conversas</h2>
+                <span>{filteredConversations.length} {filteredConversations.length === 1 ? 'conversa' : 'conversas'}</span>
+              </div>
+              <label className="field ai-conversation-search"><span>Buscar por cliente, telefone ou mensagem</span><input className="input" type="search" value={conversationSearch} onChange={(event) => setConversationSearch(event.target.value)} placeholder="Ex.: Maria ou 85999999999" /></label>
               <div className="ai-conversation-filters">
                 <label className="field"><span>Filtrar por agente</span><select className="input" value={conversationAgent} onChange={(event) => setConversationAgent(event.target.value)}><option value="">Todos os agentes</option>{data.agents.map((agent) => <option key={agent.id} value={agent.id}>{agent.name}</option>)}<option value="deleted">Agentes excluídos</option></select></label>
                 <label className="field"><span>Ordenar conversas</span><select className="input" value={conversationOrder} onChange={(event) => setConversationOrder(event.target.value)}><option value="recent">Mais recentes primeiro</option><option value="oldest">Mais antigas primeiro</option></select></label>
               </div>
               {conversationAgent === 'deleted' && conversations.length > 0 && <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" onClick={clearOrphans}><Icon name="trash" size={16} /> Apagar todas</button>}
             </div>
-            {orderedConversations.map((conversation) => (
+            {filteredConversations.map((conversation) => (
               <button type="button" className={`ai-conversation-item ${selectedConversation?.id === conversation.id ? 'is-selected' : ''}`} key={conversation.id} onClick={() => setSelectedConversation(conversation)}>
                 <span className="ai-avatar">{(conversation.name || conversation.phone).slice(0, 1).toUpperCase()}</span>
-                <span className="ai-conversation-summary"><strong>{conversation.channel?.startsWith('instagram_') ? conversation.name || 'Contato do Instagram' : conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.channel === 'instagram_direct' ? 'Instagram · Direct · ' : conversation.channel === 'instagram_comment' ? 'Instagram · Comentário · ' : ''}{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
+                <span className="ai-conversation-summary">
+                  <strong>{conversation.channel?.startsWith('instagram_') ? conversation.name || 'Contato do Instagram' : conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong>
+                  <small className="ai-conversation-channel">{conversation.channel === 'instagram_direct' ? 'Instagram · Direct' : conversation.channel === 'instagram_comment' ? 'Instagram · Comentário' : 'WhatsApp'} · {conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''}</small>
+                  <small className="ai-conversation-preview">{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.lastMessage?.content || 'Sem mensagens'}</small>
+                </span>
                 <time>{fmtDate(conversation.lastMessage?.createdAt ?? conversation.updatedAt)}</time>
               </button>
             ))}
             {!conversations.length && <p className="ai-no-conversations">As conversas recebidas pelos agentes de atendimento aparecerão aqui.</p>}
+            {conversations.length > 0 && !filteredConversations.length && <p className="ai-no-conversations">Nenhuma conversa encontrada. Tente outro nome, telefone ou mensagem.</p>}
           </aside>
           <ChatPanel conversation={selectedConversation} onClose={() => setSelectedConversation(null)} onChanged={loadConversations} />
         </div>

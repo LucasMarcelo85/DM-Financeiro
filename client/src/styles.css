@@ -2236,6 +2236,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-credit-dashboard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
 .ai-credit-dashboard-head h2, .ai-credit-history h3 { margin: 0; font-size: 1.05rem; }
 .ai-credit-dashboard-head p { margin: .25rem 0 0; }
+.ai-instagram-settings { display: grid; gap: .85rem; }
+.ai-instagram-notice { margin: 0; padding: .8rem 1rem; border: 1px solid #f0d7a9; border-radius: var(--r-sm); background: #fff8e9; color: #704b10; font-size: .88rem; line-height: 1.5; }
+.ai-instagram-notice code { font-size: .82em; }
 .ai-credit-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .7rem; }
 .ai-credit-metrics article { display: grid; gap: .35rem; padding: .8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface, #fff); }
 .ai-credit-metrics article span { color: var(--muted); font-size: .8rem; }
@@ -2275,6 +2278,11 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-inbox { display: grid; grid-template-columns: minmax(16rem, 0.8fr) minmax(20rem, 1.5fr); min-height: 34rem; overflow: hidden; border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
 .ai-conversation-list { max-height: 70vh; overflow-y: auto; border-right: 1px solid var(--line); }
 .ai-conversation-filter { padding: .8rem; border-bottom: 1px solid var(--line); }
+.ai-conversation-list-head { display: flex; align-items: center; justify-content: space-between; gap: .5rem; margin-bottom: .65rem; }
+.ai-conversation-list-head h2 { margin: 0; font-size: 1rem; }
+.ai-conversation-list-head > span { color: var(--muted); font-size: .78rem; white-space: nowrap; }
+.ai-conversation-search { margin-bottom: .65rem; }
+.ai-conversation-search > span { font-size: .8rem; }
 .ai-conversation-filters { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .6rem; }
 .ai-conversation-filter .field { gap: .25rem; }
 .ai-conversation-filter .field > span { font-size: .85rem; }
@@ -2284,6 +2292,8 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-conversation-summary { display: grid; min-width: 0; }
 .ai-conversation-summary strong, .ai-conversation-summary small { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ai-conversation-summary small, .ai-conversation-item time { color: var(--muted); font-size: .75rem; }
+.ai-conversation-summary .ai-conversation-channel { color: var(--ink-2); font-weight: 600; }
+.ai-conversation-summary .ai-conversation-preview { color: var(--muted); }
 .ai-conversation-item time { align-self: start; white-space: nowrap; }
 .ai-no-conversations { padding: 1rem; color: var(--muted); }
 .ai-chat { display: flex; flex-direction: column; min-width: 0; min-height: 34rem; }
@@ -2478,6 +2488,9 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-contact-table-head, .ai-contact-row { display: grid; grid-template-columns: 1fr 1fr minmax(8rem, .7fr); gap: .6rem; padding: .65rem .5rem; border-bottom: 1px solid #edf0f3; }
 .ai-contact-table-head { color: var(--muted); font-size: .82rem; font-weight: 700; }
 .ai-contact-row { align-items: center; overflow-wrap: anywhere; }
+.ai-contact-row > strong { min-width: 0; }
+.ai-contact-actions { display: flex; align-items: center; gap: .4rem; min-width: 0; }
+.ai-contact-actions .input { max-width: 100%; }
 .ai-prompt-tall { min-height: 16rem; }
 .ai-folder-picker, .ai-manual-number { display: flex; gap: .5rem; align-items: center; }
 .ai-folder-picker .input, .ai-manual-number .input { flex: 1; min-width: 0; }
@@ -2507,27 +2520,55 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-prompt-card h4 { margin: 0; }
 .ai-prompt-preview { max-height: 16rem; overflow: auto; margin: .5rem 0 0; padding: .6rem; border-radius: var(--r-sm); background: #f4f6f8; font: inherit; font-size: .8rem; white-space: pre-wrap; }
 @media (max-width: 760px) {
-  .ai-inbox { grid-template-columns: 1fr; min-height: 30rem; }
-  .ai-conversation-list { max-height: 60vh; border-right: 0; }
+  .ai-inbox { grid-template-columns: 1fr; min-height: 0; }
+  .ai-inbox:not(.has-chat) { overflow: visible; border: 0; background: transparent; }
+  .ai-conversation-list { max-height: min(62vh, 38rem); border: 1px solid var(--line); border-radius: var(--r-md); background: #fff; }
   .ai-inbox.has-chat .ai-conversation-list { display: none; }
   .ai-chat-back { display: inline-grid; }
   .ai-inbox:not(.has-chat) .ai-chat { display: none; }
-  .ai-chat { min-height: 30rem; }
+  .ai-inbox.has-chat .ai-chat { min-height: min(72vh, 42rem); border: 1px solid var(--line); border-radius: var(--r-md); }
   .ai-contacts-panel > header { flex-direction: column; }
+  .ai-folders-layout { grid-template-columns: minmax(0, 1fr); gap: .75rem; }
+  .ai-folder-list { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .4rem; max-height: 11rem; overflow-y: auto; padding: .1rem; }
+  .ai-folder-list > button { min-width: 0; max-width: 100%; padding: .55rem .65rem; border-color: var(--line); background: #fff; }
+  .ai-folder-new { grid-column: 1 / -1; margin-top: 0; }
+  .ai-contact-row { grid-template-columns: minmax(0, 1fr) auto; gap: .25rem .7rem; align-items: start; margin: .45rem 0; padding: .75rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; }
+  .ai-contact-row > strong { grid-column: 1; overflow-wrap: anywhere; }
+  .ai-contact-row > span:nth-child(2) { grid-column: 1; color: var(--muted); font-size: .88rem; }
+  .ai-contact-actions { grid-column: 2; grid-row: 1 / span 2; align-self: center; justify-self: end; flex-wrap: wrap; justify-content: flex-end; max-width: 42vw; }
+  .ai-contact-actions .input { min-width: 0; width: min(42vw, 11rem); }
 }
 @media (max-width: 520px) {
-  .ai-page-head { align-items: flex-start; }
-  .ai-page-head .btn-group { flex-wrap: wrap; justify-content: flex-end; }
-  .ai-tabs { overflow-x: auto; }
-  .ai-tabs button { white-space: nowrap; }
+  .ai-page-head { display: grid; grid-template-columns: minmax(0, 1fr); align-items: start; gap: .65rem; }
+  .ai-page-head .btn-group { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); width: 100%; gap: .45rem; }
+  .ai-page-head .btn-group .btn { justify-content: center; min-width: 0; padding-inline: .45rem; }
+  .ai-tabs { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 0; margin-bottom: .9rem; }
+  .ai-tabs button { min-width: 0; padding: .7rem .2rem; font-size: .76rem; white-space: nowrap; }
   .ai-credit-note { align-items: flex-start; }
+  .ai-credit-dashboard { padding: .85rem; }
+  .ai-credit-metrics { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-credit-recharge { display: grid; grid-template-columns: minmax(0, 1fr); }
+  .ai-credit-recharge .field, .ai-credit-recharge > .btn { width: 100%; }
+  .ai-instagram-settings .ai-credit-dashboard-head { align-items: stretch; flex-direction: column; }
+  .ai-instagram-settings .ai-credit-dashboard-head > .btn { width: 100%; }
   .ai-provider-links { flex-direction: column; }
-  .ai-agent-actions { flex-direction: column; }
+  .ai-agent-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-agent-actions .btn { justify-content: center; min-width: 0; padding-inline: .35rem; }
   .ai-chat-send { align-items: stretch; flex-direction: column; }
   .ai-contact-table-head { display: none; }
-  .ai-contact-row { grid-template-columns: 1fr; }
-  .ai-folders-layout { grid-template-columns: 1fr; }
   .ai-add-contact { grid-template-columns: 1fr; }
+  .ai-conversation-filter { padding: .7rem; }
+  .ai-conversation-filters { grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .45rem; }
+  .ai-conversation-filters .field > span { min-height: 2.2em; font-size: .74rem; }
+  .ai-conversation-filters .input { padding-inline: .45rem; font-size: .82rem; }
+  .ai-conversation-item { grid-template-columns: 2.25rem minmax(0, 1fr) auto; gap: .5rem; padding: .7rem; }
+  .ai-avatar { width: 2.15rem; height: 2.15rem; }
+  .ai-conversation-summary strong { font-size: .9rem; }
+  .ai-conversation-summary small { font-size: .7rem; }
+  .ai-conversation-item time { font-size: .68rem; }
+  .ai-contact-table { border-top: 0; }
+  .ai-contact-actions { max-width: 38vw; }
+  .ai-contact-actions .input { width: min(38vw, 10rem); font-size: .75rem; }
   .noai-media-preview { grid-template-columns: 4rem minmax(0, 1fr); }
   .noai-media-preview img, .noai-media-preview video { width: 4rem; }
   .noai-media-preview .link-btn { grid-column: 2; justify-self: start; }

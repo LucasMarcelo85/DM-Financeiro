@@ -175,7 +175,7 @@ export default function ContactsPanel({ folders, onChanged }) {
               <button className="btn btn-primary btn-sm" disabled={busy}><Icon name="plus" size={16} /> Adicionar número</button>
             </form>
           )}
-          {folder.contacts.length > 8 && <input className="input" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Buscar por nome ou número" aria-label="Buscar contato" />}
+          {folder.contacts.length > 0 && <input className="input" type="search" value={filter} onChange={(event) => setFilter(event.target.value)} placeholder="Buscar por nome ou número" aria-label="Buscar contato" />}
           <div className="ai-contact-table">
             <div className="ai-contact-table-head"><span>Nome</span><span>Telefone</span><span>Pasta</span></div>
             {visible.map((item) => (

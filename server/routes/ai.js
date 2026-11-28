@@ -572,6 +572,7 @@ router.get('/', async (req, res) => {
     webhook: `${config.appUrl}/api/webhooks/meta`,
     webhookPublic: appUrlIsPublic(),
     instagramAccounts: instagramAccounts.map(safeInstagramAccount),
+    instagramConfigured: Boolean(config.instagram.appId && config.instagram.appSecret),
     instagramWebhook: `${config.appUrl}/api/webhooks/instagram`,
     instagramWebhookPublic: config.appUrl.startsWith('https://') && appUrlIsPublic(),
     templates: TEMPLATES,
