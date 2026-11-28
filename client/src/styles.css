@@ -2338,6 +2338,17 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-tag-interrupted { margin-left: .4rem; padding: .05rem .4rem; border-radius: 999px; background: var(--red-soft); color: var(--red-d); font-size: .68rem; font-style: normal; font-weight: 600; }
 .ai-schedule { border: 1px solid var(--line); border-radius: 10px; padding: .8rem 1rem; display: grid; gap: .7rem; }
 .ai-schedule legend { padding: 0 .4rem; font-weight: 600; }
+.ai-channel-options { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 12rem), 1fr)); gap: .65rem; }
+.ai-channel-option { display: flex; align-items: center; gap: .65rem; min-width: 0; padding: .8rem; border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; cursor: pointer; transition: border-color .15s, background .15s; }
+.ai-channel-option.is-selected { border-color: var(--amber); background: var(--amber-soft); box-shadow: 0 0 0 2px color-mix(in srgb, var(--amber) 18%, transparent); }
+.ai-channel-option input { width: 1.05rem; height: 1.05rem; accent-color: var(--amber); }
+.ai-channel-option > span:last-child { display: grid; gap: .15rem; }
+.ai-channel-option small { color: var(--muted); font-size: .78rem; }
+.ai-channel-icon { flex: none; }
+.ai-channel-icon.whatsapp { color: #168b52; }
+.ai-channel-icon.instagram { color: #c13584; }
+.ai-channel-connect { display: flex; align-items: center; gap: .65rem; flex-wrap: wrap; }
+.ai-channel-connect p { margin: 0; }
 .ai-days { display: flex; gap: .35rem; flex-wrap: wrap; }
 .ai-days button { border: 1px solid var(--line); background: transparent; color: inherit; border-radius: 8px; padding: .35rem .65rem; cursor: pointer; }
 .ai-days button.is-on { background: var(--brand, #2563eb); border-color: var(--brand, #2563eb); color: #fff; }

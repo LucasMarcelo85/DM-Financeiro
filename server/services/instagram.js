@@ -115,6 +115,7 @@ export async function beginInstagramOAuth({ userId, storeId, returnPath }) {
   url.searchParams.set('redirect_uri', oauthRedirectUri());
   url.searchParams.set('response_type', 'code');
   url.searchParams.set('scope', LOGIN_SCOPES.join(','));
+  url.searchParams.set('enable_fb_login', 'false');
   url.searchParams.set('state', state);
   return url.toString();
 }

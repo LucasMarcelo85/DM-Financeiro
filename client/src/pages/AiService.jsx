@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import { useSearchParams } from 'react-router-dom';
+import { FaInstagram, FaWhatsapp } from 'react-icons/fa6';
 import { api } from '../api.js';
 import ContactsPanel from '../components/ai/ContactsPanel.jsx';
 import ActionsModal from '../components/ai/ActionsModal.jsx';
@@ -26,7 +27,7 @@ const typedPhone = (value) => {
 };
 const MAX_CAMPAIGN_CONTACTS = 3000;
 
-function AgentEditor({ initial, data, onClose, onSaved }) {
+function AgentEditor({ initial, data, onClose, onSaved, onConnectInstagram, instagramConnecting }) {
   const toast = useToast();
   const editing = Boolean(initial?.id);
   const [form, setForm] = useState(() => ({
@@ -43,6 +44,18 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     dataAccess: { orders: true, products: false, billing: false, ...(initial?.dataAccess || {}) },
     schedule: { enabled: false, days: [1, 2, 3, 4, 5], start: '08:00', end: '18:00', from: '', until: '', ...(initial?.schedule || {}) },
   }));
+  const [selectedChannels, setSelectedChannels] = useState(() => ({
+    whatsapp: Boolean(initial?.instanceId),
+    instagram: Boolean(initial?.instagramAccountId),
+  }));
+  const toggleChannel = (channel, enabled) => {
+    setSelectedChannels((current) => ({ ...current, [channel]: enabled }));
+    if (!enabled) {
+      setForm((current) => channel === 'whatsapp'
+        ? { ...current, instanceId: '' }
+        : { ...current, instagramAccountId: '', respondInstagramDirect: false, respondInstagramComments: false });
+    }
+  };
   const setSchedule = (key, value) => setForm((current) => ({ ...current, schedule: { ...current.schedule, [key]: value } }));
   const toggleDay = (day) => setSchedule('days', form.schedule.days.includes(day) ? form.schedule.days.filter((item) => item !== day) : [...form.schedule.days, day]);
   const [saving, setSaving] = useState(false);
@@ -64,11 +77,6 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
   const toggleDataAccess = (key) => (event) => setForm((current) => ({
     ...current, dataAccess: { ...current.dataAccess, [key]: event.target.checked },
   }));
-  const setMode = (mode) => setForm((current) => {
-    const isDefault = !current.prompt.trim() || [...data.builtinPrompts, ...data.prompts].some((item) => item.content === current.prompt);
-    const next = isDefault ? (data.templates[mode] || current.prompt) : current.prompt;
-    return { ...current, mode, prompt: next };
-  });
   const usePrompt = (key) => {
     const chosen = promptOptions.find((item) => item.key === key);
     if (!chosen) return;
@@ -114,11 +122,32 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
   };
   async function submit(event) {
     event.preventDefault();
+    if (form.mode === 'atendimento') {
+      if (!selectedChannels.whatsapp && !selectedChannels.instagram) {
+        toast('Escolha WhatsApp, Instagram ou os dois canais.', 'error');
+        return;
+      }
+      if (selectedChannels.whatsapp && !form.instanceId) {
+        toast('Selecione uma conexão de WhatsApp.', 'error');
+        return;
+      }
+      if (selectedChannels.instagram && !form.instagramAccountId) {
+        toast('Conecte e selecione uma conta profissional do Instagram.', 'error');
+        return;
+      }
+      if (selectedChannels.instagram && !form.respondInstagramDirect && !form.respondInstagramComments) {
+        toast('Escolha se o agente responderá ao Direct, aos comentários ou a ambos.', 'error');
+        return;
+      }
+    }
     setSaving(true);
     try {
       const payload = {
-        ...form, instanceId: form.instanceId || null,
-        instagramAccountId: form.instagramAccountId ? Number(form.instagramAccountId) : null,
+        ...form,
+        instanceId: form.mode === 'atendimento' && !selectedChannels.whatsapp ? null : form.instanceId || null,
+        instagramAccountId: form.mode === 'atendimento' && !selectedChannels.instagram ? null : form.instagramAccountId ? Number(form.instagramAccountId) : null,
+        respondInstagramDirect: form.mode === 'atendimento' && selectedChannels.instagram && form.respondInstagramDirect,
+        respondInstagramComments: form.mode === 'atendimento' && selectedChannels.instagram && form.respondInstagramComments,
         monthlyLimit: Number(form.monthlyLimit),
       };
       if (editing) await api.put(`/ai/agents/${initial.id}`, payload);
@@ -137,49 +166,67 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     <div className="ai-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="ai-editor" role="dialog" aria-modal="true" aria-labelledby="ai-editor-title">
         <div className="ai-editor-head">
-        <div><h2 id="ai-editor-title">{editing ? 'Editar agente' : 'Criar agente da Dm Soluções'}</h2><p className="muted small">A Dm Soluções cuida da inteligência e dos créditos. Você configura o WhatsApp e os canais do Instagram.</p></div>
+          <div><h2 id="ai-editor-title">{editing ? 'Editar agente' : 'Criar agente da Dm Soluções'}</h2><p className="muted small">A Dm Soluções cuida da inteligência e dos créditos. Escolha WhatsApp, Instagram ou os dois canais para este atendimento.</p></div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
         <form className="ai-form" onSubmit={submit}>
-          <div className="form-row">
-            <label className="field"><span>Nome do agente</span><input className="input" value={form.name} onChange={set('name')} required minLength={2} maxLength={80} placeholder="Ex.: Atendimento da loja" /></label>
-            <label className="field"><span>Tipo de agente</span>
-              <select className="input" value={form.mode} onChange={(event) => setMode(event.target.value)}>
-                <option value="atendimento">Atendimento — responde mensagens</option>
-                <option value="marketing">Marketing — cria e envia mensagens</option>
-              </select>
-            </label>
-          </div>
+          <label className="field"><span>Nome do agente</span><input className="input" value={form.name} onChange={set('name')} required minLength={2} maxLength={80} placeholder="Ex.: Atendimento da loja" /></label>
           {form.mode === 'atendimento' ? (
             <>
-              <label className="field"><span>WhatsApp (opcional)</span>
-                <select className="input" value={form.instanceId} onChange={set('instanceId')}>
-                  <option value="">Não usar WhatsApp</option>
-                  {data.instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.displayName} · {instance.provider === 'meta' ? 'API Meta' : 'QR Code'}</option>)}
-                </select>
-              </label>
-              <fieldset className="ai-schedule">
-                <legend>Instagram (opcional)</legend>
-                <label className="field"><span>Conta profissional conectada</span>
-                  <select className="input" value={form.instagramAccountId} onChange={(event) => setForm((current) => ({
-                    ...current,
-                    instagramAccountId: event.target.value,
-                    respondInstagramDirect: false,
-                    respondInstagramComments: false,
-                  }))}>
-                    <option value="">Não usar Instagram</option>
-                    {data.instagramAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}
-                  </select>
-                </label>
-                {(() => {
-                  const account = data.instagramAccounts.find((item) => String(item.id) === form.instagramAccountId);
-                  return account && <>
-                    <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramDirect} disabled={!account.canReceiveMessages} onChange={(event) => setForm((current) => ({ ...current, respondInstagramDirect: event.target.checked }))} /> Responder mensagens do Direct</label>
-                    <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramComments} disabled={!account.canReplyToComments} onChange={(event) => setForm((current) => ({ ...current, respondInstagramComments: event.target.checked }))} /> Responder comentários nas publicações</label>
-                    {(!account.canReceiveMessages || !account.canReplyToComments) && <small className="form-error">Algumas permissões não foram concedidas. Reconecte a conta para autorizar os canais desativados.</small>}
-                  </>;
-                })()}
-                <small>O agente responde quando uma pessoa envia uma mensagem ou comenta. A Meta não permite iniciar Direct automaticamente para novos seguidores.</small>
+              <fieldset className="ai-schedule ai-channel-selection">
+                <legend>Canais de atendimento</legend>
+                <small>Ative um canal ou os dois. O agente responderá somente nos canais selecionados.</small>
+                <div className="ai-channel-options">
+                  <label className={`ai-channel-option ${selectedChannels.whatsapp ? 'is-selected' : ''}`}>
+                    <input type="checkbox" checked={selectedChannels.whatsapp} onChange={(event) => toggleChannel('whatsapp', event.target.checked)} />
+                    <FaWhatsapp className="ai-channel-icon whatsapp" size={24} />
+                    <span><strong>WhatsApp</strong><small>Responder mensagens</small></span>
+                  </label>
+                  <label className={`ai-channel-option ${selectedChannels.instagram ? 'is-selected' : ''}`}>
+                    <input type="checkbox" checked={selectedChannels.instagram} onChange={(event) => toggleChannel('instagram', event.target.checked)} />
+                    <FaInstagram className="ai-channel-icon instagram" size={24} />
+                    <span><strong>Instagram</strong><small>Direct e comentários</small></span>
+                  </label>
+                </div>
+                {selectedChannels.whatsapp && (data.instances.length ? (
+                  <label className="field"><span>Conexão do WhatsApp</span>
+                    <select className="input" value={form.instanceId} onChange={set('instanceId')} required>
+                      <option value="">Selecione uma conexão</option>
+                      {data.instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.displayName} · {instance.provider === 'meta' ? 'API Meta' : 'QR Code'}</option>)}
+                    </select>
+                  </label>
+                ) : <p className="muted small">Nenhum WhatsApp conectado. Conecte um número antes de selecionar este canal.</p>)}
+                {selectedChannels.instagram && (data.instagramAccounts.length ? (
+                  <>
+                    <label className="field"><span>Conta profissional do Instagram</span>
+                      <select className="input" value={form.instagramAccountId} onChange={(event) => setForm((current) => ({
+                        ...current,
+                        instagramAccountId: event.target.value,
+                        respondInstagramDirect: false,
+                        respondInstagramComments: false,
+                      }))} required>
+                        <option value="">Selecione uma conta conectada</option>
+                        {data.instagramAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}
+                      </select>
+                    </label>
+                    {(() => {
+                      const account = data.instagramAccounts.find((item) => String(item.id) === form.instagramAccountId);
+                      return account && <>
+                        <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramDirect} disabled={!account.canReceiveMessages} onChange={(event) => setForm((current) => ({ ...current, respondInstagramDirect: event.target.checked }))} /> Responder mensagens do Direct</label>
+                        <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramComments} disabled={!account.canReplyToComments} onChange={(event) => setForm((current) => ({ ...current, respondInstagramComments: event.target.checked }))} /> Responder comentários nas publicações</label>
+                        {(!account.canReceiveMessages || !account.canReplyToComments) && <small className="form-error">Algumas permissões não foram concedidas. Reconecte a conta para autorizar os canais desativados.</small>}
+                      </>;
+                    })()}
+                  </>
+                ) : (
+                  <div className="ai-channel-connect">
+                    <p className="muted small">Nenhuma conta profissional conectada nesta loja.</p>
+                    {data.instagramConfigured
+                      ? <button type="button" className="btn btn-ghost btn-sm" onClick={onConnectInstagram} disabled={instagramConnecting}>{instagramConnecting ? 'Conectando...' : 'Conectar Instagram'}</button>
+                      : <small className="muted">A conexão não está disponível. Fale com o suporte.</small>}
+                  </div>
+                ))}
+                <small>O agente responde quando alguém envia uma mensagem ou comenta. A Meta não permite iniciar Direct automaticamente para novos seguidores.</small>
               </fieldset>
               <fieldset className="ai-schedule">
                 <legend>Dados do sistema que este agente pode consultar</legend>
@@ -738,7 +785,7 @@ export default function AiService() {
       {actionsAgent && <ActionsModal agent={actionsAgent} onClose={() => setActionsAgent(null)} />}
       {campaignAgent && <CampaignModal agent={campaignAgent} onClose={() => setCampaignAgent(null)} />}
       {noAiMarketingOpen && data && <NoAiMarketingModal data={data} onClose={() => setNoAiMarketingOpen(false)} />}
-      {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} />}
+      {editor && data && <AgentEditor initial={editor} data={data} onClose={() => setEditor(null)} onSaved={load} onConnectInstagram={connectInstagram} instagramConnecting={instagramBusy} />}
       {whatsappOpen && <WhatsAppManagerModal onClose={() => { setWhatsappOpen(false); load(); }} />}
     </>
   );

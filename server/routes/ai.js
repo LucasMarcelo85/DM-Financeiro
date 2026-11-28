@@ -735,14 +735,14 @@ router.post('/agents', async (req, res) => {
   }
   const body = req.body || {};
   const name = String(body.name || '').trim();
-  const mode = String(body.mode || '');
+  const mode = String(body.mode || 'atendimento');
   const prompt = String(body.prompt || '').trim();
   const monthlyLimit = Number(body.monthlyLimit);
   const active = body.active === undefined ? true : body.active;
   const contactIds = cleanPhoneList(body.contactIds, 3001);
   const dataAccess = cleanDataAccess(body.dataAccess);
   if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome do agente deve ter entre 2 e 80 caracteres.');
-  if (!['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Escolha marketing ou atendimento.');
+  if (mode !== 'atendimento') throw new AppError(400, 'Novos agentes são somente para atendimento. Use Marketing sem IA para criar campanhas.');
   if (prompt.length < 20 || prompt.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
   if (!Number.isInteger(monthlyLimit) || monthlyLimit < 1 || monthlyLimit > 100000) throw new AppError(400, 'O limite mensal deve ser entre 1 e 100.000 respostas.');
   if (typeof active !== 'boolean') throw new AppError(400, 'O estado ativo do agente é inválido.');
