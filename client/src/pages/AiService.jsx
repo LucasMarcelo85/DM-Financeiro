@@ -509,26 +509,26 @@ export default function AiService() {
       toast(err.message, 'error');
       setTopUpBusy(false);
     }
-    async function connectInstagram() {
-      setInstagramBusy(true);
-      try {
-        const { url } = await api.post('/ai/instagram/connect');
-        window.location.assign(url);
-      } catch (err) {
-        toast(err.message, 'error');
-        setInstagramBusy(false);
-      }
+  }
+  async function connectInstagram() {
+    setInstagramBusy(true);
+    try {
+      const { url } = await api.post('/ai/instagram/connect');
+      window.location.assign(url);
+    } catch (err) {
+      toast(err.message, 'error');
+      setInstagramBusy(false);
     }
-    async function disconnectInstagram(account) {
-      if (!window.confirm(`Desconectar a conta @${account.username}? Os agentes vinculados deixarão de responder pelo Instagram.`)) return;
-      setInstagramDisconnecting(account.id);
-      try {
-        await api.del(`/ai/instagram/${account.id}`);
-        toast('Conta do Instagram desconectada.');
-        await load();
-      } catch (err) { toast(err.message, 'error'); }
-      finally { setInstagramDisconnecting(null); }
-    }
+  }
+  async function disconnectInstagram(account) {
+    if (!window.confirm(`Desconectar a conta @${account.username}? Os agentes vinculados deixarão de responder pelo Instagram.`)) return;
+    setInstagramDisconnecting(account.id);
+    try {
+      await api.del(`/ai/instagram/${account.id}`);
+      toast('Conta do Instagram desconectada.');
+      await load();
+    } catch (err) { toast(err.message, 'error'); }
+    finally { setInstagramDisconnecting(null); }
   }
   async function testAgent(agent) {
     setTesting(agent.id);
