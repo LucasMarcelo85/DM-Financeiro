@@ -78,6 +78,7 @@ export const config = {
     appId: stripQuotes(env.INSTAGRAM_APP_ID),
     appSecret: stripQuotes(env.INSTAGRAM_APP_SECRET),
     apiVersion: (env.INSTAGRAM_API_VERSION || 'v27.0').trim(),
+    webhookUrl: trimSlash(env.INSTAGRAM_WEBHOOK_URL) || 'https://n8n-fluxo-n8n.exzgdz.easypanel.host/webhook/assistente',
     webhookVerifyToken: stripQuotes(env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN),
   },
   webPush: {

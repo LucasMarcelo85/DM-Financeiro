@@ -415,6 +415,7 @@ export default function AiService() {
   const [whatsappOpen, setWhatsappOpen] = useState(false);
   const [instagramBusy, setInstagramBusy] = useState(false);
   const [instagramDisconnecting, setInstagramDisconnecting] = useState(null);
+  const [instagramConnectedNotice, setInstagramConnectedNotice] = useState(false);
   const confirmedReturn = useRef('');
 
   const load = useCallback(async () => {
@@ -484,7 +485,10 @@ export default function AiService() {
     toast(status === 'connected' ? 'Conta profissional do Instagram conectada.' : status === 'expired' ? 'A autorização do Instagram expirou. Tente conectar novamente.' : 'Não foi possível conectar o Instagram. Confira as permissões e tente novamente.', status === 'connected' ? 'ok' : 'error');
     params.delete('instagram_status');
     setSearchParams(params, { replace: true });
-    if (status === 'connected') load();
+    if (status === 'connected') {
+      setInstagramConnectedNotice(true);
+      load();
+    }
   }, [returnQuery, setSearchParams, toast, load]);
   useEffect(() => {
     if (tab !== 'conversas') return undefined;
@@ -512,6 +516,7 @@ export default function AiService() {
     }
   }
   async function connectInstagram() {
+    setInstagramConnectedNotice(false);
     setInstagramBusy(true);
     try {
       const { url } = await api.post('/ai/instagram/connect');
@@ -652,6 +657,7 @@ export default function AiService() {
               <div><h2>Instagram</h2><p className="muted small">Conecte uma conta profissional para responder Direct e comentários pela Dm Soluções.</p></div>
               <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : 'Conectar conta'}</button>
             </div>
+            {instagramConnectedNotice && <div className="ai-instagram-success" role="status"><span>Instagram conectado com sucesso. Agora selecione esta conta ao configurar um agente de atendimento.</span><button type="button" className="link-btn" onClick={() => setInstagramConnectedNotice(false)}>Fechar</button></div>}
             {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está configurada no servidor. O administrador precisa cadastrar <code>INSTAGRAM_APP_ID</code> e <code>INSTAGRAM_APP_SECRET</code> do app Meta. Depois, cada loja conecta sua própria conta por este botão.</p>}
             {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
               <div key={account.id} className="ai-credit-history-row">
@@ -661,9 +667,13 @@ export default function AiService() {
             )) : <p className="muted small">Nenhuma conta conectada. É necessário usar uma conta profissional do Instagram.</p>}
             <details className="ai-webhook-help">
               <summary>Configuração da integração na Meta</summary>
-              <p>Cadastre o webhook HTTPS abaixo no aplicativo Meta e assine os campos <strong>messages</strong> e <strong>comments</strong>. O administrador do sistema configura o token de verificação e as credenciais do aplicativo no servidor.</p>
+              <p>Cadastre esta URL como webhook no aplicativo Meta e assine os campos <strong>messages</strong> e <strong>comments</strong>. O n8n recebe os eventos e precisa encaminhar o POST original ao sistema, sem alterar o corpo e preservando o cabeçalho <code>X-Hub-Signature-256</code>:</p>
               <code>{data.instagramWebhook}</code>
-              {!data.instagramWebhookPublic && <p className="form-error">A Meta só consegue acessar o webhook quando o sistema está publicado em HTTPS.</p>}
+              <p>Destino para encaminhamento dos eventos no n8n:</p>
+              <code>{data.instagramWebhookForwardUrl}</code>
+              <p>O callback de OAuth é separado do webhook e deve continuar apontando para o sistema:</p>
+              <code>{data.instagramOAuthCallback}</code>
+              {!data.instagramWebhookPublic && <p className="form-error">O sistema precisa estar publicado em HTTPS para o n8n encaminhar os eventos recebidos.</p>}
             </details>
           </section>
           {!data.agents.length ? (

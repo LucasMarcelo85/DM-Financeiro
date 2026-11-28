@@ -2239,6 +2239,7 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-instagram-settings { display: grid; gap: .85rem; }
 .ai-instagram-notice { margin: 0; padding: .8rem 1rem; border: 1px solid #f0d7a9; border-radius: var(--r-sm); background: #fff8e9; color: #704b10; font-size: .88rem; line-height: 1.5; }
 .ai-instagram-notice code { font-size: .82em; }
+.ai-instagram-success { display: flex; align-items: center; justify-content: space-between; gap: .75rem; padding: .75rem 1rem; border: 1px solid #b7e2ca; border-radius: var(--r-sm); background: #effaf3; color: #17613c; font-size: .9rem; }
 .ai-credit-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .7rem; }
 .ai-credit-metrics article { display: grid; gap: .35rem; padding: .8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface, #fff); }
 .ai-credit-metrics article span { color: var(--muted); font-size: .8rem; }
