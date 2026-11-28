@@ -407,7 +407,7 @@ async function sendAiReply(agent, conversation, input, externalId, attachments =
       history: history.reverse().slice(0, -1).map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })),
       input: input.slice(0, 8000),
       attachments,
-    });
+    }, agent.storeId ?? null);
   } catch (error) {
     await saveMessage(conversation.id, { role: 'error', content: `Não foi possível gerar uma resposta automática: ${error.message}` });
     throw error;
@@ -867,7 +867,7 @@ router.post('/agents/:id/test', async (req, res) => {
   const result = await runCreditedCompletion(agent.userId, {
     prompt: `${agent.prompt}\nResponda apenas com uma confirmação breve.`,
     input: 'Teste de conexão. Responda: conexão OK.',
-  });
+  }, agent.storeId ?? null);
   const conversation = await prisma.aiConversation.upsert({
     where: { agentId_channel_phone: { agentId: agent.id, channel: 'whatsapp', phone: '__teste__' } },
     create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: '__teste__', name: 'Teste de conexão' },
@@ -877,7 +877,12 @@ router.post('/agents/:id/test', async (req, res) => {
     role: 'assistant', content: 'Teste de conexão', inputTokens: result.inputTokens,
     cachedInputTokens: result.cachedInputTokens, outputTokens: result.outputTokens, audioSeconds: Math.ceil(result.audioSeconds || 0),
   });
-  res.json({ ok: true, message: 'Dm Soluções testada. O consumo foi descontado dos seus créditos.' });
+  res.json({
+    ok: true,
+    message: result.unbilled
+      ? 'Dm Soluções testada. O consumo da loja principal do administrador foi registrado sem cobrança de créditos.'
+      : 'Dm Soluções testada. O consumo foi descontado dos seus créditos.',
+  });
 });
 
 const CAMPAIGN_MIN_INTERVAL_MS = 20 * 1000;
@@ -951,7 +956,7 @@ async function processCampaign(campaign, scheduledFor) {
     const reply = await runCreditedCompletion(agent.userId, {
       prompt: `${agent.prompt}${context}`,
       input: `Crie uma mensagem de marketing personalizada para ${item.name || 'o cliente'}. Tema/campanha: ${campaign.message || 'Apresente nossos produtos e convide a pessoa a conhecer as novidades.'}`,
-    });
+    }, agent.storeId ?? null);
     const text = reply.text.slice(0, 6000);
     if (!text) throw new AppError(502, 'O provedor retornou uma resposta vazia.');
     await saveMessage(conversation.id, { role: 'assistant', content: text, inputTokens: reply.inputTokens, cachedInputTokens: reply.cachedInputTokens, outputTokens: reply.outputTokens, audioSeconds: Math.ceil(reply.audioSeconds || 0) });
@@ -1594,12 +1599,12 @@ router.get('/usage', async (req, res) => {
 });
 
 router.get('/credits', async (req, res) => {
-  res.json(await aiCreditStatus(req.user.id));
+  res.json(await aiCreditStatus(req.user.id, await agentStoreId(req)));
 });
 
 router.post('/credits/checkout', async (req, res) => {
   const amountCents = Number(req.body?.amountCents);
-  const checkout = await createAiCreditCheckout(req.user, amountCents, req.owner || req.user);
+  const checkout = await createAiCreditCheckout(req.user, amountCents, req.owner || req.user, await agentStoreId(req));
   res.json(checkout);
 });
 
@@ -1611,7 +1616,7 @@ router.post('/credits/confirm', async (req, res) => {
     receiptUrl: String(req.body?.receipt_url || ''),
     userId: req.user.id,
   });
-  res.json({ paid: true, credits: await aiCreditStatus(req.user.id) });
+  res.json({ paid: true, credits: await aiCreditStatus(req.user.id, await agentStoreId(req)) });
 });
 
 export default router;

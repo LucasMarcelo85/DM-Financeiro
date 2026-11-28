@@ -27,6 +27,13 @@ async function ensureWallet(userId, client = prisma) {
   });
 }
 
+async function isAdminMainStore(userId, storeId) {
+  if (storeId !== null) return false;
+  const user = await prisma.user.findUnique({ where: { id: userId }, select: { role: true } });
+  if (!user) throw new AppError(404, 'Usuário da Dm Soluções não encontrado.');
+  return user.role === 'admin';
+}
+
 function creditCharge(inputTokens, cachedInputTokens, outputTokens, audioSeconds = 0) {
   return calculateAiCreditMicros({
     inputTokens,
@@ -120,11 +127,28 @@ async function settleAiUsage(userId, reservation, usage) {
   return actualMicros;
 }
 
-export async function runCreditedCompletion(userId, request) {
+async function recordUnbilledAiUsage(userId, usage) {
+  const actualMicros = creditCharge(usage.inputTokens, usage.cachedInputTokens, usage.outputTokens, usage.audioSeconds);
+  await prisma.$transaction(async (tx) => {
+    const wallet = await ensureWallet(userId, tx);
+    await tx.aiCreditTransaction.create({
+      data: {
+        userId, reference: `admin-usage:${crypto.randomUUID()}`, type: 'unbilled_usage',
+        amountMicros: -actualMicros, balanceAfterMicros: wallet.balanceMicros,
+        inputTokens: usage.inputTokens, cachedInputTokens: usage.cachedInputTokens,
+        outputTokens: usage.outputTokens, audioSeconds: Math.ceil(usage.audioSeconds || 0),
+      },
+    });
+  });
+  return 0n;
+}
+
+export async function runCreditedCompletion(userId, request, storeId = null) {
   requireAiService();
   const inputTokens = estimateAiInputTokens(request);
   const audioSeconds = estimateAiAudioSeconds(request.attachments);
-  const reservation = await reserveAiCredits(userId, inputTokens, MAX_OUTPUT_TOKENS, audioSeconds);
+  const unbilled = await isAdminMainStore(userId, storeId);
+  const reservation = unbilled ? null : await reserveAiCredits(userId, inputTokens, MAX_OUTPUT_TOKENS, audioSeconds);
   let result;
   try {
     result = await complete({
@@ -135,27 +159,30 @@ export async function runCreditedCompletion(userId, request) {
       maxTokens: MAX_OUTPUT_TOKENS,
     });
   } catch (error) {
-    await releaseAiCredits(userId, reservation);
+    if (reservation) await releaseAiCredits(userId, reservation);
     if (['AI_CREDENTIAL_INVALID', 'AI_PROVIDER_LIMIT', 'AI_PROVIDER_ERROR', 'AI_PROVIDER_UNAVAILABLE'].includes(error.code)) {
       throw new AppError(503, 'A Dm Soluções está temporariamente indisponível. Tente novamente em instantes.', error.code);
     }
     throw error;
   }
   const usage = { ...result, audioSeconds: result.audioSeconds > 0 ? result.audioSeconds : audioSeconds };
-  const chargedMicros = await settleAiUsage(userId, reservation, usage);
-  return { ...usage, chargedMicros };
+  const chargedMicros = reservation
+    ? await settleAiUsage(userId, reservation, usage)
+    : await recordUnbilledAiUsage(userId, usage);
+  return { ...usage, chargedMicros, unbilled };
 }
 
-export async function aiCreditStatus(userId) {
+export async function aiCreditStatus(userId, storeId = null) {
+  const unlimited = await isAdminMainStore(userId, storeId);
   const wallet = await ensureWallet(userId);
   const since = monthStart();
   const [monthly, transactions] = await Promise.all([
     prisma.aiCreditTransaction.aggregate({
-      where: { userId, type: 'usage', createdAt: { gte: since } },
+      where: { userId, type: { in: ['usage', 'unbilled_usage'] }, createdAt: { gte: since } },
       _sum: { amountMicros: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, audioSeconds: true },
     }),
     prisma.aiCreditTransaction.findMany({
-      where: { userId, type: { in: ['usage', 'topup', 'admin_adjustment'] } },
+      where: { userId, type: { in: ['usage', 'unbilled_usage', 'topup', 'admin_adjustment'] } },
       orderBy: { createdAt: 'desc' },
       take: 20,
       select: { id: true, type: true, amountMicros: true, inputTokens: true, cachedInputTokens: true, outputTokens: true, audioSeconds: true, adminUserId: true, note: true, createdAt: true },
@@ -175,10 +202,14 @@ export async function aiCreditStatus(userId) {
     })),
     configured: Boolean(config.ai.apiKey && config.ai.usdBrlRate),
     paymentsConfigured: Boolean(config.infinitepay.handle),
+    unlimited,
   };
 }
 
-export async function createAiCreditCheckout(user, amountCents, purchaser = user) {
+export async function createAiCreditCheckout(user, amountCents, purchaser = user, storeId = null) {
+  if (user.role === 'admin' && storeId === null) {
+    throw new AppError(400, 'A loja principal do administrador não precisa de recarga de créditos.');
+  }
   if (!config.infinitepay.handle) throw new AppError(503, 'A recarga de créditos ainda não está configurada.', 'PAYMENTS_NOT_CONFIGURED');
   requireAiService();
   if (!TOP_UP_AMOUNTS.has(amountCents)) throw new AppError(400, 'Escolha uma recarga de R$ 5, R$ 10, R$ 20 ou R$ 50.');

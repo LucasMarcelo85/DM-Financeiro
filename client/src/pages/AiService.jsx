@@ -663,24 +663,27 @@ export default function AiService() {
         <div className="ai-content">
           <div className="ai-credit-note">
             <Icon name="sparkles" size={20} />
-            <p><strong>Dm Soluções</strong><br />Seu atendimento usa créditos pré-pagos. O consumo considera tokens de entrada e saída.</p>
+            <p><strong>Dm Soluções</strong><br />{credits?.unlimited
+              ? 'A loja principal do administrador usa o atendimento sem recarga. O consumo fica registrado para acompanhamento.'
+              : 'Seu atendimento usa créditos pré-pagos. O consumo considera tokens de entrada e saída.'}</p>
           </div>
           <section className="ai-credit-dashboard" aria-label="Saldo e consumo da Dm Soluções">
             <div className="ai-credit-dashboard-head">
-              <div><h2>Créditos Dm Soluções</h2><p className="muted small">O consumo é calculado pelos tokens usados em cada resposta.</p></div>
+              <div><h2>{credits?.unlimited ? 'Uso da Dm Soluções' : 'Créditos Dm Soluções'}</h2><p className="muted small">O consumo é calculado pelos tokens usados em cada resposta.</p></div>
               <button type="button" className="btn btn-ghost btn-sm" onClick={refreshUsage}><Icon name="refresh" size={15} /> Atualizar</button>
             </div>
             {creditError && <p className="form-error" role="alert">{creditError}</p>}
             {credits && <>
               <div className="ai-credit-metrics">
-                <article><span>Saldo disponível</span><strong>{formatCredits(credits.balanceMicros)}</strong></article>
+                <article><span>{credits.unlimited ? 'Recarga' : 'Saldo disponível'}</span><strong>{credits.unlimited ? 'Não necessária' : formatCredits(credits.balanceMicros)}</strong></article>
                 <article><span>Consumido neste mês</span><strong>{formatCredits(credits.monthlySpentMicros)}</strong></article>
                 <article><span>Tokens de entrada</span><strong>{credits.monthlyTokens.input.toLocaleString('pt-BR')}</strong></article>
                 <article><span>Tokens de saída</span><strong>{credits.monthlyTokens.output.toLocaleString('pt-BR')}</strong></article>
                 <article><span>Áudio transcrito</span><strong>{formatDuration(credits.monthlyTokens.audioSeconds)}</strong></article>
               </div>
-              {(!credits.configured || !credits.paymentsConfigured) && <p className="ai-credit-config-warning" role="status">A recarga e o atendimento ficarão disponíveis após a configuração do serviço.</p>}
-              <div className="ai-credit-recharge">
+              {!credits.configured && <p className="ai-credit-config-warning" role="status">O atendimento ficará disponível após a configuração do serviço.</p>}
+              {!credits.unlimited && credits.configured && !credits.paymentsConfigured && <p className="ai-credit-config-warning" role="status">A recarga ficará disponível após a configuração do pagamento.</p>}
+              {!credits.unlimited && <div className="ai-credit-recharge">
                 <label className="field"><span>Valor da recarga</span>
                   <select className="input" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value))}>
                     {TOP_UPS.map(([amount, label]) => <option value={amount} key={amount}>{label}</option>)}
@@ -689,14 +692,14 @@ export default function AiService() {
                 <button type="button" className="btn btn-primary" onClick={rechargeCredits} disabled={topUpBusy || !credits.configured || !credits.paymentsConfigured}>
                   {topUpBusy ? 'Abrindo pagamento...' : 'Recarregar com InfinitePay'}
                 </button>
-              </div>
+              </div>}
               <div className="ai-credit-history">
-                <h3>Consumo e recargas recentes</h3>
+                <h3>{credits.unlimited ? 'Consumo registrado' : 'Consumo e recargas recentes'}</h3>
                 {!credits.transactions.length ? <p className="muted small">Ainda não há consumo ou recargas.</p> : credits.transactions.map((transaction) => (
                   <div className="ai-credit-history-row" key={transaction.id}>
-                    <span>                    <strong>{transaction.type === 'topup' ? 'Recarga' : transaction.type === 'admin_adjustment' ? transaction.amountMicros.startsWith('-') ? 'Ajuste administrativo (retirada)' : 'Ajuste administrativo (crédito)' : 'Consumo de IA'}</strong><small>{fmtDate(transaction.createdAt)}{transaction.type === 'usage' ? ` · ${transaction.inputTokens.toLocaleString('pt-BR')} entrada / ${transaction.outputTokens.toLocaleString('pt-BR')} saída${transaction.audioSeconds ? ` · áudio ${formatDuration(transaction.audioSeconds)}` : ''}` : transaction.note ? ` · ${transaction.note}` : ''}</small></span>
-                    <strong className={transaction.type === 'topup' || (transaction.type === 'admin_adjustment' && !transaction.amountMicros.startsWith('-')) ? 'is-credit' : 'is-charge'}>
-                      {transaction.amountMicros.startsWith('-') ? '−' : '+'}{formatCredits(transaction.amountMicros.replace('-', ''))}
+                    <span><strong>{transaction.type === 'topup' ? 'Recarga' : transaction.type === 'admin_adjustment' ? transaction.amountMicros.startsWith('-') ? 'Ajuste administrativo (retirada)' : 'Ajuste administrativo (crédito)' : transaction.type === 'unbilled_usage' ? 'Consumo isento' : 'Consumo de IA'}</strong><small>{fmtDate(transaction.createdAt)}{['usage', 'unbilled_usage'].includes(transaction.type) ? ` · ${transaction.inputTokens.toLocaleString('pt-BR')} entrada / ${transaction.outputTokens.toLocaleString('pt-BR')} saída${transaction.audioSeconds ? ` · áudio ${formatDuration(transaction.audioSeconds)}` : ''}` : transaction.note ? ` · ${transaction.note}` : ''}</small></span>
+                    <strong className={transaction.type === 'unbilled_usage' ? 'muted' : transaction.type === 'topup' || (transaction.type === 'admin_adjustment' && !transaction.amountMicros.startsWith('-')) ? 'is-credit' : 'is-charge'}>
+                      {transaction.type === 'unbilled_usage' ? `Custo calculado: ${formatCredits(transaction.amountMicros.replace('-', ''))}` : `${transaction.amountMicros.startsWith('-') ? '−' : '+'}${formatCredits(transaction.amountMicros.replace('-', ''))}`}
                     </strong>
                   </div>
                 ))}

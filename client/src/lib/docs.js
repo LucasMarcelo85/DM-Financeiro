@@ -74,11 +74,11 @@ export const DOCS = [
   },
   {
     slug: 'ia', title: 'Atendimento com IA', icon: 'sparkles',
-    summary: 'Configure a Dm Soluções para campanhas e conversas no WhatsApp usando créditos pré-pagos.',
-    limits: 'Agentes, respostas e contatos têm limites definidos pelo plano. O uso da IA consome créditos.',
-    about: 'Você cria um agente com instruções (o "prompt") e o conecta a um WhatsApp. A Dm Soluções responde clientes e pode rodar campanhas. O saldo, consumo e recargas ficam no painel.',
-    steps: ['Adicione créditos pelo painel da Dm Soluções.', 'Escreva as instruções do agente.', 'Teste a conversa e conecte a um número de WhatsApp.'],
-    limitsList: ['Limites de agentes, respostas e contatos pelo plano.', 'O consumo é calculado pelos tokens usados e descontado do saldo pré-pago.', 'As recargas são processadas pela InfinitePay.'],
+    summary: 'Configure a Dm Soluções para campanhas e conversas usando créditos pré-pagos, exceto na loja principal do administrador.',
+    limits: 'Agentes, respostas e contatos têm limites definidos pelo plano. Na loja principal do administrador, o uso não exige créditos.',
+    about: 'Você cria um agente com instruções (o "prompt") e o conecta a um canal. A Dm Soluções responde clientes e pode rodar campanhas. O saldo e o consumo ficam no painel; na loja principal do administrador, o consumo é registrado sem desconto de créditos.',
+    steps: ['Se a loja não for a principal de uma conta admin, adicione créditos pelo painel da Dm Soluções.', 'Escreva as instruções do agente.', 'Teste a conversa e conecte um canal de atendimento.'],
+    limitsList: ['Limites de agentes, respostas e contatos pelo plano.', 'Nas demais lojas, o consumo é calculado pelos tokens usados e descontado do saldo pré-pago.', 'As recargas são processadas pela InfinitePay.'],
   },
   {
     slug: 'marketing-sem-ia', title: 'Marketing sem IA', icon: 'send',
