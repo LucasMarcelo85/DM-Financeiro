@@ -30,10 +30,11 @@ if (missingJwtSecret) {
 // Chave que protege (criptografa) os tokens da API oficial da Meta guardados no banco.
 // Use ENCRYPTION_KEY fixa em produção; sem ela usa o JWT_SECRET.
 const encryptionSeed = (env.ENCRYPTION_KEY || '').trim() || jwtSecret;
+const appUrl = trimSlash(env.APP_URL) || 'http://localhost:5173';
 
 export const config = {
   port: positive(env.PORT, 3001),
-  appUrl: trimSlash(env.APP_URL) || 'http://localhost:5173',
+  appUrl,
   serverIp: (env.SERVER_IP || '').trim(),
   trustProxy: env.TRUST_PROXY === '1' || env.TRUST_PROXY === 'true' ? 1 : 0,
   jwtSecret,
@@ -78,7 +79,7 @@ export const config = {
     appId: stripQuotes(env.INSTAGRAM_APP_ID),
     appSecret: stripQuotes(env.INSTAGRAM_APP_SECRET),
     apiVersion: (env.INSTAGRAM_API_VERSION || 'v27.0').trim(),
-    webhookUrl: trimSlash(env.INSTAGRAM_WEBHOOK_URL) || 'https://n8n-fluxo-n8n.exzgdz.easypanel.host/webhook/assistente',
+    webhookUrl: trimSlash(env.INSTAGRAM_WEBHOOK_URL) || `${appUrl}/api/webhooks/instagram`,
     webhookVerifyToken: stripQuotes(env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN),
   },
   webPush: {
