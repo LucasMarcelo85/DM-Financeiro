@@ -65,32 +65,35 @@ function AiCreditsModal({ onClose, toast }) {
   }
   return (
     <Modal wide title="Créditos da Dm Soluções" onClose={onClose}>
-      <p className="muted small">Adicione ou retire saldo sem pagamento. Cada alteração exige um motivo e fica registrada no histórico da conta.</p>
-      {error && <p className="form-error" role="alert">{error} <button type="button" className="link-btn" onClick={load}>Tentar novamente</button></p>}
-      {!accounts && !error && <p className="muted">Carregando contas...</p>}
-      {accounts && (
-        <div style={{ display: 'grid', gap: 12, maxHeight: '65vh', overflowY: 'auto' }}>
-          {!accounts.length && <p className="muted">Nenhuma conta disponível.</p>}
-          {accounts.map((account) => {
-            const form = { operation: 'add', amount: '10', note: '', ...forms[account.id] };
-            return (
-              <article className="card" key={account.id} style={{ display: 'grid', gap: 10 }}>
-                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
-                  <span><strong>{account.name}</strong><small className="muted" style={{ display: 'block' }}>{account.detail} · {account.agentCount} agente(s) de IA</small></span>
-                  <strong>Saldo: {formatCreditBalance(account.balanceMicros)}</strong>
-                </div>
-                {account.missingWorkspace && <small className="muted">A área de créditos do app será criada ao aplicar o primeiro ajuste.</small>}
-                <form onSubmit={(event) => { event.preventDefault(); adjust(account, form); }} style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, 1fr) minmax(100px, 1fr) minmax(180px, 2fr) auto', gap: 8, alignItems: 'end' }}>
-                  <label className="field"><span>Ação</span><select className="input" value={form.operation} onChange={(event) => updateForm(account.id, { operation: event.target.value })}><option value="add">Adicionar</option><option value="remove">Retirar</option></select></label>
-                  <label className="field"><span>Valor (R$)</span><input className="input" type="number" min="0.01" max="1000000" step="0.01" required value={form.amount} onChange={(event) => updateForm(account.id, { amount: event.target.value })} /></label>
-                  <label className="field"><span>Motivo</span><input className="input" minLength="3" maxLength="300" required value={form.note} onChange={(event) => updateForm(account.id, { note: event.target.value })} placeholder="Ex.: cortesia, correção de saldo" /></label>
-                  <button className="btn btn-primary" disabled={busy === account.id}>{busy === account.id ? 'Salvando...' : 'Aplicar'}</button>
-                </form>
-              </article>
-            );
-          })}
-        </div>
-      )}
+      <div className="ai-credits-modal">
+        <p className="muted small">A carteira da loja principal fica na conta principal do lojista; cada app de loja adicional tem saldo próprio. Adicione ou retire saldo sem pagamento. Cada alteração exige um motivo e fica registrada no histórico.</p>
+        {error && <p className="form-error" role="alert">{error} <button type="button" className="link-btn" onClick={load}>Tentar novamente</button></p>}
+        {!accounts && !error && <p className="muted">Carregando contas...</p>}
+        {accounts && (
+          <div className="ai-credit-account-list">
+            {!accounts.length && <p className="muted">Nenhuma conta disponível.</p>}
+            {accounts.map((account) => {
+              const form = { operation: 'add', amount: '10', note: '', ...forms[account.id] };
+              return (
+                <article className="card ai-credit-account" key={account.id}>
+                  <div className="ai-credit-account-head">
+                    <div className="ai-credit-account-title"><span className="ai-credit-scope">{account.scopeLabel}</span><strong>{account.name}</strong></div>
+                    <strong className="ai-credit-balance">Saldo: {formatCreditBalance(account.balanceMicros)}</strong>
+                  </div>
+                  <small className="muted ai-credit-account-detail">{account.detail} · {account.agentCount} agente(s) de IA</small>
+                  {account.missingWorkspace && <small className="muted">A área de créditos do app será criada ao aplicar o primeiro ajuste.</small>}
+                  <form className="ai-credit-adjust-form" onSubmit={(event) => { event.preventDefault(); adjust(account, form); }}>
+                    <label className="field"><span>Ação</span><select className="input" value={form.operation} onChange={(event) => updateForm(account.id, { operation: event.target.value })}><option value="add">Adicionar</option><option value="remove">Retirar</option></select></label>
+                    <label className="field"><span>Valor (R$)</span><input className="input" type="number" min="0.01" max="1000000" step="0.01" required value={form.amount} onChange={(event) => updateForm(account.id, { amount: event.target.value })} /></label>
+                    <label className="field"><span>Motivo</span><input className="input" minLength="3" maxLength="300" required value={form.note} onChange={(event) => updateForm(account.id, { note: event.target.value })} placeholder="Ex.: cortesia, correção de saldo" /></label>
+                    <button className="btn btn-primary" disabled={busy === account.id}>{busy === account.id ? 'Salvando...' : 'Aplicar'}</button>
+                  </form>
+                </article>
+              );
+            })}
+          </div>
+        )}
+      </div>
     </Modal>
   );
 }

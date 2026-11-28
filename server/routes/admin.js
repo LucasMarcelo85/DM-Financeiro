@@ -54,12 +54,15 @@ router.get('/ai-credits', async (_req, res) => {
   });
   const workspaceByEmail = new Map(workspaces.map((user) => [user.email, user]));
   const targets = [
-    ...users.map((user) => ({ id: `user:${user.id}`, targetType: 'user', targetId: user.id, userId: user.id, storeId: null, name: user.name, detail: user.email })),
+    ...users.map((user) => ({
+      id: `user:${user.id}`, targetType: 'user', targetId: user.id, userId: user.id, storeId: null,
+      name: user.name, scopeLabel: 'Loja principal', detail: user.email,
+    })),
     ...stores.map((store) => {
       const workspace = workspaceByEmail.get(workspaceEmailFor(store.id));
       return {
         id: `store:${store.id}`, targetType: 'store', targetId: store.id, userId: workspace?.id || null, storeId: store.id,
-        name: store.appName || store.name, detail: `App de ${store.user.name}`, missingWorkspace: !workspace,
+        name: store.appName || store.name, scopeLabel: 'App de loja', detail: store.user.name, missingWorkspace: !workspace,
       };
     }),
   ];

@@ -654,27 +654,17 @@ export default function AiService() {
           </section>
           <section className="card ai-instagram-settings">
             <div className="ai-credit-dashboard-head">
-              <div><h2>Instagram</h2><p className="muted small">Conecte uma conta profissional para responder Direct e comentários pela Dm Soluções.</p></div>
-              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : 'Conectar conta'}</button>
+              <div><h2>Instagram</h2><p className="muted small">Conecte a conta profissional da loja. Você será direcionado ao Instagram para verificar e autorizar o acesso.</p></div>
+              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy || !data.instagramConfigured} aria-describedby={!data.instagramConfigured ? 'instagram-setup-help' : undefined}>{instagramBusy ? 'Conectando...' : 'Conectar Instagram'}</button>
             </div>
             {instagramConnectedNotice && <div className="ai-instagram-success" role="status"><span>Instagram conectado com sucesso. Agora selecione esta conta ao configurar um agente de atendimento.</span><button type="button" className="link-btn" onClick={() => setInstagramConnectedNotice(false)}>Fechar</button></div>}
-            {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está configurada no servidor. O administrador precisa cadastrar <code>INSTAGRAM_APP_ID</code> e <code>INSTAGRAM_APP_SECRET</code> do app Meta. Depois, cada loja conecta sua própria conta por este botão.</p>}
+            {!data.instagramConfigured && <p className="ai-instagram-notice" id="instagram-setup-help" role="status">A conexão ainda não está disponível. Tente novamente mais tarde ou fale com o suporte.</p>}
             {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
               <div key={account.id} className="ai-credit-history-row">
-                <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · webhook pendente' : ''}</small></span>
+                <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · ativação das mensagens pendente' : ''}</small></span>
                 <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" disabled={instagramDisconnecting === account.id} onClick={() => disconnectInstagram(account)}>{instagramDisconnecting === account.id ? 'Desconectando...' : 'Desconectar'}</button>
               </div>
-            )) : <p className="muted small">Nenhuma conta conectada. É necessário usar uma conta profissional do Instagram.</p>}
-            <details className="ai-webhook-help">
-              <summary>Configuração da integração na Meta</summary>
-              <p>Cadastre esta URL como webhook no aplicativo Meta e assine os campos <strong>messages</strong> e <strong>comments</strong>. O n8n recebe os eventos e precisa encaminhar o POST original ao sistema, sem alterar o corpo e preservando o cabeçalho <code>X-Hub-Signature-256</code>:</p>
-              <code>{data.instagramWebhook}</code>
-              <p>Destino para encaminhamento dos eventos no n8n:</p>
-              <code>{data.instagramWebhookForwardUrl}</code>
-              <p>O callback de OAuth é separado do webhook e deve continuar apontando para o sistema:</p>
-              <code>{data.instagramOAuthCallback}</code>
-              {!data.instagramWebhookPublic && <p className="form-error">O sistema precisa estar publicado em HTTPS para o n8n encaminhar os eventos recebidos.</p>}
-            </details>
+            )) : <p className="muted small">Nenhuma conta conectada. Clique em “Conectar Instagram” para autorizar uma conta profissional.</p>}
           </section>
           {!data.agents.length ? (
             <div className="ai-empty"><Icon name="sparkles" size={28} /><h2>Crie seu primeiro agente</h2><p className="muted">Conecte o WhatsApp ou uma conta profissional do Instagram e configure o atendimento da Dm Soluções.</p><button className="btn btn-primary" onClick={() => setEditor({})}>Criar agente</button></div>

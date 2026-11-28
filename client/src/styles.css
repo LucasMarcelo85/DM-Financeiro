@@ -1076,6 +1076,23 @@ button.fat-card:hover { border-color: #b9c4d2; }
   overflow: hidden;
 }
 .modal-wide:has(.whatsapp-manager-modal) .modal-body { min-height: 0; overflow-y: auto; align-content: start; }
+.modal-wide:has(.ai-credits-modal) {
+  width: min(96vw, 82rem);
+  max-width: none;
+  max-height: min(94dvh, 68rem);
+  grid-template-rows: auto minmax(0, 1fr);
+  overflow: hidden;
+}
+.modal-wide:has(.ai-credits-modal) .modal-body { min-height: 0; overflow-y: auto; align-content: start; }
+.ai-credits-modal, .ai-credit-account-list { display: grid; gap: 1rem; }
+.ai-credit-account { display: grid; gap: .75rem; }
+.ai-credit-account-head { display: flex; justify-content: space-between; align-items: flex-start; gap: 1rem; }
+.ai-credit-account-title { display: flex; align-items: center; flex-wrap: wrap; gap: .5rem .75rem; min-width: 0; }
+.ai-credit-scope { padding: .2rem .55rem; border-radius: 999px; background: var(--amber-soft); color: var(--ink); font-size: .75rem; font-weight: 700; white-space: nowrap; }
+.ai-credit-balance { white-space: nowrap; }
+.ai-credit-account-detail { display: block; overflow-wrap: anywhere; }
+.ai-credit-adjust-form { display: grid; grid-template-columns: minmax(9rem, 1fr) minmax(8rem, .8fr) minmax(16rem, 2fr) auto; gap: .75rem; align-items: end; }
+.ai-credit-adjust-form .field { min-width: 0; }
 .whatsapp-manager-modal .instance-actions { flex-wrap: wrap; }
 .tag-catalog { background: #e6f4ee; color: #137a52; }
 .btn-danger-text { color: var(--red-d); }
@@ -2660,6 +2677,12 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pr-workspace .pr-price-options > .btn { justify-self: start; }
 
 @media (max-width: 48rem) {
+  .modal-wide:has(.ai-credits-modal) { width: 100%; height: 100dvh; max-height: 100dvh; border-radius: 0; padding: 1rem; }
+  .overlay:has(.ai-credits-modal) { padding: 0; }
+  .ai-credit-account-head { flex-direction: column; }
+  .ai-credit-adjust-form { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .ai-credit-adjust-form .field:nth-child(3), .ai-credit-adjust-form > .btn { grid-column: 1 / -1; }
+  .ai-credit-adjust-form > .btn { width: 100%; }
   .modal-wide:has(.pr-workspace) { padding: .6rem; }
   .pr-workspace { gap: .85rem; }
   .pr-workspace .input, .pr-workspace select.input, .pr-workspace textarea.input { min-height: 3rem; font-size: 1rem; }
