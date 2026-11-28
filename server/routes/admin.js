@@ -8,6 +8,7 @@ import { removeDomainFromEasypanel } from '../services/easypanel.js';
 import { forgetDomain } from '../services/domains.js';
 import { ADDON_DAYS, ADDON_KEYS, ADDON_RESOURCES, addonMonthlyCents, listAddonSettings, refreshUserAddons, saveAddonSettings } from '../addons.js';
 import { settle } from './billing.js';
+import { workspaceEmailFor, workspaceFor } from '../services/workspace.js';
 import crypto from 'node:crypto';
 
 const router = Router();
@@ -33,6 +34,93 @@ const adminView = (u, lastEvent) => ({
   lastGrant: lastEvent ? eventDTO(lastEvent) : null, // se houver, o botão "Retroceder" pode ser usado
 });
 const lastOpenEvent = (userId) => prisma.accessEvent.findFirst({ where: { userId, revertedAt: null }, orderBy: { id: 'desc' } });
+
+router.get('/ai-credits', async (_req, res) => {
+  const [users, stores] = await Promise.all([
+    prisma.user.findMany({
+      where: { role: { not: 'admin' }, NOT: { email: { endsWith: '@workspace.invalid' } } },
+      select: { id: true, name: true, email: true },
+      orderBy: { name: 'asc' },
+    }),
+    prisma.store.findMany({
+      where: { appEnabled: true },
+      include: { user: { select: { id: true, name: true } } },
+      orderBy: [{ userId: 'asc' }, { name: 'asc' }],
+    }),
+  ]);
+  const workspaces = await prisma.user.findMany({
+    where: { email: { in: stores.map((store) => workspaceEmailFor(store.id)) } },
+    select: { id: true, email: true },
+  });
+  const workspaceByEmail = new Map(workspaces.map((user) => [user.email, user]));
+  const targets = [
+    ...users.map((user) => ({ id: `user:${user.id}`, targetType: 'user', targetId: user.id, userId: user.id, storeId: null, name: user.name, detail: user.email })),
+    ...stores.map((store) => {
+      const workspace = workspaceByEmail.get(workspaceEmailFor(store.id));
+      return {
+        id: `store:${store.id}`, targetType: 'store', targetId: store.id, userId: workspace?.id || null, storeId: store.id,
+        name: store.appName || store.name, detail: `App de ${store.user.name}`, missingWorkspace: !workspace,
+      };
+    }),
+  ];
+  const userIds = [...new Set(targets.map((target) => target.userId).filter(Boolean))];
+  const [wallets, agents] = await Promise.all([
+    prisma.aiCreditWallet.findMany({ where: { userId: { in: userIds } }, select: { userId: true, balanceMicros: true } }),
+    prisma.aiAgent.groupBy({ by: ['userId'], where: { userId: { in: userIds } }, _count: { _all: true } }),
+  ]);
+  const balances = new Map(wallets.map((wallet) => [wallet.userId, wallet.balanceMicros.toString()]));
+  const agentCounts = new Map(agents.map((row) => [row.userId, row._count._all]));
+  res.json({
+    accounts: targets.map((target) => ({
+      ...target,
+      balanceMicros: balances.get(target.userId) || '0',
+      agentCount: target.userId ? agentCounts.get(target.userId) || 0 : 0,
+    })),
+  });
+});
+
+router.post('/ai-credits/adjust', async (req, res) => {
+  const targetType = String(req.body?.targetType || '');
+  const targetId = Number(req.body?.targetId);
+  const operation = String(req.body?.operation || '');
+  const amountCents = Number(req.body?.amountCents);
+  const note = String(req.body?.note || '').trim();
+  if (!['user', 'store'].includes(targetType) || !Number.isInteger(targetId) || targetId < 1) throw new AppError(400, 'Conta ou loja inválida.');
+  if (!['add', 'remove'].includes(operation)) throw new AppError(400, 'Escolha se deseja adicionar ou retirar créditos.');
+  if (!Number.isInteger(amountCents) || amountCents < 1 || amountCents > 100_000_000) throw new AppError(400, 'Informe um valor entre R$ 0,01 e R$ 1.000.000,00.');
+  if (note.length < 3 || note.length > 300) throw new AppError(400, 'Informe o motivo do ajuste (3 a 300 caracteres).');
+  let userId;
+  if (targetType === 'user') {
+    const user = await prisma.user.findFirst({
+      where: { id: targetId, role: { not: 'admin' }, NOT: { email: { endsWith: '@workspace.invalid' } } },
+      select: { id: true },
+    });
+    if (!user) throw new AppError(404, 'Usuário não encontrado.');
+    userId = user.id;
+  } else {
+    const store = await prisma.store.findFirst({ where: { id: targetId, appEnabled: true }, include: { user: true } });
+    if (!store) throw new AppError(404, 'App da loja não encontrado.');
+    userId = (await workspaceFor(store, store.user)).id;
+  }
+  const amountMicros = BigInt(amountCents) * 10_000n * (operation === 'add' ? 1n : -1n);
+  const balanceMicros = await prisma.$transaction(async (tx) => {
+    await tx.aiCreditWallet.upsert({ where: { userId }, create: { userId }, update: {} });
+    const changed = await tx.aiCreditWallet.updateMany({
+      where: { userId, ...(operation === 'remove' ? { balanceMicros: { gte: -amountMicros } } : {}) },
+      data: { balanceMicros: operation === 'add' ? { increment: amountMicros } : { decrement: -amountMicros } },
+    });
+    if (!changed.count) throw new AppError(400, 'O saldo não pode ficar negativo.');
+    const wallet = await tx.aiCreditWallet.findUnique({ where: { userId } });
+    await tx.aiCreditTransaction.create({
+      data: {
+        userId, reference: `admin:${crypto.randomUUID()}`, type: 'admin_adjustment', amountMicros, balanceAfterMicros: wallet.balanceMicros,
+        adminUserId: req.user.id, note,
+      },
+    });
+    return wallet.balanceMicros.toString();
+  });
+  res.json({ userId, balanceMicros });
+});
 
 router.get('/users', async (_req, res) => {
   const [users, events] = await Promise.all([

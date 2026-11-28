@@ -1,4 +1,5 @@
 import { AppError } from '../utils/helpers.js';
+import { config } from '../config.js';
 
 const ENDPOINTS = {
   openai: 'https://api.openai.com/v1/chat/completions',
@@ -38,23 +39,32 @@ const IMAGE_MIMES = new Set(['image/jpeg', 'image/png', 'image/webp', 'image/gif
 
 async function transcribeAudio(apiKey, attachment) {
   const form = new FormData();
-  form.append('model', 'whisper-1');
+  form.append('model', config.ai.transcriptionModel);
+  form.append('response_format', 'json');
   form.append('file', new Blob([Buffer.from(attachment.base64, 'base64')], { type: baseMime(attachment.mime) }), attachment.name || 'audio.ogg');
   let response;
   try {
     response = await fetch('https://api.openai.com/v1/audio/transcriptions', {
       method: 'POST', headers: { Authorization: `Bearer ${apiKey}` }, body: form, signal: AbortSignal.timeout(60000),
     });
-  } catch { return ''; }
-  if (!response.ok) return '';
-  const data = await response.json().catch(() => ({}));
-  return String(data.text || '').trim();
+  } catch {
+    throw new AppError(502, 'Não foi possível conectar ao serviço de transcrição. Tente novamente.', 'AI_PROVIDER_UNAVAILABLE');
+  }
+  if (!response.ok) throw providerError(response);
+  let data;
+  try {
+    data = await response.json();
+  } catch {
+    throw new AppError(502, 'O serviço de transcrição retornou uma resposta inválida.', 'AI_PROVIDER_ERROR');
+  }
+  return { text: String(data.text || '').trim(), durationSeconds: Number(data.duration) || 0 };
 }
 
 // Separa o que o provedor lê direto (imagem, PDF, áudio) do que vira texto (transcrição, arquivos de texto, avisos).
 async function prepareInput(provider, apiKey, input, attachments) {
   const notes = [];
   const media = [];
+  let transcriptionSeconds = 0;
   for (const item of attachments) {
     const mime = baseMime(item.mime);
     const label = item.name ? `"${item.name}"` : mime || 'arquivo';
@@ -68,14 +78,15 @@ async function prepareInput(provider, apiKey, input, attachments) {
     } else if (item.kind === 'audio' || mime.startsWith('audio/')) {
       if (provider === 'gemini') media.push({ kind: 'audio', mime, base64: item.base64 });
       else if (provider === 'openai') {
-        const text = await transcribeAudio(apiKey, item);
-        notes.push(text ? `[Transcrição do áudio enviado pelo cliente]\n${text}` : '[O cliente enviou um áudio que não pôde ser transcrito. Peça para repetir por escrito.]');
+        const transcription = await transcribeAudio(apiKey, item);
+        transcriptionSeconds += transcription.durationSeconds;
+        notes.push(transcription.text ? `[Transcrição do áudio enviado pelo cliente]\n${transcription.text}` : '[O cliente enviou um áudio que não pôde ser transcrito. Peça para repetir por escrito.]');
       } else notes.push('[O cliente enviou um áudio, mas este provedor não processa áudio. Peça gentilmente que escreva a mensagem.]');
     } else {
       notes.push(`[O cliente enviou o arquivo ${label}, que este assistente não consegue ler. Peça outra forma de envio (PDF, imagem ou texto).]`);
     }
   }
-  return { text: [input, ...notes].filter(Boolean).join('\n\n'), media };
+  return { text: [input, ...notes].filter(Boolean).join('\n\n'), media, transcriptionSeconds };
 }
 
 export async function complete({ provider, model, apiKey, prompt, history = [], input, attachments = [], maxTokens = 1200 }) {
@@ -87,7 +98,7 @@ export async function complete({ provider, model, apiKey, prompt, history = [], 
     data = await postJson(ENDPOINTS.openai, { Authorization: `Bearer ${apiKey}` }, {
       model,
       messages: [
-        { role: 'system', content: prompt },
+        { role: 'developer', content: prompt },
         ...history.map((item) => ({ role: item.role === 'assistant' ? 'assistant' : 'user', content: item.content })),
         {
           role: 'user',
@@ -99,13 +110,15 @@ export async function complete({ provider, model, apiKey, prompt, history = [], 
           ] : userText,
         },
       ],
-      max_tokens: outputLimit,
+      max_completion_tokens: outputLimit,
     });
     const choice = data.choices?.[0];
     return {
       text: String(choice?.message?.content || '').trim(),
       inputTokens: Number(data.usage?.prompt_tokens) || 0,
+      cachedInputTokens: Number(data.usage?.prompt_tokens_details?.cached_tokens) || 0,
       outputTokens: Number(data.usage?.completion_tokens) || 0,
+      audioSeconds: prepared.transcriptionSeconds,
     };
   }
   if (provider === 'claude') {

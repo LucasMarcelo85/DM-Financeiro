@@ -1,4 +1,5 @@
-import { useCallback, useEffect, useMemo, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'react-router-dom';
 import { api } from '../api.js';
 import ContactsPanel from '../components/ai/ContactsPanel.jsx';
 import ActionsModal from '../components/ai/ActionsModal.jsx';
@@ -7,16 +8,17 @@ import NoAiMarketingModal from '../components/ai/NoAiMarketingModal.jsx';
 import PromptsPanel from '../components/ai/PromptsPanel.jsx';
 import HelpNote from '../components/HelpNote.jsx';
 import Icon from '../components/Icon.jsx';
+import StoreBar from '../components/StoreBar.jsx';
 import WhatsAppManagerModal from '../components/WhatsAppManagerModal.jsx';
 import { useToast } from '../components/Toast.jsx';
 import { formatStoredPhone } from '../lib/format.js';
 
-const PROVIDERS = [
-  { id: 'gemini', name: 'Google Gemini', model: 'gemini-2.0-flash' },
-  { id: 'openai', name: 'ChatGPT', model: 'gpt-4o-mini' },
-  { id: 'claude', name: 'Claude', model: 'claude-3-5-haiku-latest' },
-];
 const fmtDate = (timestamp) => new Date(timestamp).toLocaleString('pt-BR', { dateStyle: 'short', timeStyle: 'short' });
+const formatCredits = (micros) => (Number(micros || 0) / 1_000_000).toLocaleString('pt-BR', {
+  style: 'currency', currency: 'BRL', minimumFractionDigits: 4, maximumFractionDigits: 6,
+});
+const formatDuration = (seconds) => `${Math.floor(seconds / 60)} min ${seconds % 60} s`;
+const TOP_UPS = [[500, 'R$ 5'], [1000, 'R$ 10'], [2000, 'R$ 20'], [5000, 'R$ 50']];
 const typedPhone = (value) => {
   let digits = String(value || '').replace(/\D/g, '');
   if (digits.length === 10 || digits.length === 11) digits = `55${digits}`;
@@ -29,13 +31,13 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
   const editing = Boolean(initial?.id);
   const [form, setForm] = useState(() => ({
     name: initial?.name || '',
-    provider: initial?.provider || 'gemini',
-    model: initial?.model || 'gemini-2.0-flash',
     mode: initial?.mode || 'atendimento',
     prompt: initial?.prompt || data.templates.atendimento,
-    apiKey: '',
     monthlyLimit: initial?.monthlyLimit || 100,
     instanceId: initial?.instanceId || '',
+    instagramAccountId: initial?.instagramAccountId ? String(initial.instagramAccountId) : '',
+    respondInstagramDirect: initial?.respondInstagramDirect || false,
+    respondInstagramComments: initial?.respondInstagramComments || false,
     contactIds: initial?.contactIds || [],
     active: initial?.active ?? true,
     dataAccess: { orders: true, products: false, billing: false, ...(initial?.dataAccess || {}) },
@@ -115,7 +117,9 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     setSaving(true);
     try {
       const payload = {
-        ...form, instanceId: form.instanceId || null, monthlyLimit: Number(form.monthlyLimit),
+        ...form, instanceId: form.instanceId || null,
+        instagramAccountId: form.instagramAccountId ? Number(form.instagramAccountId) : null,
+        monthlyLimit: Number(form.monthlyLimit),
       };
       if (editing) await api.put(`/ai/agents/${initial.id}`, payload);
       else await api.post('/ai/agents', payload);
@@ -133,7 +137,7 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
     <div className="ai-overlay" role="presentation" onMouseDown={(event) => { if (event.target === event.currentTarget) onClose(); }}>
       <section className="ai-editor" role="dialog" aria-modal="true" aria-labelledby="ai-editor-title">
         <div className="ai-editor-head">
-          <div><h2 id="ai-editor-title">{editing ? 'Editar agente' : 'Criar agente de IA'}</h2><p className="muted small">As credenciais são guardadas criptografadas e nunca aparecem novamente.</p></div>
+        <div><h2 id="ai-editor-title">{editing ? 'Editar agente' : 'Criar agente da Dm Soluções'}</h2><p className="muted small">A Dm Soluções cuida da inteligência e dos créditos. Você configura o WhatsApp e os canais do Instagram.</p></div>
           <button type="button" className="icon-btn" onClick={onClose} aria-label="Fechar"><Icon name="x" /></button>
         </div>
         <form className="ai-form" onSubmit={submit}>
@@ -146,28 +150,37 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
               </select>
             </label>
           </div>
-          <div className="form-row">
-            <label className="field"><span>Provedor de IA</span>
-              <select className="input" value={form.provider} onChange={(event) => {
-                const provider = PROVIDERS.find((item) => item.id === event.target.value);
-                setForm((current) => ({ ...current, provider: provider.id, model: provider.model }));
-              }}>
-                {PROVIDERS.map((provider) => <option key={provider.id} value={provider.id}>{provider.name}</option>)}
-              </select>
-            </label>
-            <label className="field"><span>Modelo</span><input className="input" value={form.model} onChange={set('model')} required maxLength={100} /></label>
-          </div>
-          <label className="field"><span>Chave de API {editing && <small>(em branco mantém a chave atual)</small>}</span>
-            <input className="input" type="password" autoComplete="new-password" value={form.apiKey} onChange={set('apiKey')} required={!editing} maxLength={1000} placeholder={editing ? '••••••••••••' : 'Cole a chave de API do provedor'} />
-          </label>
           {form.mode === 'atendimento' ? (
             <>
-              <label className="field"><span>Instância para atendimento</span>
-                <select className="input" value={form.instanceId} onChange={set('instanceId')} required>
-                  <option value="">Selecione uma instância WhatsApp</option>
+              <label className="field"><span>WhatsApp (opcional)</span>
+                <select className="input" value={form.instanceId} onChange={set('instanceId')}>
+                  <option value="">Não usar WhatsApp</option>
                   {data.instances.map((instance) => <option key={instance.id} value={instance.id}>{instance.displayName} · {instance.provider === 'meta' ? 'API Meta' : 'QR Code'}</option>)}
                 </select>
               </label>
+              <fieldset className="ai-schedule">
+                <legend>Instagram (opcional)</legend>
+                <label className="field"><span>Conta profissional conectada</span>
+                  <select className="input" value={form.instagramAccountId} onChange={(event) => setForm((current) => ({
+                    ...current,
+                    instagramAccountId: event.target.value,
+                    respondInstagramDirect: false,
+                    respondInstagramComments: false,
+                  }))}>
+                    <option value="">Não usar Instagram</option>
+                    {data.instagramAccounts.map((account) => <option key={account.id} value={account.id}>@{account.username}</option>)}
+                  </select>
+                </label>
+                {(() => {
+                  const account = data.instagramAccounts.find((item) => String(item.id) === form.instagramAccountId);
+                  return account && <>
+                    <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramDirect} disabled={!account.canReceiveMessages} onChange={(event) => setForm((current) => ({ ...current, respondInstagramDirect: event.target.checked }))} /> Responder mensagens do Direct</label>
+                    <label className="ai-checkbox"><input type="checkbox" checked={form.respondInstagramComments} disabled={!account.canReplyToComments} onChange={(event) => setForm((current) => ({ ...current, respondInstagramComments: event.target.checked }))} /> Responder comentários nas publicações</label>
+                    {(!account.canReceiveMessages || !account.canReplyToComments) && <small className="form-error">Algumas permissões não foram concedidas. Reconecte a conta para autorizar os canais desativados.</small>}
+                  </>;
+                })()}
+                <small>O agente responde quando uma pessoa envia uma mensagem ou comenta. A Meta não permite iniciar Direct automaticamente para novos seguidores.</small>
+              </fieldset>
               <fieldset className="ai-schedule">
                 <legend>Dados do sistema que este agente pode consultar</legend>
                 <small>Os dados são limitados ao cliente identificado pelo telefone e à loja selecionada. Desative o que não for necessário.</small>
@@ -235,7 +248,7 @@ function AgentEditor({ initial, data, onClose, onSaved }) {
               })}
             </select>
             <textarea className="input ai-prompt ai-prompt-tall" value={form.prompt} onChange={set('prompt')} minLength={20} maxLength={12000} required />
-            <small>Edite livremente. Crie e organize seus prompts na aba Prompts. No atendimento, pedidos deste telefone entram como contexto privado e o agente também lê imagens, áudios e arquivos enviados pelo cliente.</small>
+            <small>Edite livremente. Crie e organize seus prompts na aba Prompts. No WhatsApp, pedidos do telefone entram como contexto privado. O agente também pode analisar imagens e transcrever áudios enviados pelos clientes.</small>
           </label>
           <fieldset className="ai-schedule">
             <legend>Horário de funcionamento</legend>
@@ -337,11 +350,15 @@ function ChatPanel({ conversation, onClose, onChanged }) {
   }
   if (!conversation) return <div className="ai-chat-empty"><Icon name="chat" size={28} /><p>Selecione uma conversa para visualizar as mensagens em tempo real.</p></div>;
   const roleLabel = { user: 'Cliente', human: 'Atendente', error: 'Aviso', action: 'Função' };
+  const contactLabel = conversation.channel?.startsWith('instagram_')
+    ? conversation.name || 'Contato do Instagram'
+    : conversation.name || formatStoredPhone(conversation.phone);
+  const channelLabel = conversation.channel === 'instagram_direct' ? 'Instagram · Direct' : conversation.channel === 'instagram_comment' ? 'Instagram · Comentário' : 'WhatsApp';
   return (
     <section className="ai-chat">
       <header className="ai-chat-head">
         <button type="button" className="icon-btn ai-chat-back" onClick={onClose} aria-label="Voltar às conversas"><Icon name="left" /></button>
-        <div><strong>{conversation.name || formatStoredPhone(conversation.phone)}</strong><small>{formatStoredPhone(conversation.phone)} · {conversation.agentName}{orphan ? ' (agente excluído)' : ''}</small></div>
+        <div><strong>{contactLabel}</strong><small>{channelLabel} · {conversation.agentName}{orphan ? ' (agente excluído)' : ''}</small></div>
         <div className="btn-group ai-chat-tools">
           {!orphan && (interrupted
             ? <button type="button" className="btn btn-ghost btn-sm" onClick={() => control('resume')}>Retomar agente</button>
@@ -359,7 +376,7 @@ function ChatPanel({ conversation, onClose, onChanged }) {
       <div className="ai-chat-messages">
         {messages.map((message) => (
           <article key={message.id} className={`ai-bubble ${message.role === 'user' ? 'is-inbound' : message.role === 'human' ? 'is-human' : message.role === 'error' ? 'is-error' : message.role === 'action' ? 'is-action' : 'is-ai'}`}>
-            <p>{message.content}</p><small>{roleLabel[message.role] || 'IA'} · {fmtDate(message.createdAt)}</small>
+            <p>{message.content}</p><small>{roleLabel[message.role] || 'Dm Soluções'} · {fmtDate(message.createdAt)}</small>
           </article>
         ))}
         {!messages.length && <p className="muted">Ainda não há mensagens nesta conversa.</p>}
@@ -376,7 +393,13 @@ function ChatPanel({ conversation, onClose, onChanged }) {
 
 export default function AiService() {
   const toast = useToast();
+  const [searchParams, setSearchParams] = useSearchParams();
+  const returnQuery = searchParams.toString();
   const [data, setData] = useState(null);
+  const [credits, setCredits] = useState(null);
+  const [creditError, setCreditError] = useState('');
+  const [topUpAmount, setTopUpAmount] = useState(1000);
+  const [topUpBusy, setTopUpBusy] = useState(false);
   const [error, setError] = useState('');
   const [tab, setTab] = useState('agentes');
   const [editor, setEditor] = useState(null);
@@ -389,6 +412,9 @@ export default function AiService() {
   const [actionsAgent, setActionsAgent] = useState(null);
   const [noAiMarketingOpen, setNoAiMarketingOpen] = useState(false);
   const [whatsappOpen, setWhatsappOpen] = useState(false);
+  const [instagramBusy, setInstagramBusy] = useState(false);
+  const [instagramDisconnecting, setInstagramDisconnecting] = useState(null);
+  const confirmedReturn = useRef('');
 
   const load = useCallback(async () => {
     try {
@@ -397,6 +423,14 @@ export default function AiService() {
       setError('');
     } catch (err) {
       setError(err.message);
+    }
+  }, []);
+  const loadCredits = useCallback(async () => {
+    try {
+      setCredits(await api.get('/ai/credits'));
+      setCreditError('');
+    } catch (err) {
+      setCreditError(err.message);
     }
   }, []);
   const loadConversations = useCallback(async () => {
@@ -414,7 +448,43 @@ export default function AiService() {
     } catch (err) { setError(err.message); }
   }, [conversationAgent, conversationOrder, selectedConversation?.id]);
 
-  useEffect(() => { load(); }, [load]);
+  useEffect(() => { load(); loadCredits(); }, [load, loadCredits]);
+  useEffect(() => {
+    const params = new URLSearchParams(returnQuery);
+    const orderNsu = params.get('order_nsu') || params.get('credit_order_nsu');
+    const transactionNsu = params.get('transaction_nsu');
+    const slug = params.get('slug');
+    if (!orderNsu || !transactionNsu || !slug || confirmedReturn.current === orderNsu) return;
+    confirmedReturn.current = orderNsu;
+    api.post('/ai/credits/confirm', {
+      order_nsu: orderNsu,
+      transaction_nsu: transactionNsu,
+      slug,
+      receipt_url: params.get('receipt_url'),
+    }).then((result) => {
+      setCredits(result.credits);
+      setCreditError('');
+      toast('Pagamento confirmado. Seus créditos já estão disponíveis.');
+      params.delete('order_nsu');
+      params.delete('credit_order_nsu');
+      params.delete('transaction_nsu');
+      params.delete('slug');
+      params.delete('receipt_url');
+      setSearchParams(params, { replace: true });
+    }).catch((err) => {
+      confirmedReturn.current = '';
+      toast(err.message, 'error');
+    });
+  }, [returnQuery, setSearchParams, toast]);
+  useEffect(() => {
+    const params = new URLSearchParams(returnQuery);
+    const status = params.get('instagram_status');
+    if (!status) return;
+    toast(status === 'connected' ? 'Conta profissional do Instagram conectada.' : status === 'expired' ? 'A autorização do Instagram expirou. Tente conectar novamente.' : 'Não foi possível conectar o Instagram. Confira as permissões e tente novamente.', status === 'connected' ? 'ok' : 'error');
+    params.delete('instagram_status');
+    setSearchParams(params, { replace: true });
+    if (status === 'connected') load();
+  }, [returnQuery, setSearchParams, toast, load]);
   useEffect(() => {
     if (tab !== 'conversas') return undefined;
     loadConversations();
@@ -426,8 +496,39 @@ export default function AiService() {
     try {
       await api.get('/ai/usage');
       await load();
+      await loadCredits();
       toast('Uso atualizado.');
     } catch (err) { toast(err.message, 'error'); }
+  }
+  async function rechargeCredits() {
+    setTopUpBusy(true);
+    try {
+      const { url } = await api.post('/ai/credits/checkout', { amountCents: topUpAmount });
+      window.location.assign(url);
+    } catch (err) {
+      toast(err.message, 'error');
+      setTopUpBusy(false);
+    }
+    async function connectInstagram() {
+      setInstagramBusy(true);
+      try {
+        const { url } = await api.post('/ai/instagram/connect');
+        window.location.assign(url);
+      } catch (err) {
+        toast(err.message, 'error');
+        setInstagramBusy(false);
+      }
+    }
+    async function disconnectInstagram(account) {
+      if (!window.confirm(`Desconectar a conta @${account.username}? Os agentes vinculados deixarão de responder pelo Instagram.`)) return;
+      setInstagramDisconnecting(account.id);
+      try {
+        await api.del(`/ai/instagram/${account.id}`);
+        toast('Conta do Instagram desconectada.');
+        await load();
+      } catch (err) { toast(err.message, 'error'); }
+      finally { setInstagramDisconnecting(null); }
+    }
   }
   async function testAgent(agent) {
     setTesting(agent.id);
@@ -435,6 +536,7 @@ export default function AiService() {
       const result = await api.post(`/ai/agents/${agent.id}/test`);
       toast(result.message);
       await load();
+      await loadCredits();
     } catch (err) { toast(err.message, 'error'); }
     finally { setTesting(null); }
   }
@@ -465,6 +567,7 @@ export default function AiService() {
 
   return (
     <>
+      <StoreBar />
       <header className="page-head head-row ai-page-head">
         <div><h1>Atendimento com IA</h1><HelpNote topic="ia" /></div>
         <div className="btn-group">
@@ -489,26 +592,80 @@ export default function AiService() {
         <div className="ai-content">
           <div className="ai-credit-note">
             <Icon name="sparkles" size={20} />
-            <p><strong>Uso e recarga</strong><br />O painel contabiliza respostas e tokens usados aqui. A cobrança e a recarga de créditos são feitas diretamente pelo provedor.</p>
-            {data.billingUrls && <div className="ai-provider-links">{PROVIDERS.map((provider) => <a key={provider.id} href={data.billingUrls[provider.id]} target="_blank" rel="noreferrer">Recarregar {provider.name} <Icon name="external" size={14} /></a>)}</div>}
+            <p><strong>Dm Soluções</strong><br />Seu atendimento usa créditos pré-pagos. O consumo considera tokens de entrada e saída e, quando houver áudio, o tempo de transcrição, com cobrança de 2× o custo operacional.</p>
           </div>
+          <section className="ai-credit-dashboard" aria-label="Saldo e consumo da Dm Soluções">
+            <div className="ai-credit-dashboard-head">
+              <div><h2>Créditos Dm Soluções</h2><p className="muted small">O consumo é calculado pelos tokens usados em cada resposta.</p></div>
+              <button type="button" className="btn btn-ghost btn-sm" onClick={loadCredits}><Icon name="refresh" size={15} /> Atualizar</button>
+            </div>
+            {creditError && <p className="form-error" role="alert">{creditError}</p>}
+            {credits && <>
+              <div className="ai-credit-metrics">
+                <article><span>Saldo disponível</span><strong>{formatCredits(credits.balanceMicros)}</strong></article>
+                <article><span>Consumido neste mês</span><strong>{formatCredits(credits.monthlySpentMicros)}</strong></article>
+                <article><span>Tokens de entrada</span><strong>{credits.monthlyTokens.input.toLocaleString('pt-BR')}</strong></article>
+                <article><span>Tokens de saída</span><strong>{credits.monthlyTokens.output.toLocaleString('pt-BR')}</strong></article>
+                <article><span>Áudio transcrito</span><strong>{formatDuration(credits.monthlyTokens.audioSeconds)}</strong></article>
+              </div>
+              {(!credits.configured || !credits.paymentsConfigured) && <p className="ai-credit-config-warning" role="status">A recarga e o atendimento ficarão disponíveis após a configuração do serviço.</p>}
+              <div className="ai-credit-recharge">
+                <label className="field"><span>Valor da recarga</span>
+                  <select className="input" value={topUpAmount} onChange={(event) => setTopUpAmount(Number(event.target.value))}>
+                    {TOP_UPS.map(([amount, label]) => <option value={amount} key={amount}>{label}</option>)}
+                  </select>
+                </label>
+                <button type="button" className="btn btn-primary" onClick={rechargeCredits} disabled={topUpBusy || !credits.configured || !credits.paymentsConfigured}>
+                  {topUpBusy ? 'Abrindo pagamento...' : 'Recarregar com InfinitePay'}
+                </button>
+              </div>
+              <div className="ai-credit-history">
+                <h3>Consumo e recargas recentes</h3>
+                {!credits.transactions.length ? <p className="muted small">Ainda não há consumo ou recargas.</p> : credits.transactions.map((transaction) => (
+                  <div className="ai-credit-history-row" key={transaction.id}>
+                    <span>                    <strong>{transaction.type === 'topup' ? 'Recarga' : transaction.type === 'admin_adjustment' ? transaction.amountMicros.startsWith('-') ? 'Ajuste administrativo (retirada)' : 'Ajuste administrativo (crédito)' : 'Consumo de IA'}</strong><small>{fmtDate(transaction.createdAt)}{transaction.type === 'usage' ? ` · ${transaction.inputTokens.toLocaleString('pt-BR')} entrada / ${transaction.outputTokens.toLocaleString('pt-BR')} saída${transaction.audioSeconds ? ` · áudio ${formatDuration(transaction.audioSeconds)}` : ''}` : transaction.note ? ` · ${transaction.note}` : ''}</small></span>
+                    <strong className={transaction.type === 'topup' || (transaction.type === 'admin_adjustment' && !transaction.amountMicros.startsWith('-')) ? 'is-credit' : 'is-charge'}>
+                      {transaction.amountMicros.startsWith('-') ? '−' : '+'}{formatCredits(transaction.amountMicros.replace('-', ''))}
+                    </strong>
+                  </div>
+                ))}
+              </div>
+            </>}
+          </section>
+          <section className="card" style={{ display: 'grid', gap: 12 }}>
+            <div className="ai-credit-dashboard-head">
+              <div><h2>Instagram</h2><p className="muted small">Conecte uma conta profissional para responder Direct e comentários pela Dm Soluções.</p></div>
+              <button type="button" className="btn btn-primary" onClick={connectInstagram} disabled={instagramBusy}>{instagramBusy ? 'Conectando...' : 'Conectar Instagram'}</button>
+            </div>
+            {data.instagramAccounts.length > 0 ? data.instagramAccounts.map((account) => (
+              <div key={account.id} className="ai-credit-history-row">
+                <span><strong>@{account.username}</strong><small>{account.canReceiveMessages ? 'Direct habilitado' : 'Direct sem permissão'} · {account.canReplyToComments ? 'comentários habilitados' : 'comentários sem permissão'}{!account.webhookSubscribed ? ' · webhook pendente' : ''}</small></span>
+                <button type="button" className="btn btn-ghost btn-sm icon-btn-danger" disabled={instagramDisconnecting === account.id} onClick={() => disconnectInstagram(account)}>{instagramDisconnecting === account.id ? 'Desconectando...' : 'Desconectar'}</button>
+              </div>
+            )) : <p className="muted small">Nenhuma conta conectada. É necessário usar uma conta profissional do Instagram.</p>}
+            <details className="ai-webhook-help">
+              <summary>Configuração da integração na Meta</summary>
+              <p>Cadastre o webhook HTTPS abaixo no aplicativo Meta e assine os campos <strong>messages</strong> e <strong>comments</strong>. O administrador do sistema configura o token de verificação e as credenciais do aplicativo no servidor.</p>
+              <code>{data.instagramWebhook}</code>
+              {!data.instagramWebhookPublic && <p className="form-error">A Meta só consegue acessar o webhook quando o sistema está publicado em HTTPS.</p>}
+            </details>
+          </section>
           {!data.agents.length ? (
-            <div className="ai-empty"><Icon name="sparkles" size={28} /><h2>Crie seu primeiro agente</h2><p className="muted">Escolha um provedor, conecte uma instância WhatsApp e configure o prompt.</p><button className="btn btn-primary" onClick={() => setEditor({})}>Criar agente</button></div>
+            <div className="ai-empty"><Icon name="sparkles" size={28} /><h2>Crie seu primeiro agente</h2><p className="muted">Conecte o WhatsApp ou uma conta profissional do Instagram e configure o atendimento da Dm Soluções.</p><button className="btn btn-primary" onClick={() => setEditor({})}>Criar agente</button></div>
           ) : (
             <>
             <div className="ai-agent-grid">
               {data.agents.map((agent) => (
                 <article className="ai-agent-card" key={agent.id}>
                   <div className="ai-agent-top"><div><span className={`ai-mode ${agent.mode}`}>{agent.mode === 'marketing' ? 'Marketing' : 'Atendimento'}</span><h2>{agent.name}</h2></div><span className={`ai-agent-state ${agent.active ? 'is-on' : ''}`}>{agent.active ? 'Ativo' : 'Pausado'}</span></div>
-                  <p className="muted small">{PROVIDERS.find((provider) => provider.id === agent.provider)?.name} · {agent.model}</p>
-                  <p className="ai-agent-instance">{selectedInstance(agent.instanceId)?.displayName || 'Sem instância vinculada'}</p>
+                  <p className="ai-agent-instance">{[selectedInstance(agent.instanceId)?.displayName, agent.respondInstagramDirect || agent.respondInstagramComments ? `Instagram ${[agent.respondInstagramDirect ? 'Direct' : '', agent.respondInstagramComments ? 'comentários' : ''].filter(Boolean).join(' + ')}` : ''].filter(Boolean).join(' · ') || 'Sem canal vinculado'}</p>
                   {agent.schedule?.enabled && <p className={`small ai-schedule-badge ${agent.withinSchedule ? 'is-on' : ''}`}>{agent.withinSchedule ? 'Dentro do horário' : 'Fora do horário'} · {agent.schedule.start}–{agent.schedule.end}</p>}
                   <div className="ai-usage-meter"><div><span>Respostas neste mês</span><strong>{agent.usage.requests} / {agent.monthlyLimit}</strong></div><progress max={agent.monthlyLimit} value={Math.min(agent.usage.requests, agent.monthlyLimit)} /></div>
                   <p className="muted small">{agent.usage.inputTokens.toLocaleString('pt-BR')} tokens de entrada · {agent.usage.outputTokens.toLocaleString('pt-BR')} de saída</p>
                   <div className="ai-agent-actions">
                     <button className="btn btn-ghost btn-sm" onClick={() => setEditor(agent)}><Icon name="edit" size={16} /> Editar</button>
                     {agent.mode === 'atendimento' && <button className="btn btn-ghost btn-sm" onClick={() => setActionsAgent(agent)}><Icon name="sparkles" size={16} /> Funções</button>}
-                    <button className="btn btn-ghost btn-sm" onClick={() => testAgent(agent)} disabled={testing === agent.id}>{testing === agent.id ? 'Testando...' : 'Testar credencial'}</button>
+                    <button className="btn btn-ghost btn-sm" onClick={() => testAgent(agent)} disabled={testing === agent.id}>{testing === agent.id ? 'Testando...' : 'Testar Dm Soluções'}</button>
                     <button className="btn btn-ghost btn-sm icon-btn-danger" onClick={() => removeAgent(agent)}><Icon name="trash" size={16} /> Excluir</button>
                     {agent.mode === 'marketing' && <button className="btn btn-primary btn-sm" onClick={() => setCampaignAgent(agent)} disabled={!agent.active}><Icon name="send" size={16} /> Campanha ({agent.contactIds.length})</button>}
                   </div>
@@ -541,7 +698,7 @@ export default function AiService() {
             {orderedConversations.map((conversation) => (
               <button type="button" className={`ai-conversation-item ${selectedConversation?.id === conversation.id ? 'is-selected' : ''}`} key={conversation.id} onClick={() => setSelectedConversation(conversation)}>
                 <span className="ai-avatar">{(conversation.name || conversation.phone).slice(0, 1).toUpperCase()}</span>
-                <span className="ai-conversation-summary"><strong>{conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
+                <span className="ai-conversation-summary"><strong>{conversation.channel?.startsWith('instagram_') ? conversation.name || 'Contato do Instagram' : conversation.name || formatStoredPhone(conversation.phone)}{conversation.status === 'interrupted' && <em className="ai-tag-interrupted">Interrompida</em>}</strong><small>{conversation.channel === 'instagram_direct' ? 'Instagram · Direct · ' : conversation.channel === 'instagram_comment' ? 'Instagram · Comentário · ' : ''}{conversation.labels?.length ? `${conversation.labels.join(', ')} · ` : ''}{conversation.agentName}{conversation.agentDeleted ? ' (excluído)' : ''} · {conversation.lastMessage?.content || 'Sem mensagens'}</small></span>
                 <time>{fmtDate(conversation.lastMessage?.createdAt ?? conversation.updatedAt)}</time>
               </button>
             ))}

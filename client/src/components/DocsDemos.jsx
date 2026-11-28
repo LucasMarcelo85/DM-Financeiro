@@ -235,9 +235,7 @@ function ApiDemo() {
   );
 }
 
-const PROVIDERS = ['Gemini', 'ChatGPT', 'Claude'];
 function AiDemo() {
-  const [provider, setProvider] = useState('Gemini');
   const [prompt, setPrompt] = useState('Você é a atendente da Studio Aurora. Horário: 9h às 18h. Seja cordial e curta.');
   const [input, setInput] = useState('');
   const [chat, setChat] = useState([]);
@@ -247,13 +245,13 @@ function AiDemo() {
     if (/pre[cç]o|valor/.test(t)) return 'Posso te enviar a tabela de preços. Qual serviço você procura?';
     return 'Olá! Como posso ajudar você hoje?';
   };
-  const send = (e) => { e.preventDefault(); if (!input.trim()) return; setChat([...chat, { me: true, t: input }, { me: false, t: `[${provider}] ${reply(input)}` }]); setInput(''); };
+  const send = (e) => { e.preventDefault(); if (!input.trim()) return; setChat([...chat, { me: true, t: input }, { me: false, t: reply(input) }]); setInput(''); };
   return (
     <div className="dc-two">
       <div className="dc-stack">
-        <div className="dc-chips">{PROVIDERS.map((p) => <button type="button" key={p} className={`btn btn-sm ${provider === p ? 'btn-primary' : 'btn-ghost'}`} onClick={() => setProvider(p)}>{p}</button>)}</div>
+        <strong>Dm Soluções</strong>
         <label className="field"><span>Instruções do agente</span><textarea className="input" rows={5} value={prompt} onChange={(e) => setPrompt(e.target.value)} /></label>
-        <small className="muted">A resposta abaixo é simulada. No sistema, ela vem do provedor escolhido.</small>
+        <small className="muted">A resposta abaixo é simulada. No sistema, ela vem da Dm Soluções.</small>
       </div>
       <div className="dc-stack">
         <div className="dc-chat">{chat.length ? chat.map((c, i) => <div key={i} className={`dc-bubble ${c.me ? 'me' : ''}`}>{c.t}</div>) : <p className="muted small">Teste: pergunte "qual o horário?" ou "qual o preço?".</p>}</div>

@@ -5,6 +5,7 @@ import { prisma } from '../prisma.js';
 import { AppError, normalizePhone } from '../utils/helpers.js';
 import { PERIODS, isPeriod, isPlan, listPeriods, listPlans, periodDays, planName, priceCents } from '../plans.js';
 import { computeAccess, extendAccess, publicUser } from '../services/access.js';
+import { settleAiCreditTopUp } from '../services/ai-credits.js';
 import * as pay from '../services/infinitepay.js';
 import { ADDON_RESOURCES, ADDON_DAYS, addonPurchases, applyAddonPayment, extrasFor, listAddonSettings, priceAddonItems } from '../addons.js';
 
@@ -121,5 +122,16 @@ webhookRouter.post('/infinitepay', async (req, res) => {
   if (payment.status !== 'paid') {
     await verifyAndSettle(payment, { slug: String(b.invoice_slug || b.slug || ''), transactionNsu: String(b.transaction_nsu || ''), receiptUrl: String(b.receipt_url || '') });
   }
+  res.json({ success: true, message: null });
+});
+
+webhookRouter.post('/ai-credits', async (req, res) => {
+  const body = req.body || {};
+  await settleAiCreditTopUp({
+    orderNsu: String(body.order_nsu || ''),
+    transactionNsu: String(body.transaction_nsu || ''),
+    slug: String(body.invoice_slug || body.slug || ''),
+    receiptUrl: String(body.receipt_url || ''),
+  });
   res.json({ success: true, message: null });
 });

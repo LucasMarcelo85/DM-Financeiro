@@ -3,8 +3,10 @@ import { prisma } from '../prisma.js';
 import { decrypt, safeEqual } from '../utils/secret.js';
 import { evolutionTokenFor } from '../utils/webhooks.js';
 import * as meta from '../services/meta.js';
+import { parseInstagramWebhook } from '../services/instagram.js';
 import { fromEvolution, ingestEvolution, ingestMeta } from '../services/audit.js';
-import { receiveAiMessage, receiveOwnMessage } from './ai.js';
+import { receiveAiMessage, receiveInstagramMessage, receiveOwnMessage } from './ai.js';
+import { config } from '../config.js';
 
 const lastTouch = new Map(); // grava "último evento recebido" no máximo a cada 10 s por conexão
 
@@ -72,6 +74,38 @@ router.post('/meta', async (req, res) => {
     console.error('[webhook] erro ao receber evento da Meta:', e);
   }
   return res.json({ ok: true });
+});
+
+router.get('/instagram', (req, res) => {
+  const token = String(req.query['hub.verify_token'] || '');
+  if (
+    req.query['hub.mode'] === 'subscribe'
+    && config.instagram.webhookVerifyToken
+    && safeEqual(token, config.instagram.webhookVerifyToken)
+  ) {
+    return res.status(200).type('text/plain').send(String(req.query['hub.challenge'] || ''));
+  }
+  return res.status(403).send('Forbidden');
+});
+
+router.post('/instagram', async (req, res) => {
+  if (!meta.verifySignature(req.rawBody, req.get('x-hub-signature-256'), config.instagram.appSecret)) {
+    return res.status(401).json({ error: 'Assinatura inválida.' });
+  }
+  try {
+    for (const event of parseInstagramWebhook(req.body)) {
+      const account = await prisma.aiInstagramAccount.findUnique({
+        where: { instagramUserId: event.accountId },
+      });
+      if (!account) continue;
+      for (const message of event.messages) await receiveInstagramMessage(account, message, 'instagram_direct');
+      for (const comment of event.comments) await receiveInstagramMessage(account, comment, 'instagram_comment');
+    }
+    return res.json({ ok: true });
+  } catch (error) {
+    console.error('[webhook] erro ao receber evento do Instagram:', error);
+    return res.status(500).json({ error: 'Falha ao processar o evento do Instagram.' });
+  }
 });
 
 export default router;

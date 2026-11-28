@@ -5,23 +5,20 @@ import { config } from '../config.js';
 import { AppError, onlyDigits } from '../utils/helpers.js';
 import { decrypt, encrypt } from '../utils/secret.js';
 import { appUrlIsPublic, evolutionWebhookUrl } from '../utils/webhooks.js';
-import { complete } from '../services/ai.js';
 import { BUILTIN_PROMPTS, DEFAULT_PROMPTS } from '../services/ai-templates.js';
 import { isWithinSchedule, normalizeSchedule } from '../services/ai-schedule.js';
 import { buildActionsPrompt, extractActionCalls, renderActionMessage } from '../services/ai-actions.js';
+import { aiCreditStatus, createAiCreditCheckout, runCreditedCompletion, settleAiCreditTopUp } from '../services/ai-credits.js';
 import { getState, sendMedia, sendText } from '../services/whatsapp.js';
-import { createOnlineCheckout } from '../services/catalog-payments.js';
 import * as evo from '../services/evolution.js';
 import * as meta from '../services/meta.js';
+import {
+  beginInstagramOAuth, claimInstagramOAuthState, disconnectInstagramAccount, fetchInstagramAttachment,
+  finishInstagramOAuth, replyToInstagramComment, safeInstagramAccount, sendInstagramDirectMessage,
+} from '../services/instagram.js';
 import { storeScope } from '../utils/store.js';
 
 const router = Router();
-const PROVIDERS = new Set(['gemini', 'openai', 'claude']);
-const PROVIDER_MODELS = {
-  gemini: 'gemini-2.0-flash',
-  openai: 'gpt-4o-mini',
-  claude: 'claude-3-5-haiku-latest',
-};
 const TEMPLATES = DEFAULT_PROMPTS;
 const MEDIA_LABELS = { image: 'Imagem', audio: 'Áudio', document: 'Arquivo' };
 const MEDIA_MAX_BYTES = 10 * 1024 * 1024;
@@ -30,13 +27,16 @@ const monthStart = () => {
   return new Date(Date.UTC(date.getUTCFullYear(), date.getUTCMonth(), 1));
 };
 const safeAgent = (agent, usage = {}) => ({
-  id: agent.id, name: agent.name, provider: agent.provider, model: agent.model, mode: agent.mode,
+  id: agent.id, name: agent.name, mode: agent.mode,
   prompt: agent.prompt, monthlyLimit: agent.monthlyLimit, active: agent.active,
   dataAccess: agent.dataAccess || { orders: true, products: false, billing: false },
   storeId: agent.storeId ?? null,
   instanceId: agent.instanceId, contactIds: Array.isArray(agent.contactIds) ? agent.contactIds : [],
+  instagramAccountId: agent.instagramAccountId ?? null,
+  respondInstagramDirect: agent.respondInstagramDirect,
+  respondInstagramComments: agent.respondInstagramComments,
   schedule: agent.schedule || {}, withinSchedule: isWithinSchedule(agent.schedule),
-  hasKey: Boolean(agent.apiKey), createdAt: agent.createdAt.getTime(), updatedAt: agent.updatedAt.getTime(),
+  createdAt: agent.createdAt.getTime(), updatedAt: agent.updatedAt.getTime(),
   usage,
 });
 const cleanPhone = (value) => onlyDigits(value).slice(-20);
@@ -46,6 +46,12 @@ const instanceStoreScope = (req) => {
   return storeId === null ? { storeId: null } : { OR: [{ storeId: null }, { storeId }] };
 };
 const agentStoreId = (req) => storeScope(req);
+function optionalAccountId(value) {
+  if (value === undefined || value === null || value === '') return null;
+  const id = Number(value);
+  if (!Number.isInteger(id) || id < 1) throw new AppError(400, 'Conta do Instagram inválida.');
+  return id;
+}
 // Números digitados à mão: 10-11 dígitos recebem o 55 do Brasil; os demais precisam trazer o código do país.
 function toPhone(value) {
   let digits = onlyDigits(value);
@@ -84,6 +90,7 @@ async function loadFolders(userId) {
 function addConversationLabels(folders, conversations) {
   const labelsByPhone = new Map();
   for (const conversation of conversations) {
+    if (conversation.channel && conversation.channel !== 'whatsapp') continue;
     const phone = toPhone(conversation.phone) || cleanPhone(conversation.phone);
     if (!phone) continue;
     const labels = labelsByPhone.get(phone) || new Set();
@@ -134,10 +141,19 @@ async function loadAttachment(instance, message) {
 async function ownedAgent(userId, id, scopedStoreId) {
   const agentId = Number(id);
   const agent = Number.isInteger(agentId)
-    ? await prisma.aiAgent.findFirst({ where: { id: agentId, userId, storeId: scopedStoreId }, include: { instance: true } })
+    ? await prisma.aiAgent.findFirst({ where: { id: agentId, userId, storeId: scopedStoreId }, include: { instance: true, instagramAccount: true } })
     : null;
   if (!agent) throw new AppError(404, 'Agente de IA não encontrado.');
   return agent;
+}
+
+async function ownedInstagramAccount(userId, storeId, id) {
+  const accountId = Number(id);
+  const account = Number.isInteger(accountId)
+    ? await prisma.aiInstagramAccount.findFirst({ where: { id: accountId, userId, storeId } })
+    : null;
+  if (!account) throw new AppError(404, 'Conta do Instagram não encontrada.');
+  return account;
 }
 
 async function usageFor(agentId) {
@@ -145,19 +161,14 @@ async function usageFor(agentId) {
   const result = await prisma.aiMessage.aggregate({
     where: { role: 'assistant', createdAt: { gte: since }, conversation: { is: { agentId } } },
     _count: { _all: true },
-    _sum: { inputTokens: true, outputTokens: true },
+    _sum: { inputTokens: true, cachedInputTokens: true, outputTokens: true },
   });
   return {
     requests: result._count._all,
     inputTokens: result._sum.inputTokens || 0,
+    cachedInputTokens: result._sum.cachedInputTokens || 0,
     outputTokens: result._sum.outputTokens || 0,
   };
-}
-
-function agentKey(agent) {
-  const key = decrypt(agent.apiKey);
-  if (!key) throw new AppError(400, 'A credencial deste agente não pode ser lida. Cadastre a chave novamente.', 'AI_CREDENTIAL_INVALID');
-  return key;
 }
 
 async function dataOwnerId(agent) {
@@ -168,6 +179,9 @@ async function dataOwnerId(agent) {
 }
 
 async function createContext(agent, phone, name, conversation = null) {
+  if (conversation?.channel?.startsWith('instagram_')) {
+    return `\n\nContexto: este atendimento está acontecendo no Instagram${conversation.channel === 'instagram_comment' ? ' em um comentário público' : ' por mensagem direta'}. Não há telefone confirmado nem dados de pedidos vinculados a esta conversa. Não afirme que enviou uma mensagem privada se estiver respondendo a um comentário público.`;
+  }
   const digits = cleanPhone(phone);
   const access = { orders: true, products: false, billing: false, ...(agent.dataAccess || {}) };
   const ownerId = await dataOwnerId(agent);
@@ -377,18 +391,18 @@ async function sendAiReply(agent, conversation, input, externalId, attachments =
     await saveMessage(conversation.id, { role: 'error', content: 'O limite mensal de respostas deste agente foi atingido. Um atendente pode responder manualmente.' });
     return null;
   }
+  const isInstagram = conversation.channel?.startsWith('instagram_');
   const [history, context, actions] = await Promise.all([
     prisma.aiMessage.findMany({
       where: { conversationId: conversation.id, role: { in: ['user', 'assistant'] } },
       orderBy: [{ createdAt: 'desc' }, { id: 'desc' }], take: 16,
     }),
     createContext(agent, conversation.phone, conversation.name, conversation),
-    prisma.aiAction.findMany({ where: { agentId: agent.id, active: true }, orderBy: { id: 'asc' } }),
+    isInstagram ? [] : prisma.aiAction.findMany({ where: { agentId: agent.id, active: true }, orderBy: { id: 'asc' } }),
   ]);
   let answer;
   try {
-    answer = await complete({
-      provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
+    answer = await runCreditedCompletion(agent.userId, {
       prompt: `${agent.prompt}${context}${buildActionsPrompt(actions)}`,
       history: history.reverse().slice(0, -1).map((message) => ({ role: message.role === 'assistant' ? 'assistant' : 'user', content: message.content })),
       input: input.slice(0, 8000),
@@ -399,23 +413,30 @@ async function sendAiReply(agent, conversation, input, externalId, attachments =
     throw error;
   }
   const { text: replyText, calls } = extractActionCalls(answer.text);
-  const text = replyText.slice(0, 6000);
+  const text = replyText.slice(0, conversation.channel === 'instagram_comment' ? 2000 : 6000);
   if (!text && !calls.length) throw new AppError(502, 'O provedor de IA retornou uma resposta vazia.', 'AI_EMPTY_RESPONSE');
   // Um humano pode ter assumido enquanto a IA pensava: nesse caso a resposta é descartada.
   const fresh = await prisma.aiConversation.findUnique({ where: { id: conversation.id }, select: { status: true } });
   if (fresh?.status === 'interrupted') return null;
   if (text) {
     await saveMessage(conversation.id, {
-      role: 'assistant', content: text, inputTokens: answer.inputTokens, outputTokens: answer.outputTokens,
+      role: 'assistant', content: text, inputTokens: answer.inputTokens, cachedInputTokens: answer.cachedInputTokens, outputTokens: answer.outputTokens,
+      audioSeconds: Math.ceil(answer.audioSeconds || 0),
     });
     try {
-      await sendText(agent.instance, conversation.phone, text);
+      if (conversation.channel === 'instagram_direct') {
+        await sendInstagramDirectMessage(agent.instagramAccount, conversation.phone.slice(3), text);
+      } else if (conversation.channel === 'instagram_comment') {
+        await replyToInstagramComment(agent.instagramAccount, conversation.phone.slice('igcomment:'.length), text);
+      } else {
+        await sendText(agent.instance, conversation.phone, text);
+      }
     } catch (error) {
-      await saveMessage(conversation.id, { role: 'error', content: `A resposta foi gerada, mas não foi possível enviá-la pelo WhatsApp: ${error.message}` });
+      await saveMessage(conversation.id, { role: 'error', content: `A resposta foi gerada, mas não foi possível enviá-la pelo ${conversation.channel === 'instagram_comment' ? 'comentário do Instagram' : conversation.channel === 'instagram_direct' ? 'Direct do Instagram' : 'WhatsApp'}: ${error.message}` });
       throw error;
     }
   }
-  await runActions(agent, conversation, calls);
+  if (!isInstagram) await runActions(agent, conversation, calls);
   return text;
 }
 
@@ -432,7 +453,7 @@ export async function receiveAiMessage(instance, { phone, name, text, externalId
   const caption = String(text || '').trim();
   if (!caption && !isMedia) return;
   const conversation = await prisma.aiConversation.upsert({
-    where: { agentId_phone: { agentId: agent.id, phone: normalizedPhone } },
+    where: { agentId_channel_phone: { agentId: agent.id, channel: 'whatsapp', phone: normalizedPhone } },
     create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: normalizedPhone, name: String(name || '').slice(0, 120) },
     update: { ...conversationInfo(agent), ...(name ? { name: String(name).slice(0, 120) } : {}), updatedAt: new Date() },
   });
@@ -449,7 +470,7 @@ export async function receiveOwnMessage(instance, { phone, text, externalId, typ
   const normalizedPhone = cleanPhone(phone);
   if (!normalizedPhone || !instance) return;
   const conversation = await prisma.aiConversation.findFirst({
-    where: { userId: instance.userId, phone: normalizedPhone, agent: { is: { instanceId: instance.id, mode: 'atendimento' } } },
+    where: { userId: instance.userId, phone: normalizedPhone, channel: 'whatsapp', agent: { is: { instanceId: instance.id, mode: 'atendimento' } } },
   });
   if (!conversation) return;
   const body = String(text || '').trim() || `[${MEDIA_LABELS[type] || 'Mensagem'}]`;
@@ -464,9 +485,67 @@ export async function receiveOwnMessage(instance, { phone, text, externalId, typ
   await prisma.aiConversation.update({ where: { id: conversation.id }, data: { status: 'interrupted', interruptedAt: new Date() } });
 }
 
+export async function receiveInstagramMessage(account, event, channel) {
+  const direct = channel === 'instagram_direct';
+  const agent = await prisma.aiAgent.findFirst({
+    where: {
+      userId: account.userId,
+      storeId: account.storeId,
+      instagramAccountId: account.id,
+      mode: 'atendimento',
+      active: true,
+      ...(direct ? { respondInstagramDirect: true } : { respondInstagramComments: true }),
+    },
+    include: { instance: true, instagramAccount: true },
+  });
+  if (!agent) return;
+  const phone = direct ? `ig:${event.userId}` : `igcomment:${event.id}`;
+  const conversation = await prisma.aiConversation.upsert({
+    where: { agentId_channel_phone: { agentId: agent.id, channel, phone } },
+    create: {
+      userId: agent.userId, agentId: agent.id, ...conversationInfo(agent),
+      channel, phone, name: event.username ? `@${event.username}` : '',
+    },
+    update: {
+      ...conversationInfo(agent),
+      ...(event.username ? { name: `@${event.username}` } : {}),
+      updatedAt: new Date(),
+    },
+  });
+  if (event.isEcho) {
+    const sameMessage = await prisma.aiMessage.findFirst({
+      where: {
+        conversationId: conversation.id,
+        role: { in: ['assistant', 'human', 'action'] },
+        ...(event.text ? { content: { contains: event.text } } : {}),
+        createdAt: { gt: new Date(Date.now() - ECHO_WINDOW_MS) },
+      },
+      select: { id: true },
+    });
+    if (sameMessage) return;
+    await saveMessage(conversation.id, { role: 'human', content: event.text || '[Mídia enviada pelo atendente]', externalId: event.id });
+    await interruptConversation(conversation.id);
+    return;
+  }
+  const isMedia = direct && event.attachments?.length > 0;
+  if (!event.text && !isMedia) return;
+  const attachments = [];
+  for (const media of event.attachments || []) {
+    try {
+      attachments.push(await fetchInstagramAttachment(agent.instagramAccount, media));
+    } catch (error) {
+      console.warn(`[ia] não foi possível abrir mídia do Instagram (${event.id}): ${error.message}`);
+    }
+  }
+  const input = event.text || (isMedia && !attachments.length
+    ? 'O cliente enviou uma mídia que não foi possível abrir. Peça para reenviar ou descrever por texto.'
+    : '');
+  await sendAiReply(agent, conversation, input, event.id, attachments);
+}
+
 router.get('/', async (req, res) => {
   const scopedStoreId = await agentStoreId(req);
-  const [agents, instances, rawFolders, prompts, conversations] = await Promise.all([
+  const [agents, instances, rawFolders, prompts, conversations, instagramAccounts] = await Promise.all([
     prisma.aiAgent.findMany({ where: { userId: req.user.id, storeId: scopedStoreId }, orderBy: { updatedAt: 'desc' } }),
     prisma.instance.findMany({
       where: { userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) },
@@ -477,9 +556,10 @@ router.get('/', async (req, res) => {
     prisma.aiPrompt.findMany({ where: { userId: req.user.id }, orderBy: { updatedAt: 'desc' } }),
     prisma.aiConversation.findMany({
       where: { userId: req.user.id, storeId: scopedStoreId, labels: { isEmpty: false } },
-      select: { phone: true, labels: true },
+      select: { phone: true, labels: true, channel: true },
       orderBy: { updatedAt: 'desc' },
     }),
+    prisma.aiInstagramAccount.findMany({ where: { userId: req.user.id, storeId: scopedStoreId }, orderBy: { username: 'asc' } }),
   ]);
   const folders = addConversationLabels(rawFolders, conversations);
   const enriched = await Promise.all(agents.map(async (agent) => safeAgent(agent, await usageFor(agent.id))));
@@ -491,14 +571,27 @@ router.get('/', async (req, res) => {
     builtinPrompts: BUILTIN_PROMPTS,
     webhook: `${config.appUrl}/api/webhooks/meta`,
     webhookPublic: appUrlIsPublic(),
+    instagramAccounts: instagramAccounts.map(safeInstagramAccount),
+    instagramWebhook: `${config.appUrl}/api/webhooks/instagram`,
+    instagramWebhookPublic: config.appUrl.startsWith('https://') && appUrlIsPublic(),
     templates: TEMPLATES,
-    models: PROVIDER_MODELS,
-    billingUrls: {
-      gemini: 'https://aistudio.google.com/app/plan_and_billing',
-      openai: 'https://platform.openai.com/settings/organization/billing/overview',
-      claude: 'https://console.anthropic.com/settings/billing',
-    },
   });
+});
+
+export const instagramOAuthCallbackRouter = Router();
+instagramOAuthCallbackRouter.get('/', async (req, res) => {
+  const pending = await claimInstagramOAuthState(String(req.query.state || ''));
+  if (!pending) return res.redirect(`${config.appUrl}/ia?instagram_status=expired`);
+  const target = new URL(pending.returnPath, config.appUrl);
+  try {
+    if (req.query.error) throw new AppError(400, 'A autorização da conta do Instagram foi cancelada.');
+    await finishInstagramOAuth(String(req.query.code || ''), pending);
+    target.searchParams.set('instagram_status', 'connected');
+  } catch (error) {
+    console.error(`[instagram] falha ao conectar a conta (${error.code || 'error'}).`);
+    target.searchParams.set('instagram_status', 'failed');
+  }
+  return res.redirect(target.toString());
 });
 
 const promptDTO = (prompt) => ({ id: prompt.id, name: prompt.name, mode: prompt.mode, content: prompt.content, updatedAt: prompt.updatedAt.getTime() });
@@ -529,6 +622,22 @@ async function ownedPrompt(userId, id) {
   if (!prompt) throw new AppError(404, 'Prompt não encontrado.');
   return prompt;
 }
+
+router.post('/instagram/connect', async (req, res) => {
+  const storeId = await agentStoreId(req);
+  const store = req.shopUser?.store || (storeId
+    ? await prisma.store.findFirst({ where: { id: storeId, userId: req.user.id }, select: { slug: true } })
+    : null);
+  const returnPath = req.shopUser ? `/app/${encodeURIComponent(store?.slug || '')}?tab=ia` : '/ia';
+  const url = await beginInstagramOAuth({ userId: req.user.id, storeId, returnPath });
+  res.json({ url });
+});
+
+router.delete('/instagram/:id', async (req, res) => {
+  const storeId = await agentStoreId(req);
+  await disconnectInstagramAccount(req.user.id, storeId, Number(req.params.id));
+  res.json({ ok: true });
+});
 
 router.post('/prompts', async (req, res) => {
   if ((await prisma.aiPrompt.count({ where: { userId: req.user.id } })) >= 100) throw new AppError(400, 'Limite de 100 prompts atingido.');
@@ -623,24 +732,28 @@ router.post('/agents', async (req, res) => {
   }
   const body = req.body || {};
   const name = String(body.name || '').trim();
-  const provider = String(body.provider || '');
   const mode = String(body.mode || '');
   const prompt = String(body.prompt || '').trim();
-  const model = String(body.model || PROVIDER_MODELS[provider] || '').trim();
   const monthlyLimit = Number(body.monthlyLimit);
   const active = body.active === undefined ? true : body.active;
-  const apiKey = String(body.apiKey || '').trim();
   const contactIds = cleanPhoneList(body.contactIds, 3001);
   const dataAccess = cleanDataAccess(body.dataAccess);
   if (name.length < 2 || name.length > 80) throw new AppError(400, 'O nome do agente deve ter entre 2 e 80 caracteres.');
-  if (!PROVIDERS.has(provider)) throw new AppError(400, 'Escolha Gemini, ChatGPT ou Claude.');
   if (!['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Escolha marketing ou atendimento.');
   if (prompt.length < 20 || prompt.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
-  if (!/^[\w.-]{2,100}$/.test(model)) throw new AppError(400, 'Informe um identificador de modelo válido.');
   if (!Number.isInteger(monthlyLimit) || monthlyLimit < 1 || monthlyLimit > 100000) throw new AppError(400, 'O limite mensal deve ser entre 1 e 100.000 respostas.');
   if (typeof active !== 'boolean') throw new AppError(400, 'O estado ativo do agente é inválido.');
-  if (apiKey.length > 1000 || (apiKey && apiKey.length < 16)) throw new AppError(400, 'A chave informada parece inválida.');
   const instanceId = body.instanceId ? Number(body.instanceId) : null;
+  const instagramAccountId = optionalAccountId(body.instagramAccountId);
+  const respondInstagramDirect = body.respondInstagramDirect === true;
+  const respondInstagramComments = body.respondInstagramComments === true;
+  if (body.respondInstagramDirect !== undefined && typeof body.respondInstagramDirect !== 'boolean') throw new AppError(400, 'A opção de Direct do Instagram é inválida.');
+  if (body.respondInstagramComments !== undefined && typeof body.respondInstagramComments !== 'boolean') throw new AppError(400, 'A opção de comentários do Instagram é inválida.');
+  const instagramAccount = instagramAccountId ? await ownedInstagramAccount(req.user.id, scopedStoreId, instagramAccountId) : null;
+  if ((respondInstagramDirect || respondInstagramComments) && !instagramAccount) throw new AppError(400, 'Selecione uma conta do Instagram para ativar este canal.');
+  if (respondInstagramDirect && !instagramAccount.permissions.includes('instagram_business_manage_messages')) throw new AppError(403, 'A conta conectada não autorizou o recebimento de mensagens do Instagram.');
+  if (respondInstagramComments && !instagramAccount.permissions.includes('instagram_business_manage_comments')) throw new AppError(403, 'A conta conectada não autorizou o acesso a comentários do Instagram.');
+  if (mode === 'marketing' && instagramAccountId) throw new AppError(400, 'Campanhas de marketing continuam disponíveis somente no WhatsApp.');
   if (instanceId !== null) {
     const instance = await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) } });
     if (!instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
@@ -648,7 +761,8 @@ router.post('/agents', async (req, res) => {
       throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
     }
   }
-  if (mode === 'atendimento' && !instanceId) throw new AppError(400, 'Selecione a instância que receberá e responderá às mensagens.');
+  if (mode === 'atendimento' && !instanceId && !(instagramAccount && (respondInstagramDirect || respondInstagramComments))) throw new AppError(400, 'Selecione o WhatsApp ou ative ao menos um canal do Instagram para este agente.');
+  if (mode === 'atendimento' && instagramAccount && !respondInstagramDirect && !respondInstagramComments && !instanceId) throw new AppError(400, 'Ative o Direct ou os comentários do Instagram para este agente.');
   if (mode === 'marketing' && contactIds.length === 0) throw new AppError(400, 'Selecione ao menos um contato para o agente de marketing.');
   if (mode === 'marketing' && contactIds.length > 3000) throw new AppError(400, 'Cada agente de marketing pode ter até 3.000 contatos selecionados.');
   if (mode === 'atendimento' && instanceId && body.active !== false) {
@@ -658,10 +772,10 @@ router.post('/agents', async (req, res) => {
   const schedule = normalizeSchedule(body.schedule);
   if (schedule?.error) throw new AppError(400, schedule.error);
   const data = {
-    userId: req.user.id, storeId: scopedStoreId, name, provider, model, mode, prompt, monthlyLimit, active, contactIds, instanceId, schedule, dataAccess,
-    ...(apiKey ? { apiKey: encrypt(apiKey) } : {}),
+    userId: req.user.id, storeId: scopedStoreId, name, provider: 'openai', model: config.ai.model, apiKey: null,
+    mode, prompt, monthlyLimit, active, contactIds, instanceId, instagramAccountId,
+    respondInstagramDirect, respondInstagramComments, schedule, dataAccess,
   };
-  if (!apiKey) throw new AppError(400, 'Informe a credencial do provedor de IA para criar o agente.');
   const agent = await prisma.aiAgent.create({ data, include: { instance: true } });
   if (mode === 'atendimento' && agent.instance?.provider === 'evolution') {
     const instance = await prisma.instance.findUnique({ where: { id: instanceId } });
@@ -681,27 +795,31 @@ router.put('/agents/:id', async (req, res) => {
   const scopedStoreId = await agentStoreId(req);
   const current = await ownedAgent(req.user.id, req.params.id, scopedStoreId);
   const body = req.body || {};
-  const provider = String(body.provider ?? current.provider);
   const mode = String(body.mode ?? current.mode);
   const prompt = String(body.prompt ?? current.prompt).trim();
   const name = String(body.name ?? current.name).trim();
-  const model = String(body.model ?? current.model).trim();
   const monthlyLimit = Number(body.monthlyLimit ?? current.monthlyLimit);
-  const apiKey = String(body.apiKey || '').trim();
   const contactIds = Array.isArray(body.contactIds) ? cleanPhoneList(body.contactIds, 3001) : current.contactIds;
   const dataAccess = body.dataAccess === undefined ? current.dataAccess : cleanDataAccess(body.dataAccess);
-  if (name.length < 2 || name.length > 80 || !PROVIDERS.has(provider) || !['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Confira o nome, provedor e tipo do agente.');
+  if (name.length < 2 || name.length > 80 || !['marketing', 'atendimento'].includes(mode)) throw new AppError(400, 'Confira o nome e o tipo do agente.');
   if (prompt.length < 20 || prompt.length > 12000) throw new AppError(400, 'O prompt deve ter entre 20 e 12.000 caracteres.');
-  if (!/^[\w.-]{2,100}$/.test(model)) throw new AppError(400, 'Informe um identificador de modelo válido.');
   if (!Number.isInteger(monthlyLimit) || monthlyLimit < 1 || monthlyLimit > 100000) throw new AppError(400, 'O limite mensal deve ser entre 1 e 100.000 respostas.');
-  if (apiKey && (apiKey.length < 16 || apiKey.length > 1000)) throw new AppError(400, 'A chave informada parece inválida.');
   const instanceId = body.instanceId === undefined ? current.instanceId : body.instanceId ? Number(body.instanceId) : null;
+  const instagramAccountId = body.instagramAccountId === undefined ? current.instagramAccountId : optionalAccountId(body.instagramAccountId);
+  const respondInstagramDirect = body.respondInstagramDirect === undefined ? current.respondInstagramDirect : body.respondInstagramDirect;
+  const respondInstagramComments = body.respondInstagramComments === undefined ? current.respondInstagramComments : body.respondInstagramComments;
+  if (typeof respondInstagramDirect !== 'boolean' || typeof respondInstagramComments !== 'boolean') throw new AppError(400, 'As opções de canal do Instagram são inválidas.');
   const active = body.active === undefined ? current.active : Boolean(body.active);
   if (body.active !== undefined && typeof body.active !== 'boolean') throw new AppError(400, 'O estado ativo do agente é inválido.');
   const instance = instanceId ? await prisma.instance.findFirst({ where: { id: instanceId, userId: req.user.id, purpose: 'envio', ...instanceStoreScope(req) } }) : null;
+  const instagramAccount = instagramAccountId ? await ownedInstagramAccount(req.user.id, scopedStoreId, instagramAccountId) : null;
   if (instanceId && !instance) throw new AppError(400, 'Selecione uma instância WhatsApp de envio válida.');
-  if (mode === 'atendimento' && !instance) throw new AppError(400, 'Selecione a instância que receberá e responderá às mensagens.');
-  if (mode === 'atendimento' && instance.provider === 'meta' && !instance.metaAppSecret) throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
+  if ((respondInstagramDirect || respondInstagramComments) && !instagramAccount) throw new AppError(400, 'Selecione uma conta do Instagram para ativar este canal.');
+  if (respondInstagramDirect && !instagramAccount.permissions.includes('instagram_business_manage_messages')) throw new AppError(403, 'A conta conectada não autorizou o recebimento de mensagens do Instagram.');
+  if (respondInstagramComments && !instagramAccount.permissions.includes('instagram_business_manage_comments')) throw new AppError(403, 'A conta conectada não autorizou o acesso a comentários do Instagram.');
+  if (mode === 'marketing' && instagramAccountId) throw new AppError(400, 'Campanhas de marketing continuam disponíveis somente no WhatsApp.');
+  if (mode === 'atendimento' && !instance && !(instagramAccount && (respondInstagramDirect || respondInstagramComments))) throw new AppError(400, 'Selecione o WhatsApp ou ative ao menos um canal do Instagram para este agente.');
+  if (mode === 'atendimento' && instance?.provider === 'meta' && !instance.metaAppSecret) throw new AppError(400, 'Para receber mensagens na API oficial da Meta, cadastre o App Secret na conexão.');
   if (mode === 'marketing' && contactIds.length === 0) throw new AppError(400, 'Selecione ao menos um contato para o agente de marketing.');
   if (mode === 'marketing' && contactIds.length > 3000) throw new AppError(400, 'Cada agente de marketing pode ter até 3.000 contatos selecionados.');
   if (mode === 'atendimento' && instanceId && active) {
@@ -713,9 +831,9 @@ router.put('/agents/:id', async (req, res) => {
   const updated = await prisma.aiAgent.update({
     where: { id: current.id },
     data: {
-      name, provider, model, mode, prompt, monthlyLimit, contactIds, instanceId, dataAccess,
+      name, provider: 'openai', model: config.ai.model, mode, prompt, monthlyLimit, contactIds, instanceId,
+      instagramAccountId, respondInstagramDirect, respondInstagramComments, dataAccess,
       active, schedule,
-      ...(apiKey ? { apiKey: encrypt(apiKey) } : {}),
     },
   });
   await prisma.aiConversation.updateMany({ where: { agentId: updated.id }, data: { agentName: name, agentMode: mode } });
@@ -743,21 +861,20 @@ router.post('/agents/:id/test', async (req, res) => {
   const agent = await ownedAgent(req.user.id, req.params.id, await agentStoreId(req));
   const usage = await usageFor(agent.id);
   if (usage.requests >= agent.monthlyLimit) throw new AppError(429, 'O limite mensal deste agente foi atingido.');
-  const result = await complete({
-    provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
+  const result = await runCreditedCompletion(agent.userId, {
     prompt: `${agent.prompt}\nResponda apenas com uma confirmação breve.`,
     input: 'Teste de conexão. Responda: conexão OK.',
   });
   const conversation = await prisma.aiConversation.upsert({
-    where: { agentId_phone: { agentId: agent.id, phone: '__teste__' } },
+    where: { agentId_channel_phone: { agentId: agent.id, channel: 'whatsapp', phone: '__teste__' } },
     create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: '__teste__', name: 'Teste de conexão' },
     update: {},
   });
   await saveMessage(conversation.id, {
     role: 'assistant', content: 'Teste de conexão', inputTokens: result.inputTokens,
-    outputTokens: result.outputTokens,
+    cachedInputTokens: result.cachedInputTokens, outputTokens: result.outputTokens, audioSeconds: Math.ceil(result.audioSeconds || 0),
   });
-  res.json({ ok: true, message: 'Credencial válida. A chamada de teste foi contabilizada no uso mensal.' });
+  res.json({ ok: true, message: 'Dm Soluções testada. O consumo foi descontado dos seus créditos.' });
 });
 
 const CAMPAIGN_MIN_INTERVAL_MS = 20 * 1000;
@@ -823,24 +940,23 @@ async function processCampaign(campaign, scheduledFor) {
       return pause('Limite de uso mensal do agente atingido.');
     }
     const conversation = await prisma.aiConversation.upsert({
-      where: { agentId_phone: { agentId: agent.id, phone: item.phone } },
+      where: { agentId_channel_phone: { agentId: agent.id, channel: 'whatsapp', phone: item.phone } },
       create: { userId: agent.userId, agentId: agent.id, ...conversationInfo(agent), phone: item.phone, name: item.name || '' },
       update: { name: item.name || '' },
     });
     const context = await createContext(agent, item.phone, item.name, conversation);
-    const reply = await complete({
-      provider: agent.provider, model: agent.model, apiKey: agentKey(agent),
+    const reply = await runCreditedCompletion(agent.userId, {
       prompt: `${agent.prompt}${context}`,
       input: `Crie uma mensagem de marketing personalizada para ${item.name || 'o cliente'}. Tema/campanha: ${campaign.message || 'Apresente nossos produtos e convide a pessoa a conhecer as novidades.'}`,
     });
     const text = reply.text.slice(0, 6000);
     if (!text) throw new AppError(502, 'O provedor retornou uma resposta vazia.');
-    await saveMessage(conversation.id, { role: 'assistant', content: text, inputTokens: reply.inputTokens, outputTokens: reply.outputTokens });
+    await saveMessage(conversation.id, { role: 'assistant', content: text, inputTokens: reply.inputTokens, cachedInputTokens: reply.cachedInputTokens, outputTokens: reply.outputTokens, audioSeconds: Math.ceil(reply.audioSeconds || 0) });
     await sendText(agent.instance, item.phone, text);
     await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'sent', sentAt: new Date(), error: '' } });
   } catch (error) {
     await prisma.aiCampaignItem.update({ where: { id: item.id }, data: { status: 'failed', error: String(error.message || 'Falha no envio.').slice(0, 300) } });
-    if (error.code === 'AI_PROVIDER_LIMIT' || error.code === 'AI_CREDENTIAL_INVALID') stopNote = error.message;
+    if (error.code === 'AI_PROVIDER_LIMIT' || error.code === 'AI_CREDIT_INSUFFICIENT' || error.code === 'AI_CREDENTIAL_INVALID') stopNote = error.message;
   }
   if (stopNote) return pause(stopNote);
 
@@ -1297,7 +1413,7 @@ router.get('/conversations', async (req, res) => {
     include: { messages: { where: { createdAt: { gte: aiCutoff() } }, orderBy: { createdAt: 'desc' }, take: 1 } },
   });
   res.json({ conversations: rows.map((row) => ({
-    id: row.id, agentId: row.agentId, agentName: row.agentName, mode: row.agentMode, agentDeleted: row.agentId === null,
+    id: row.id, agentId: row.agentId, agentName: row.agentName, mode: row.agentMode, channel: row.channel, agentDeleted: row.agentId === null,
     status: row.status, interruptedAt: row.interruptedAt ? row.interruptedAt.getTime() : null,
     phone: row.phone, name: row.name, updatedAt: row.updatedAt.getTime(),
     labels: row.labels, note: row.note,
@@ -1322,13 +1438,22 @@ router.post('/conversations/:id/send', async (req, res) => {
   const conversationId = Number(req.params.id);
   const scopedStoreId = await agentStoreId(req);
   const conversation = Number.isInteger(conversationId)
-    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: req.user.id, storeId: scopedStoreId }, include: { agent: { include: { instance: true } } } })
+    ? await prisma.aiConversation.findFirst({ where: { id: conversationId, userId: req.user.id, storeId: scopedStoreId }, include: { agent: { include: { instance: true, instagramAccount: true } } } })
     : null;
   if (!conversation) throw new AppError(404, 'Conversa não encontrada.');
-  if (!conversation.agent?.instance) throw new AppError(400, 'O agente desta conversa foi excluído; não é possível enviar mensagens por ela.');
+  if (!conversation.agent) throw new AppError(400, 'O agente desta conversa foi excluído; não é possível enviar mensagens por ela.');
   const text = String(req.body?.text || '').trim();
   if (!text || text.length > 6000) throw new AppError(400, 'A mensagem deve ter entre 1 e 6.000 caracteres.');
-  await sendText(conversation.agent.instance, conversation.phone, text);
+  if (conversation.channel === 'instagram_direct') {
+    if (!conversation.agent.instagramAccount) throw new AppError(400, 'Conecte novamente a conta do Instagram deste agente.');
+    await sendInstagramDirectMessage(conversation.agent.instagramAccount, conversation.phone.slice(3), text);
+  } else if (conversation.channel === 'instagram_comment') {
+    if (!conversation.agent.instagramAccount) throw new AppError(400, 'Conecte novamente a conta do Instagram deste agente.');
+    await replyToInstagramComment(conversation.agent.instagramAccount, conversation.phone.slice('igcomment:'.length), text);
+  } else {
+    if (!conversation.agent.instance) throw new AppError(400, 'Conecte novamente o WhatsApp deste agente.');
+    await sendText(conversation.agent.instance, conversation.phone, text);
+  }
   await saveMessage(conversation.id, { role: 'human', content: text });
   // Quem responde pelo painel assume o atendimento: o agente para até ser retomado.
   await prisma.aiConversation.update({
@@ -1460,9 +1585,30 @@ router.delete('/agents/:id/actions/:actionId', async (req, res) => {
 });
 
 router.get('/usage', async (req, res) => {
-  const agents = await prisma.aiAgent.findMany({ where: { userId: req.user.id, storeId: await agentStoreId(req) }, select: { id: true, name: true, provider: true, monthlyLimit: true } });
+  const agents = await prisma.aiAgent.findMany({ where: { userId: req.user.id, storeId: await agentStoreId(req) }, select: { id: true, name: true, monthlyLimit: true } });
   const usage = await Promise.all(agents.map(async (agent) => ({ ...agent, ...await usageFor(agent.id) })));
   res.json({ usage, month: monthStart().toISOString() });
+});
+
+router.get('/credits', async (req, res) => {
+  res.json(await aiCreditStatus(req.user.id));
+});
+
+router.post('/credits/checkout', async (req, res) => {
+  const amountCents = Number(req.body?.amountCents);
+  const checkout = await createAiCreditCheckout(req.user, amountCents, req.owner || req.user);
+  res.json(checkout);
+});
+
+router.post('/credits/confirm', async (req, res) => {
+  await settleAiCreditTopUp({
+    orderNsu: String(req.body?.order_nsu || ''),
+    transactionNsu: String(req.body?.transaction_nsu || ''),
+    slug: String(req.body?.slug || ''),
+    receiptUrl: String(req.body?.receipt_url || ''),
+    userId: req.user.id,
+  });
+  res.json({ paid: true, credits: await aiCreditStatus(req.user.id) });
 });
 
 export default router;

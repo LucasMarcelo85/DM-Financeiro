@@ -74,11 +74,11 @@ export const DOCS = [
   },
   {
     slug: 'ia', title: 'Atendimento com IA', icon: 'sparkles',
-    summary: 'Configure Gemini, ChatGPT ou Claude para campanhas e conversas no WhatsApp.',
-    limits: 'Agentes, respostas e contatos têm limites definidos pelo plano.',
-    about: 'Você cria um agente com instruções (o "prompt"), escolhe o provedor e o conecta a um WhatsApp. Ele responde clientes e pode rodar campanhas.',
-    steps: ['Escolha o provedor e informe a chave de API.', 'Escreva as instruções do agente.', 'Teste a conversa e conecte a um número de WhatsApp.'],
-    limitsList: ['Limites de agentes, respostas e contatos pelo plano.', 'O custo das respostas é do provedor escolhido (sua chave).'],
+    summary: 'Configure a Dm Soluções para campanhas e conversas no WhatsApp usando créditos pré-pagos.',
+    limits: 'Agentes, respostas e contatos têm limites definidos pelo plano. O uso da IA consome créditos.',
+    about: 'Você cria um agente com instruções (o "prompt") e o conecta a um WhatsApp. A Dm Soluções responde clientes e pode rodar campanhas. O saldo, consumo e recargas ficam no painel.',
+    steps: ['Adicione créditos pelo painel da Dm Soluções.', 'Escreva as instruções do agente.', 'Teste a conversa e conecte a um número de WhatsApp.'],
+    limitsList: ['Limites de agentes, respostas e contatos pelo plano.', 'O consumo é calculado pelos tokens usados e descontado do saldo pré-pago.', 'As recargas são processadas pela InfinitePay.'],
   },
   {
     slug: 'marketing-sem-ia', title: 'Marketing sem IA', icon: 'send',

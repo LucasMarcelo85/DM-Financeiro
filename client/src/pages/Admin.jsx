@@ -25,6 +25,76 @@ const STATUS = {
   expired: ['Expirado', 'pill-failed'],
 };
 
+function formatCreditBalance(value) {
+  return (Number(value || 0) / 1_000_000).toLocaleString('pt-BR', { style: 'currency', currency: 'BRL', minimumFractionDigits: 2, maximumFractionDigits: 4 });
+}
+
+function AiCreditsModal({ onClose, toast }) {
+  const [accounts, setAccounts] = useState(null);
+  const [forms, setForms] = useState({});
+  const [busy, setBusy] = useState('');
+  const [error, setError] = useState('');
+  const load = useCallback(async () => {
+    try {
+      setAccounts((await api.get('/admin/ai-credits')).accounts);
+      setError('');
+    } catch (err) {
+      setError(err.message);
+    }
+  }, []);
+  useEffect(() => { load(); }, [load]);
+  const updateForm = (id, patch) => setForms((current) => ({ ...current, [id]: { operation: 'add', amount: '10', note: '', ...current[id], ...patch } }));
+  async function adjust(account, form) {
+    setBusy(account.id);
+    try {
+      const result = await api.post('/admin/ai-credits/adjust', {
+        targetType: account.targetType,
+        targetId: account.targetId,
+        operation: form.operation,
+        amountCents: Math.round(Number(form.amount) * 100),
+        note: form.note,
+      });
+      setAccounts((current) => current.map((item) => item.id === account.id ? { ...item, userId: result.userId, balanceMicros: result.balanceMicros, missingWorkspace: false } : item));
+      updateForm(account.id, { note: '' });
+      toast(form.operation === 'add' ? 'Créditos adicionados.' : 'Créditos retirados.');
+    } catch (err) {
+      toast(err.message, 'error');
+    } finally {
+      setBusy('');
+    }
+  }
+  return (
+    <Modal wide title="Créditos da Dm Soluções" onClose={onClose}>
+      <p className="muted small">Adicione ou retire saldo sem pagamento. Cada alteração exige um motivo e fica registrada no histórico da conta.</p>
+      {error && <p className="form-error" role="alert">{error} <button type="button" className="link-btn" onClick={load}>Tentar novamente</button></p>}
+      {!accounts && !error && <p className="muted">Carregando contas...</p>}
+      {accounts && (
+        <div style={{ display: 'grid', gap: 12, maxHeight: '65vh', overflowY: 'auto' }}>
+          {!accounts.length && <p className="muted">Nenhuma conta disponível.</p>}
+          {accounts.map((account) => {
+            const form = { operation: 'add', amount: '10', note: '', ...forms[account.id] };
+            return (
+              <article className="card" key={account.id} style={{ display: 'grid', gap: 10 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between', gap: 12, flexWrap: 'wrap' }}>
+                  <span><strong>{account.name}</strong><small className="muted" style={{ display: 'block' }}>{account.detail} · {account.agentCount} agente(s) de IA</small></span>
+                  <strong>Saldo: {formatCreditBalance(account.balanceMicros)}</strong>
+                </div>
+                {account.missingWorkspace && <small className="muted">A área de créditos do app será criada ao aplicar o primeiro ajuste.</small>}
+                <form onSubmit={(event) => { event.preventDefault(); adjust(account, form); }} style={{ display: 'grid', gridTemplateColumns: 'minmax(130px, 1fr) minmax(100px, 1fr) minmax(180px, 2fr) auto', gap: 8, alignItems: 'end' }}>
+                  <label className="field"><span>Ação</span><select className="input" value={form.operation} onChange={(event) => updateForm(account.id, { operation: event.target.value })}><option value="add">Adicionar</option><option value="remove">Retirar</option></select></label>
+                  <label className="field"><span>Valor (R$)</span><input className="input" type="number" min="0.01" max="1000000" step="0.01" required value={form.amount} onChange={(event) => updateForm(account.id, { amount: event.target.value })} /></label>
+                  <label className="field"><span>Motivo</span><input className="input" minLength="3" maxLength="300" required value={form.note} onChange={(event) => updateForm(account.id, { note: event.target.value })} placeholder="Ex.: cortesia, correção de saldo" /></label>
+                  <button className="btn btn-primary" disabled={busy === account.id}>{busy === account.id ? 'Salvando...' : 'Aplicar'}</button>
+                </form>
+              </article>
+            );
+          })}
+        </div>
+      )}
+    </Modal>
+  );
+}
+
 export default function Admin() {
   const { user: me } = useAuth();
   const toast = useToast();
@@ -37,6 +107,7 @@ export default function Admin() {
   const [confirmDel, setConfirmDel] = useState(null);
   const [confirmUndo, setConfirmUndo] = useState(null);
   const [billingUser, setBillingUser] = useState(null);
+  const [aiCreditsOpen, setAiCreditsOpen] = useState(false);
 
   const load = useCallback(() => {
     api.get('/admin/users').then((r) => setUsers(r.users)).catch((e) => toast(e.message, 'error'));
@@ -87,9 +158,9 @@ export default function Admin() {
 
   return (
     <>
-      <header className="page-head">
-        <h1>Usuários</h1>
-        <p className="muted">Veja quem usa o sistema, dê acesso mensal, troque o plano ou exclua contas.</p>
+      <header className="page-head head-row">
+        <div><h1>Usuários</h1><p className="muted">Veja quem usa o sistema, dê acesso mensal, troque o plano ou exclua contas.</p></div>
+        <button type="button" className="btn btn-primary" onClick={() => setAiCreditsOpen(true)}><Icon name="sparkles" size={17} /> Créditos da IA</button>
       </header>
 
       {users && (
@@ -172,6 +243,7 @@ export default function Admin() {
       )}
 
       {billingUser && <UserBilling user={billingUser} onClose={() => setBillingUser(null)} onChanged={load} />}
+      {aiCreditsOpen && <AiCreditsModal onClose={() => setAiCreditsOpen(false)} toast={toast} />}
 
       {confirmUndo && (
         <Modal title="Retroceder a última liberação?" onClose={() => setConfirmUndo(null)}

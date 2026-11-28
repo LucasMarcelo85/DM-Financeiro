@@ -118,6 +118,11 @@ model User {
   aiPrompts          AiPrompt[]
   aiContactFolders   AiContactFolder[]
   noAiMarketingCampaigns NoAiMarketingCampaign[]
+  aiCreditWallet     AiCreditWallet?
+  aiCreditTransactions AiCreditTransaction[]
+  aiCreditTopUps     AiCreditTopUp[]
+  aiInstagramAccounts AiInstagramAccount[]
+  aiInstagramOAuthStates AiInstagramOAuthState[]
 
   @@map("users")
 }
@@ -833,6 +838,8 @@ model Store {
   posSettings            PosSettings[]
   productPreferences     ProductStorePreferences?
   instances              Instance[]
+  aiInstagramAccounts    AiInstagramAccount[]
+  aiInstagramOAuthStates AiInstagramOAuthState[]
   createdAt              DateTime  @default(now()) @map("created_at")
 
   user User @relation(fields: [userId], references: [id], onDelete: Cascade)
@@ -974,10 +981,13 @@ model AiAgent {
   userId          Int      @map("user_id")
   storeId         Int?     @map("store_id")
   instanceId      Int?     @map("instance_id")
+  instagramAccountId Int?  @map("instagram_account_id")
+  respondInstagramDirect Boolean @default(false) @map("respond_instagram_direct")
+  respondInstagramComments Boolean @default(false) @map("respond_instagram_comments")
   name            String
   provider        String
   model           String
-  apiKey          String   @map("api_key")
+  apiKey          String?  @map("api_key")
   mode            String   @default("atendimento")
   prompt          String
   monthlyLimit    Int      @default(100) @map("monthly_limit")
@@ -990,6 +1000,7 @@ model AiAgent {
 
   user         User             @relation(fields: [userId], references: [id], onDelete: Cascade)
   instance     Instance?        @relation(fields: [instanceId], references: [id], onDelete: SetNull)
+  instagramAccount AiInstagramAccount? @relation(fields: [instagramAccountId], references: [id], onDelete: SetNull)
   conversations AiConversation[]
   actions      AiAction[]
   campaigns    AiCampaign[]
@@ -997,6 +1008,7 @@ model AiAgent {
   @@index([userId, mode])
   @@index([userId, storeId])
   @@index([instanceId, active])
+  @@index([instagramAccountId, active])
   @@map("ai_agents")
 }
 
@@ -1153,6 +1165,7 @@ model AiConversation {
   agentId   Int?     @map("agent_id")
   agentName String   @default("") @map("agent_name")
   agentMode String   @default("atendimento") @map("agent_mode")
+  channel   String   @default("whatsapp")
   phone     String
   name      String   @default("")
   status    String   @default("active")
@@ -1166,7 +1179,7 @@ model AiConversation {
   agent    AiAgent?    @relation(fields: [agentId], references: [id], onDelete: SetNull)
   messages AiMessage[]
 
-  @@unique([agentId, phone])
+  @@unique([agentId, channel, phone])
   @@index([agentId, updatedAt])
   @@index([userId, updatedAt])
   @@index([userId, storeId, updatedAt])
@@ -1181,7 +1194,9 @@ model AiMessage {
   role           String
   content        String
   inputTokens    Int      @default(0) @map("input_tokens")
+  cachedInputTokens Int   @default(0) @map("cached_input_tokens")
   outputTokens   Int      @default(0) @map("output_tokens")
+  audioSeconds   Int      @default(0) @map("audio_seconds")
   createdAt      DateTime @default(now()) @map("created_at")
 
   conversation AiConversation @relation(fields: [conversationId], references: [id], onDelete: Cascade)
@@ -1190,4 +1205,91 @@ model AiMessage {
   @@index([conversationId, createdAt])
   @@index([createdAt])
   @@map("ai_messages")
+}
+
+model AiCreditWallet {
+  userId        Int      @id @map("user_id")
+  balanceMicros BigInt   @default(0) @map("balance_micros")
+  createdAt     DateTime @default(now()) @map("created_at")
+  updatedAt     DateTime @updatedAt @map("updated_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@map("ai_credit_wallets")
+}
+
+model AiCreditTransaction {
+  id                Int      @id @default(autoincrement())
+  userId            Int      @map("user_id")
+  reference         String   @unique
+  type              String
+  amountMicros      BigInt   @map("amount_micros")
+  balanceAfterMicros BigInt  @map("balance_after_micros")
+  inputTokens       Int      @default(0) @map("input_tokens")
+  cachedInputTokens Int      @default(0) @map("cached_input_tokens")
+  outputTokens      Int      @default(0) @map("output_tokens")
+  audioSeconds      Int      @default(0) @map("audio_seconds")
+  adminUserId       Int?     @map("admin_user_id")
+  note              String?
+  createdAt         DateTime @default(now()) @map("created_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("ai_credit_transactions")
+}
+
+model AiCreditTopUp {
+  id             Int       @id @default(autoincrement())
+  userId         Int       @map("user_id")
+  orderNsu       String    @unique @map("order_nsu")
+  amountCents    Int       @map("amount_cents")
+  status         String    @default("pending")
+  slug           String?
+  transactionNsu String?   @map("transaction_nsu")
+  receiptUrl     String?   @map("receipt_url")
+  createdAt      DateTime  @default(now()) @map("created_at")
+  paidAt         DateTime? @map("paid_at")
+
+  user User @relation(fields: [userId], references: [id], onDelete: Cascade)
+
+  @@index([userId, createdAt])
+  @@map("ai_credit_top_ups")
+}
+
+model AiInstagramAccount {
+  id                 Int       @id @default(autoincrement())
+  userId             Int       @map("user_id")
+  storeId            Int?      @map("store_id")
+  scopeKey           String    @unique @map("scope_key")
+  instagramUserId    String    @unique @map("instagram_user_id")
+  username           String
+  accessToken        String    @map("access_token")
+  permissions        String[]  @default([])
+  expiresAt          DateTime? @map("expires_at")
+  webhookSubscribed  Boolean   @default(false) @map("webhook_subscribed")
+  createdAt          DateTime  @default(now()) @map("created_at")
+  updatedAt          DateTime  @updatedAt @map("updated_at")
+
+  user        User      @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store       Store?    @relation(fields: [storeId], references: [id], onDelete: Cascade)
+  agents      AiAgent[]
+
+  @@index([userId, storeId])
+  @@map("ai_instagram_accounts")
+}
+
+model AiInstagramOAuthState {
+  state      String   @id
+  userId     Int      @map("user_id")
+  storeId    Int?     @map("store_id")
+  returnPath String   @map("return_path")
+  expiresAt  DateTime @map("expires_at")
+  createdAt  DateTime @default(now()) @map("created_at")
+
+  user  User   @relation(fields: [userId], references: [id], onDelete: Cascade)
+  store Store? @relation(fields: [storeId], references: [id], onDelete: Cascade)
+
+  @@index([expiresAt])
+  @@map("ai_instagram_oauth_states")
 }

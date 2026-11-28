@@ -42,7 +42,7 @@ export const SHOP_PERMISSION_GROUPS = [
     title: 'Integrações',
     permissions: [
       ['api', 'API e webhooks', 'Consultar e administrar integrações e tokens desta loja.'],
-      ['ia', 'Inteligência artificial', 'Usar os recursos de IA liberados; a credencial do provedor é configurada pelo usuário.'],
+      ['ia', 'Inteligência artificial', 'Usar os recursos da Dm Soluções; o consumo é pago com créditos pré-pagos.'],
     ],
   },
 ];

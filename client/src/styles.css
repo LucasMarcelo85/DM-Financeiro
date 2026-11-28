@@ -2083,6 +2083,12 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .pos-field-size-compact textarea.input { min-height: 3.5rem; }
 .pos-field-size-large textarea.input { min-height: 7rem; }
 .pos-checkout-fields textarea { resize: vertical; }
+ .pos-customer-field { position: relative; }
+ .pos-customer-suggestions { grid-column: 1 / -1; display: grid; gap: 4px; margin-top: -4px; padding: 6px; max-height: 230px; overflow-y: auto; border: 1px solid var(--line, #e5e7eb); border-radius: 10px; background: var(--surface, #fff); box-shadow: 0 10px 24px rgba(15, 23, 42, .12); z-index: 20; }
+ .pos-customer-suggestions button { display: flex; align-items: center; justify-content: space-between; gap: 12px; width: 100%; padding: 8px 10px; border: 0; border-radius: 8px; background: transparent; color: inherit; text-align: left; cursor: pointer; }
+ .pos-customer-suggestions button:hover, .pos-customer-suggestions button:focus-visible { background: var(--surface-muted, #f1f5f9); }
+ .pos-customer-suggestions button > span { display: grid; gap: 2px; min-width: 0; }
+ .pos-customer-suggestions strong, .pos-customer-suggestions small { overflow: hidden; text-overflow: ellipsis; }
 .pos-checkout-fields > .pos-total, .pos-checkout-fields > .pos-change { grid-column: 1 / -1; }
 .pos-total { display: flex; justify-content: space-between; align-items: center; gap: 10px; }
 .pos-grand-total { padding-top: 8px; border-top: 1px solid var(--line, #e5e7eb); font-size: 18px; }
@@ -2226,8 +2232,24 @@ body.is-resizing .pe-stage2 iframe { pointer-events: none; }
 .ai-content { display: grid; gap: 1rem; }
 .ai-credit-note { display: flex; align-items: center; gap: .8rem; flex-wrap: wrap; padding: 1rem 1.15rem; border: 1px solid #e8d4a9; border-radius: var(--r-md); background: #fffaf0; color: var(--ink); }
 .ai-credit-note > p { flex: 1 1 18rem; }
-.ai-provider-links { display: flex; gap: .65rem; flex-wrap: wrap; }
-.ai-provider-links a { display: inline-flex; align-items: center; gap: .25rem; font-size: .85rem; font-weight: 600; }
+.ai-credit-dashboard { display: grid; gap: 1rem; padding: 1.1rem; border: 1px solid var(--line); border-radius: var(--r-md); background: var(--card); }
+.ai-credit-dashboard-head { display: flex; align-items: flex-start; justify-content: space-between; gap: .75rem; }
+.ai-credit-dashboard-head h2, .ai-credit-history h3 { margin: 0; font-size: 1.05rem; }
+.ai-credit-dashboard-head p { margin: .25rem 0 0; }
+.ai-credit-metrics { display: grid; grid-template-columns: repeat(auto-fit, minmax(min(100%, 10rem), 1fr)); gap: .7rem; }
+.ai-credit-metrics article { display: grid; gap: .35rem; padding: .8rem; border: 1px solid var(--line); border-radius: 10px; background: var(--surface, #fff); }
+.ai-credit-metrics article span { color: var(--muted); font-size: .8rem; }
+.ai-credit-metrics article strong { font-size: 1.1rem; overflow-wrap: anywhere; }
+.ai-credit-config-warning { margin: 0; padding: .7rem .85rem; border-radius: 8px; background: #fff4e5; color: #854d0e; font-size: .85rem; }
+.ai-credit-recharge { display: flex; align-items: end; gap: .65rem; flex-wrap: wrap; }
+.ai-credit-recharge .field { flex: 0 1 12rem; }
+.ai-credit-history { display: grid; gap: .55rem; }
+.ai-credit-history-row { display: flex; align-items: center; justify-content: space-between; gap: .8rem; padding: .65rem 0; border-top: 1px solid var(--line); }
+.ai-credit-history-row > span { display: grid; gap: .15rem; min-width: 0; }
+.ai-credit-history-row small { color: var(--muted); font-size: .77rem; }
+.ai-credit-history-row > strong { white-space: nowrap; }
+.ai-credit-history-row .is-credit { color: var(--green-d); }
+.ai-credit-history-row .is-charge { color: var(--red-d); }
 .ai-empty, .ai-chat-empty, .ai-loading { display: grid; justify-items: center; align-content: center; gap: .75rem; min-height: 15rem; padding: 2rem; color: var(--muted); text-align: center; }
 .ai-empty h2 { color: var(--text); }
 .ai-agent-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(min(100%, 22rem), 1fr)); gap: 1rem; }

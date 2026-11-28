@@ -21,7 +21,7 @@ import statsRoutes from './routes/stats.js';
 import receiptRoutes from './routes/receipts.js';
 import messageRoutes from './routes/messages.js';
 import mediaRoutes from './routes/media.js';
-import aiRoutes, { startAiCampaignWorker, stopAiCampaignWorker } from './routes/ai.js';
+import aiRoutes, { instagramOAuthCallbackRouter, startAiCampaignWorker, stopAiCampaignWorker } from './routes/ai.js';
 import contractRoutes from './routes/contracts.js';
 import portfolioRoutes from './routes/portfolios.js';
 import storeRoutes from './routes/stores.js';
@@ -155,8 +155,8 @@ app.get('/api/public/portfolio-code-frame', (_req, res) => res
   .set('Cache-Control', 'no-store')
   .type('html')
   .send(PORTFOLIO_CODE_FRAME));
-// Webhook da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
-const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta') req.rawBody = buf; } });
+// Webhooks da Meta: guarda o corpo "cru" para conferir a assinatura (X-Hub-Signature-256).
+const jsonSmall = express.json({ limit: '100kb', verify: (req, _res, buf) => { if (req.path === '/api/webhooks/meta' || req.path === '/api/webhooks/instagram') req.rawBody = buf; } });
 // Caminhos com limite de corpo maior ou próprio: contratos e portfólio (têm imagens) e webhook da Evolution (lotes de contatos).
 const hasOwnParser = (p) => p === '/api/contracts' || p.startsWith('/api/contracts/') || p === '/api/portfolios' || p.startsWith('/api/portfolios/') || p === '/api/products' || p.startsWith('/api/products/') || p === '/api/ai' || p.startsWith('/api/ai/') || p === '/api/contacts/import' || p === '/api/catalog/orders/import' || p === '/api/catalog/customers/import' || p === '/api/media' || p.startsWith('/api/media/') || p.startsWith('/api/shop-app/') || p.startsWith('/api/webhooks/evolution/');
 app.use((req, res, next) => (hasOwnParser(req.path) ? next() : jsonSmall(req, res, next)));
@@ -195,6 +195,7 @@ app.use('/api/webhooks/orders', ordersWebhook); // pedidos do catálogo: sem log
 app.use('/api/webhooks/catalog-payments', catalogPaymentWebhooks);
 app.use('/api/webhooks', webhookRouter);
 app.use('/api/webhooks', auditWebhookRoutes);
+app.use('/api/ai/instagram/callback', instagramOAuthCallbackRouter);
 app.use('/api/billing', auth, billingRouter);
 app.use('/api/instances', auth, requireAccess, instanceRoutes);
 app.use('/api/audit/instances', auth, requireAccess, pinGuard('auditoria'), instanceRouter('auditoria'));

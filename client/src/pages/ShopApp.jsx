@@ -99,7 +99,8 @@ export default function ShopApp() {
       setPerms(r.user.perms);
       setIsPrimary(Boolean(r.user.isPrimary));
       const allowedTabs = tabsFor(r.user.perms, r.user.isPrimary).map(([key]) => key);
-      setTab((current) => allowedTabs.includes(current) ? current : firstTab(r.user.perms, r.user.isPrimary));
+      const requestedTab = new URLSearchParams(window.location.search).get('tab');
+      setTab((current) => allowedTabs.includes(current) ? current : allowedTabs.includes(requestedTab) ? requestedTab : firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
     }).catch((e) => { if (active && e.status !== 401) toast(e.message, 'error'); });
     return () => { active = false; };
@@ -157,7 +158,9 @@ export default function ShopApp() {
       setMustChangePassword(Boolean(r.user.mustChangePassword));
       setPerms(r.user.perms);
       setIsPrimary(Boolean(r.user.isPrimary));
-      setTab(firstTab(r.user.perms, r.user.isPrimary));
+      const requestedTab = new URLSearchParams(window.location.search).get('tab');
+      const allowedTabs = tabsFor(r.user.perms, r.user.isPrimary).map(([key]) => key);
+      setTab(allowedTabs.includes(requestedTab) ? requestedTab : firstTab(r.user.perms, r.user.isPrimary));
       setAuditCanSend(Boolean(r.app.auditSend));
       setForm((current) => ({ ...current, password: '' }));
       setAuthed(true);

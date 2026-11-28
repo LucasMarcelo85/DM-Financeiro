@@ -5,7 +5,7 @@ import Icon from './Icon.jsx';
 import BarcodeScanner from './BarcodeScanner.jsx';
 import { sameCode } from '../lib/barcode.js';
 import { useToast } from './Toast.jsx';
-import { brl, centsToMasked, formatStoredPhone, maskMoney, moneyToCents } from '../lib/format.js';
+import { brl, centsToMasked, digits, formatStoredPhone, maskMoney, maskPhone, moneyToCents } from '../lib/format.js';
 
 const METHODS = [
   ['dinheiro', 'Dinheiro'],
@@ -77,6 +77,9 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
   const [selection, setSelection] = useState(null);
   const [customerName, setCustomerName] = useState('');
   const [customerPhone, setCustomerPhone] = useState('');
+  const [customers, setCustomers] = useState([]);
+  const [customerSuggestions, setCustomerSuggestions] = useState(false);
+  const [suggestionField, setSuggestionField] = useState('');
   const [notes, setNotes] = useState('');
   const [discount, setDiscount] = useState('');
   const [surcharge, setSurcharge] = useState('');
@@ -116,6 +119,9 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     api.get('/catalog/pos/settings').then((result) => {
       setReceipt(result.receipt);
       setLayout({ ...DEFAULT_POS_LAYOUT, ...(result.layout || {}) });
+    }).catch((error) => toast(error.message, 'error'));
+    api.get('/catalog/customers?days=3650').then((result) => {
+      setCustomers(Array.isArray(result.customers) ? result.customers : []);
     }).catch((error) => toast(error.message, 'error'));
     if (canSelectStockFlow) loadStockFlows();
   }, [loadProducts, loadStockFlows, toast, canSelectStockFlow]);
@@ -257,6 +263,27 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
     setCheckoutStep(2);
   }
 
+  function selectCustomer(customer) {
+    setCustomerName(customer.name || '');
+    setCustomerPhone(formatStoredPhone(customer.phone || ''));
+    setCustomerSuggestions(false);
+    setSuggestionField('');
+  }
+
+  const customerMatches = useMemo(() => {
+    if (!customerSuggestions) return [];
+    const nameQuery = customerName.trim().toLocaleLowerCase('pt-BR');
+    const phoneQuery = digits(customerPhone);
+    const matches = customers.filter((customer) => {
+      const name = String(customer.name || '').toLocaleLowerCase('pt-BR');
+      const phone = digits(customer.phone);
+      if (suggestionField === 'name') return !nameQuery || name.includes(nameQuery);
+      if (suggestionField === 'phone') return !phoneQuery || phone.includes(phoneQuery) || name.includes(customerPhone.trim().toLocaleLowerCase('pt-BR'));
+      return (!nameQuery || name.includes(nameQuery)) && (!phoneQuery || phone.includes(phoneQuery));
+    });
+    return matches.slice(0, 8);
+  }, [customerSuggestions, suggestionField, customerName, customerPhone, customers]);
+
   async function checkout() {
     if (!cart.length) return toast('Adicione produtos ao carrinho.', 'error');
     if (discountCents > subtotalCents) return toast('O desconto não pode superar o subtotal.', 'error');
@@ -352,12 +379,41 @@ export default function PointOfSale({ onClose, allowCustomers = true, canSelectS
         </>}
         {checkoutStep === 1 && <div className="pos-checkout-fields">
           <p className="pos-step-description">Inclua os dados opcionais da venda antes de escolher o pagamento.</p>
-          <label className={fieldClass('customerName')} style={fieldStyle('customerName')}>Cliente (opcional)
-            <input className="input" value={customerName} onChange={(event) => setCustomerName(event.target.value)} placeholder="Consumidor final" maxLength={120} />
+          <label className={`${fieldClass('customerName')} pos-customer-field`} style={fieldStyle('customerName')}>Cliente (opcional)
+            <input
+              className="input"
+              value={customerName}
+              onChange={(event) => { setCustomerName(event.target.value); setCustomerSuggestions(true); setSuggestionField('name'); }}
+              onFocus={() => { setCustomerSuggestions(true); setSuggestionField('name'); }}
+              onBlur={() => window.setTimeout(() => setCustomerSuggestions(false), 150)}
+              placeholder="Digite o nome do cliente"
+              maxLength={120}
+              autoComplete="off"
+            />
           </label>
-          {allowCustomers && <label className={fieldClass('customerPhone')} style={fieldStyle('customerPhone')}>Telefone do cliente
-            <input className="input" value={customerPhone} onChange={(event) => setCustomerPhone(event.target.value)} placeholder="DDD + telefone" inputMode="tel" maxLength={20} />
+          {allowCustomers && <label className={`${fieldClass('customerPhone')} pos-customer-field`} style={fieldStyle('customerPhone')}>Telefone do cliente
+            <input
+              className="input"
+              value={customerPhone}
+              onChange={(event) => { setCustomerPhone(maskPhone(event.target.value)); setCustomerSuggestions(true); setSuggestionField('phone'); }}
+              onFocus={() => { setCustomerSuggestions(true); setSuggestionField('phone'); }}
+              onBlur={() => window.setTimeout(() => setCustomerSuggestions(false), 150)}
+              placeholder="DDD + telefone"
+              inputMode="tel"
+              maxLength={20}
+              autoComplete="off"
+            />
           </label>}
+          {customerSuggestions && customerMatches.length > 0 && (
+            <div className="pos-customer-suggestions" role="listbox" aria-label="Clientes encontrados">
+              {customerMatches.map((customer) => (
+                <button type="button" role="option" aria-selected="false" key={customer.phone} onMouseDown={(event) => event.preventDefault()} onClick={() => selectCustomer(customer)}>
+                  <span><strong>{customer.name}</strong><small>{formatStoredPhone(customer.phone)}</small></span>
+                  {customer.orders > 0 && <small>{customer.orders === 1 ? '1 pedido' : `${customer.orders} pedidos`}</small>}
+                </button>
+              ))}
+            </div>
+          )}
           <label className={fieldClass('notes')} style={fieldStyle('notes')}>Observações do pedido
             <textarea className="input" value={notes} onChange={(event) => setNotes(event.target.value)} maxLength={2000} rows={2} placeholder="Opcional" />
           </label>

@@ -64,6 +64,22 @@ export const config = {
     handle: (env.INFINITEPAY_HANDLE || '').trim().replace(/^\$/, ''),
     apiUrl: trimSlash(env.INFINITEPAY_API_URL) || 'https://api.checkout.infinitepay.io',
   },
+  ai: {
+    apiKey: stripQuotes(env.OPENAI_API_KEY),
+    model: 'gpt-6.1-terra',
+    usdBrlRate: positive(env.AI_USD_BRL_RATE, 0),
+    inputUsdPerMillion: 1,
+    cachedInputUsdPerMillion: 0.05,
+    outputUsdPerMillion: 5,
+    transcriptionModel: 'gpt-transcribe',
+    transcriptionUsdPerMinute: 0.0045,
+  },
+  instagram: {
+    appId: stripQuotes(env.INSTAGRAM_APP_ID),
+    appSecret: stripQuotes(env.INSTAGRAM_APP_SECRET),
+    apiVersion: (env.INSTAGRAM_API_VERSION || 'v27.0').trim(),
+    webhookVerifyToken: stripQuotes(env.INSTAGRAM_WEBHOOK_VERIFY_TOKEN),
+  },
   webPush: {
     publicKey: stripQuotes(env.VAPID_PUBLIC_KEY),
     privateKey: stripQuotes(env.VAPID_PRIVATE_KEY),
